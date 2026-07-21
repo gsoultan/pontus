@@ -1,0 +1,406 @@
+syntax = "proto3";
+
+package api.proto.endpoints;
+
+option go_package = "github.com/gsoultan/pontus/api/proto/endpoints";
+
+import "google/protobuf/timestamp.proto";
+import "api/proto/domain/project.proto";
+import "api/proto/domain/status.proto";
+import "api/proto/domain/metrics.proto";
+import "api/proto/domain/query.proto";
+import "api/proto/domain/log.proto";
+
+message GetAvailableVersionsRequest {}
+message GetAvailableVersionsResponse {
+  repeated string versions = 1;
+}
+
+// Projects management
+message ListProjectsRequest {}
+message ListProjectsResponse {
+  repeated .api.proto.domain.Project projects = 1;
+}
+
+message CreateProjectRequest {
+  .api.proto.domain.Project project = 1;
+}
+
+message CreateProjectResponse {
+  .api.proto.domain.Project project = 1;
+}
+
+message DeleteProjectRequest {
+  string id = 1;
+}
+
+message DeleteProjectResponse {}
+
+// Proxies management
+message AddProxyRequest {
+  string project_id = 1;
+  .api.proto.domain.ProxyConfig proxy = 2;
+}
+
+message AddProxyResponse {
+  .api.proto.domain.ProxyConfig proxy = 1;
+}
+
+message RemoveProxyRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+}
+
+message RemoveProxyResponse {}
+
+message UpdateProxyRequest {
+  string project_id = 1;
+  .api.proto.domain.ProxyConfig proxy = 2;
+}
+
+message UpdateProxyResponse {}
+
+// Status and Metrics
+message GetStatusRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+}
+
+message GetStatusResponse {
+  repeated .api.proto.domain.BackendStatus backends = 1;
+  int64 total_conns = 2;
+  string protocol = 3;
+  string balancer_type = 4;
+  repeated .api.proto.domain.TopQuery top_queries = 5;
+  int64 uptime_seconds = 6;
+  float requests_per_second = 7;
+  int64 total_requests = 8;
+  int64 total_errors = 9;
+  .api.proto.domain.SystemMetrics system_metrics = 10;
+  bool in_failover = 11;
+  string leader_id = 12;
+  .api.proto.domain.CacheStats cache_stats = 13;
+  .api.proto.domain.FirewallStats firewall_stats = 14;
+  repeated .api.proto.domain.MetricSnapshot history = 15;
+  .api.proto.domain.Topology topology = 16;
+  .api.proto.domain.AdaptiveStatus adaptive_status = 17;
+  repeated .api.proto.domain.PerformanceSuggestion performance_suggestions = 18;
+}
+
+// Backends management
+message AddBackendRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  .api.proto.domain.BackendConfig config = 3;
+}
+
+message AddBackendResponse {}
+
+message RemoveBackendRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string address = 3;
+}
+
+message RemoveBackendResponse {}
+
+message UpdateBackendRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string address = 3;
+  .api.proto.domain.BackendConfig config = 4;
+}
+
+message UpdateBackendResponse {}
+
+// Cluster and Node operations
+message InitializeNodeRequest {
+  string host_address = 1;
+  string version = 2;
+  string data_directory = 3;
+  string agent_token = 4;
+}
+
+message InitializeNodeProgress {
+  string stage = 1;
+  int32 percentage = 2;
+  string message = 3;
+}
+
+message BackupBackendRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string address = 3;
+  string backup_path = 4;
+}
+
+message BackupBackendProgress {
+  string stage = 1;
+  int32 percentage = 2;
+  string message = 3;
+}
+
+message RestoreBackendRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string address = 3;
+  string backup_path = 4;
+}
+
+message RestoreBackendProgress {
+  string stage = 1;
+  int32 percentage = 2;
+  string message = 3;
+}
+
+message InstallNodeRequest {
+  string host_address = 1;
+  string version = 2;
+  string target_directory = 3;
+  string agent_token = 4;
+}
+
+message InstallNodeProgress {
+  string stage = 1;
+  int32 percentage = 2;
+  string message = 3;
+}
+
+message PromoteBackendRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string address = 3;
+}
+
+message PromoteBackendResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message SetClusterConfigRequest {
+  map<string, string> parameters = 1;
+}
+
+message SetClusterConfigResponse {
+  bool success = 1;
+  repeated string updated_nodes = 2;
+  repeated string failed_nodes = 3;
+}
+
+message GetClusterConfigRequest {}
+
+message GetClusterConfigResponse {
+  map<string, string> parameters = 1;
+}
+
+message DiscoverClusterRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string primary_address = 3;
+}
+
+message DiscoverClusterResponse {
+  repeated string discovered_nodes = 1;
+  repeated string added_nodes = 2;
+}
+
+message VacuumBackendRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string address = 3;
+  string database = 4;
+  bool full = 5;
+}
+
+message VacuumBackendProgress {
+  string stage = 1;
+  int32 percentage = 2;
+  string message = 3;
+}
+
+message ProvisionReplicaRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string source_address = 3;
+  string target_address = 4;
+  string replication_user = 5;
+  string replication_password = 6;
+  string source_agent_token = 7;
+  string target_agent_token = 8;
+  string data_directory = 9;
+}
+
+message ProvisionProgress {
+  string stage = 1;
+  int32 percentage = 2;
+  string message = 3;
+}
+
+message ValidateBackendRequest {
+  string address = 1;
+}
+
+message ValidateBackendResponse {
+  bool success = 1;
+  string message = 2;
+  int64 latency_ms = 3;
+}
+
+// Insights and Tuning
+message ExplainQueryRequest {
+  string project_id = 1;
+  string query = 2;
+}
+
+message ExplainQueryResponse {
+  string plan = 1;
+  repeated .api.proto.domain.Recommendation recommendations = 2;
+}
+
+message TuneDatabaseRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string address = 3;
+}
+
+message TuneDatabaseResponse {
+  message NodeResult {
+    string address = 1;
+    repeated .api.proto.domain.TuningSuggestion suggestions = 2;
+    repeated string system_checks = 3;
+  }
+  repeated NodeResult nodes = 1;
+}
+
+message ApplyTuningRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string address = 3;
+  .api.proto.domain.TuningSuggestion suggestion = 4;
+}
+
+message ApplyTuningResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// History and Logs
+message GetMetricsHistoryRequest {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+}
+
+message GetMetricsHistoryResponse {
+  repeated .api.proto.domain.MetricSnapshot history = 1;
+}
+
+message GetTopQueriesHistoryRequest {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+  int32 limit = 3;
+}
+
+message GetTopQueriesHistoryResponse {
+  repeated .api.proto.domain.TopQuery top_queries = 1;
+}
+
+message GetLogsRequest {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+  string level = 3;
+  string search = 4;
+  int32 limit = 5;
+  int32 offset = 6;
+}
+
+message GetLogsResponse {
+  repeated .api.proto.domain.LogEntry logs = 1;
+  int32 total_count = 2;
+}
+
+message StreamLogsRequest {
+  string min_level = 1;
+}
+
+message GetBackendPostgresInsightsRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string address = 3;
+}
+
+message GetBackendPostgresInsightsResponse {
+  repeated .api.proto.domain.QueryInsight top_queries = 1;
+  repeated .api.proto.domain.LockInsight active_locks = 2;
+  repeated .api.proto.domain.ReplicationInsight replication_status = 3;
+}
+
+message RestartBackendServiceRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string address = 3;
+}
+
+message RestartBackendServiceResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message ShutdownBackendRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string address = 3;
+}
+
+message ShutdownBackendResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// Auth and System Info
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string token = 1;
+  string role = 2;
+  string username = 3;
+}
+
+message CreateUserRequest {
+  string username = 1;
+  string password = 2;
+  string role = 3;
+}
+
+message CreateUserResponse {
+  string username = 1;
+  string role = 2;
+}
+
+message GetAgentInfoRequest {
+  string agent_address = 1;
+  string agent_token = 2;
+}
+
+message GetAgentInfoResponse {
+  string os = 1;
+  string hostname = 2;
+  string detected_version = 3;
+  repeated string available_versions = 4;
+  string agent_version = 5;
+  string recommended_version = 6;
+  bool postgres_running = 7;
+  string postgres_address = 8;
+  string postgres_data_dir = 9;
+  repeated .api.proto.domain.TuningSuggestion tuning_suggestions = 10;
+}
+
+message GetServerInfoRequest {}
+
+message GetServerInfoResponse {
+  string version = 1;
+  string commit = 2;
+  string build_time = 3;
+}

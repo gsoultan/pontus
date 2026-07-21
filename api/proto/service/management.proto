@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package api.proto.service;
+
+option go_package = "github.com/gsoultan/pontus/api/proto/service";
+
+import "api/proto/endpoints/management.proto";
+import "api/proto/domain/log.proto";
+
+// ManagementService defines the administrative API for Pontus.
+service ManagementService {
+  // Projects management
+  rpc ListProjects(.api.proto.endpoints.ListProjectsRequest) returns (.api.proto.endpoints.ListProjectsResponse);
+  rpc CreateProject(.api.proto.endpoints.CreateProjectRequest) returns (.api.proto.endpoints.CreateProjectResponse);
+  rpc DeleteProject(.api.proto.endpoints.DeleteProjectRequest) returns (.api.proto.endpoints.DeleteProjectResponse);
+
+  // Proxies management
+  rpc AddProxy(.api.proto.endpoints.AddProxyRequest) returns (.api.proto.endpoints.AddProxyResponse);
+  rpc RemoveProxy(.api.proto.endpoints.RemoveProxyRequest) returns (.api.proto.endpoints.RemoveProxyResponse);
+  rpc UpdateProxy(.api.proto.endpoints.UpdateProxyRequest) returns (.api.proto.endpoints.UpdateProxyResponse);
+
+  // GetStatus returns the current status of all backends and global metrics.
+  rpc GetStatus(.api.proto.endpoints.GetStatusRequest) returns (.api.proto.endpoints.GetStatusResponse);
+
+  // AddBackend adds a new backend to the pool.
+  rpc AddBackend(.api.proto.endpoints.AddBackendRequest) returns (.api.proto.endpoints.AddBackendResponse);
+
+  // RemoveBackend removes a backend from the pool.
+  rpc RemoveBackend(.api.proto.endpoints.RemoveBackendRequest) returns (.api.proto.endpoints.RemoveBackendResponse);
+
+  // UpdateBackend updates an existing backend configuration.
+  rpc UpdateBackend(.api.proto.endpoints.UpdateBackendRequest) returns (.api.proto.endpoints.UpdateBackendResponse);
+
+  // ProvisionReplica provisions a new replica from a source.
+  rpc ProvisionReplica(.api.proto.endpoints.ProvisionReplicaRequest) returns (stream .api.proto.endpoints.ProvisionProgress);
+
+  // ValidateBackend checks if a backend is accessible.
+  rpc ValidateBackend(.api.proto.endpoints.ValidateBackendRequest) returns (.api.proto.endpoints.ValidateBackendResponse);
+
+  // StreamLogs returns a real-time stream of logs.
+  rpc StreamLogs(.api.proto.endpoints.StreamLogsRequest) returns (stream .api.proto.domain.LogEntry);
+
+  // InitializeNode initializes a database on a clean host via Agent.
+  rpc InitializeNode(.api.proto.endpoints.InitializeNodeRequest) returns (stream .api.proto.endpoints.InitializeNodeProgress);
+
+  // InstallNode installs the database software on a clean host via Agent.
+  rpc InstallNode(.api.proto.endpoints.InstallNodeRequest) returns (stream .api.proto.endpoints.InstallNodeProgress);
+
+  // BackupBackend triggers a database backup on a backend via Agent.
+  rpc BackupBackend(.api.proto.endpoints.BackupBackendRequest) returns (stream .api.proto.endpoints.BackupBackendProgress);
+
+  // RestoreBackend triggers a database restore on a backend via Agent.
+  rpc RestoreBackend(.api.proto.endpoints.RestoreBackendRequest) returns (stream .api.proto.endpoints.RestoreBackendProgress);
+
+  // PromoteBackend promotes a replica to primary.
+  rpc PromoteBackend(.api.proto.endpoints.PromoteBackendRequest) returns (.api.proto.endpoints.PromoteBackendResponse);
+  
+  // GetMetricsHistory returns historical metrics.
+  rpc GetMetricsHistory(.api.proto.endpoints.GetMetricsHistoryRequest) returns (.api.proto.endpoints.GetMetricsHistoryResponse);
+
+  // GetTopQueriesHistory returns historical top queries.
+  rpc GetTopQueriesHistory(.api.proto.endpoints.GetTopQueriesHistoryRequest) returns (.api.proto.endpoints.GetTopQueriesHistoryResponse);
+
+  // SetClusterConfig updates configuration across the cluster.
+  rpc SetClusterConfig(.api.proto.endpoints.SetClusterConfigRequest) returns (.api.proto.endpoints.SetClusterConfigResponse);
+
+  // GetClusterConfig returns the current cluster configuration.
+  rpc GetClusterConfig(.api.proto.endpoints.GetClusterConfigRequest) returns (.api.proto.endpoints.GetClusterConfigResponse);
+
+  // DiscoverCluster auto-discovers and adds all nodes in a cluster.
+  rpc DiscoverCluster(.api.proto.endpoints.DiscoverClusterRequest) returns (.api.proto.endpoints.DiscoverClusterResponse);
+
+  // VacuumBackend triggers a VACUUM operation on a backend via Agent.
+  rpc VacuumBackend(.api.proto.endpoints.VacuumBackendRequest) returns (stream .api.proto.endpoints.VacuumBackendProgress);
+
+  // ExplainQuery analyzes a SQL query.
+  rpc ExplainQuery(.api.proto.endpoints.ExplainQueryRequest) returns (.api.proto.endpoints.ExplainQueryResponse);
+
+  // GetLogs returns historical logs with filtering and pagination.
+  rpc GetLogs(.api.proto.endpoints.GetLogsRequest) returns (.api.proto.endpoints.GetLogsResponse);
+
+  // TuneDatabase provides tuning recommendations based on system resources.
+  rpc TuneDatabase(.api.proto.endpoints.TuneDatabaseRequest) returns (.api.proto.endpoints.TuneDatabaseResponse);
+
+  // ApplyTuning applies a tuning suggestion to a backend.
+  rpc ApplyTuning(.api.proto.endpoints.ApplyTuningRequest) returns (.api.proto.endpoints.ApplyTuningResponse);
+
+  // GetAgentInfo fetches system info from a Pontus Agent.
+  rpc GetAgentInfo(.api.proto.endpoints.GetAgentInfoRequest) returns (.api.proto.endpoints.GetAgentInfoResponse);
+
+  // GetAvailableVersions returns all supported PostgreSQL versions.
+  rpc GetAvailableVersions(.api.proto.endpoints.GetAvailableVersionsRequest) returns (.api.proto.endpoints.GetAvailableVersionsResponse);
+
+  // Login authenticates a user and returns a token.
+  rpc Login(.api.proto.endpoints.LoginRequest) returns (.api.proto.endpoints.LoginResponse);
+
+  // CreateUser creates a new management user.
+  rpc CreateUser(.api.proto.endpoints.CreateUserRequest) returns (.api.proto.endpoints.CreateUserResponse);
+
+  // GetServerInfo returns information about the Pontus server.
+  rpc GetServerInfo(.api.proto.endpoints.GetServerInfoRequest) returns (.api.proto.endpoints.GetServerInfoResponse);
+
+  // GetPostgresInsights retrieves database-specific insights for a backend.
+  rpc GetPostgresInsights(.api.proto.endpoints.GetBackendPostgresInsightsRequest) returns (.api.proto.endpoints.GetBackendPostgresInsightsResponse);
+
+  // RestartBackendService restarts the database service on a backend via Agent.
+  rpc RestartBackendService(.api.proto.endpoints.RestartBackendServiceRequest) returns (.api.proto.endpoints.RestartBackendServiceResponse);
+
+  // ShutdownBackend shuts down the database on a backend via Agent.
+  rpc ShutdownBackend(.api.proto.endpoints.ShutdownBackendRequest) returns (.api.proto.endpoints.ShutdownBackendResponse);
+}

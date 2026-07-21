@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package api.proto.domain;
+
+option go_package = "github.com/gsoultan/pontus/api/proto/domain";
+
+import "google/protobuf/timestamp.proto";
+
+message Project {
+  string id = 1;
+  string name = 2;
+  string protocol = 3; // "postgres" or "mysql"
+  repeated ProxyConfig proxies = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message ProxyConfig {
+  string id = 1;
+  string name = 2;
+  string address = 3;
+  repeated BackendConfig backends = 4;
+  string balancer = 5;
+  int32 max_conns = 6;
+}
+
+message BackendConfig {
+  string address = 1;
+  string zone = 4;
+  string role = 2; // "primary" or "replica"
+  int32 weight = 3;
+  bool managed_by_agent = 5;
+  string agent_address = 6;
+  string agent_token = 8;
+  AgentDatabaseConfig agent_config = 7;
+}
+
+message AgentDatabaseConfig {
+  string data_directory = 1;
+  string version = 2;
+  string initial_database = 3;
+  string initial_user = 4;
+  string initial_password = 5;
+  bool install_if_missing = 6;
+}

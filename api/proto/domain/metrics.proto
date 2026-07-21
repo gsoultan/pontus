@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package api.proto.domain;
+
+option go_package = "github.com/gsoultan/pontus/api/proto/domain";
+
+message SystemMetrics {
+  float cpu_usage_percent = 1;
+  uint32 cpu_cores = 17;
+  uint64 memory_total_bytes = 2;
+  uint64 memory_used_bytes = 3;
+  float memory_usage_percent = 4;
+  uint64 storage_total_bytes = 5;
+  uint64 storage_used_bytes = 6;
+  float storage_usage_percent = 7;
+  float load_1 = 8;
+  float load_5 = 9;
+  float load_15 = 10;
+  uint64 goroutines = 14;
+  uint64 open_files_limit = 15;
+  uint64 max_processes_limit = 16;
+
+  // Advanced metrics
+  DiskMetrics disk_io = 11;
+  NetworkMetrics network_io = 12;
+  DatabaseMetrics db_metrics = 13;
+}
+
+message DiskMetrics {
+  uint64 read_bytes_per_sec = 1;
+  uint64 write_bytes_per_sec = 2;
+  uint64 read_count_per_sec = 3;
+  uint64 write_count_per_sec = 4;
+  float iotime_ms = 5;
+}
+
+message NetworkMetrics {
+  uint64 bytes_sent_per_sec = 1;
+  uint64 bytes_recv_per_sec = 2;
+  uint64 packets_sent_per_sec = 3;
+  uint64 packets_recv_per_sec = 4;
+  uint64 err_in = 5;
+  uint64 err_out = 6;
+}
+
+message DatabaseMetrics {
+  int64 active_backends = 1;
+  int64 max_backends = 2;
+  int64 transactions_committed = 3;
+  int64 transactions_rolled_back = 4;
+  int64 blocks_read = 5;
+  int64 blocks_hit = 6;
+  float cache_hit_ratio = 7;
+  int64 conflicts = 8;
+  int64 deadlocks = 9;
+  int64 replication_lag_bytes = 10;
+  bool is_recovery = 11;
+}

@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package api.proto.domain;
+
+option go_package = "github.com/gsoultan/pontus/api/proto/domain";
+
+import "google/protobuf/timestamp.proto";
+
+message LogEntry {
+  google.protobuf.Timestamp timestamp = 1;
+  string level = 2;
+  string message = 3;
+  map<string, string> attributes = 4;
+}

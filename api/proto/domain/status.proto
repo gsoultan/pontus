@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package api.proto.domain;
+
+option go_package = "github.com/gsoultan/pontus/api/proto/domain";
+
+import "google/protobuf/timestamp.proto";
+import "api/proto/domain/project.proto";
+import "api/proto/domain/metrics.proto";
+
+message BackendStatus {
+  string address = 1;
+  string zone = 15;
+  bool healthy = 2;
+  int64 active_conns = 3;
+  google.protobuf.Timestamp last_check = 4;
+  string role = 5;
+  int64 latency_ms = 6;
+  int64 replication_lag_ms = 7;
+  bool is_draining = 8;
+  int32 weight = 9;
+  int32 max_conns = 10;
+  int32 current_max_conns = 16;
+  int32 idle_conns = 11;
+  int64 wait_queue_size = 12;
+  int64 total_requests = 13;
+  int64 total_errors = 14;
+  int64 rtt_ms = 17;
+  bool managed_by_agent = 18;
+  string agent_address = 19;
+  AgentDatabaseConfig agent_config = 20;
+  DatabaseMetrics db_metrics = 21;
+  string installed_version = 22;
+  string recommended_version = 23;
+}
+
+message AdaptiveStatus {
+  bool is_throttled = 1;
+  string throttle_reason = 2;
+  int32 current_max_waiters = 3;
+  int32 active_goroutines = 4;
+}
+
+message PerformanceSuggestion {
+  string title = 1;
+  string description = 2;
+  string level = 3; // "info", "warning", "critical"
+  string action = 4;
+}
+
+message Topology {
+  repeated TopologyNode nodes = 1;
+  repeated TopologyEdge edges = 2;
+}
+
+message TopologyNode {
+  string id = 1;
+  string label = 2;
+  string type = 3; // "proxy", "primary", "replica"
+  string status = 4; // "healthy", "unhealthy", "draining"
+  string address = 5;
+}
+
+message TopologyEdge {
+  string from = 1;
+  string to = 2;
+  string label = 3;
+  string type = 4;
+}
+
+message MetricSnapshot {
+  google.protobuf.Timestamp timestamp = 1;
+  float requests_per_second = 2;
+  float error_rate = 3;
+  float latency_ms = 4;
+}
+
+message FirewallStats {
+  int64 blocked_by_word = 1;
+  int64 blocked_by_pattern = 2;
+  int64 blocked_by_size = 3;
+}
+
+message CacheStats {
+  int64 hits = 1;
+  int64 misses = 2;
+  int64 items_count = 3;
+  float hit_ratio = 4;
+}

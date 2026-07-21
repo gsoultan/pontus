@@ -1,0 +1,25 @@
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 200ms ease, color 200ms ease;
+  background-color: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-9));
+  color: light-dark(var(--mantine-color-black), var(--mantine-color-white));
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(81, 207, 102, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(81, 207, 102, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(81, 207, 102, 0);
+  }
+}

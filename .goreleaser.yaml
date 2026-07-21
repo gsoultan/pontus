@@ -1,0 +1,67 @@
+# .goreleaser.yaml
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - buf generate
+    - bun --cwd web install
+    - bun --cwd web run build
+
+builds:
+  - id: pontus
+    main: ./cmd/pontus
+    binary: pontus
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/gsoultan/pontus/pkg/version.Version={{.Version}} -X github.com/gsoultan/pontus/pkg/version.Commit={{.Commit}} -X github.com/gsoultan/pontus/pkg/version.BuildTime={{.Date}}
+
+  - id: agent
+    main: ./cmd/agent
+    binary: pontus-agent
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/gsoultan/pontus/pkg/version.Version={{.Version}} -X github.com/gsoultan/pontus/pkg/version.Commit={{.Commit}} -X github.com/gsoultan/pontus/pkg/version.BuildTime={{.Date}}
+
+archives:
+  - format: tar.gz
+    # this name template makes the OS and Arch compatible with what make it easier to download
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'

@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package api.proto.domain;
+
+option go_package = "github.com/gsoultan/pontus/api/proto/domain";
+
+import "google/protobuf/timestamp.proto";
+
+message TopQuery {
+  string query = 1;
+  int64 count = 2;
+  int64 total_time_ms = 3;
+  int64 max_time_ms = 4;
+  int64 avg_time_ms = 5;
+  google.protobuf.Timestamp last_seen = 6;
+  int64 error_count = 7;
+  bool is_throttled = 8;
+  QueryPlanInsight insight = 9;
+}
+
+message QueryPlanInsight {
+  repeated Recommendation recommendations = 1;
+  string plan = 2;
+}
+
+message Recommendation {
+  string type = 1;
+  string message = 2;
+  string impact = 3;
+}
+
+message TuningSuggestion {
+  string parameter = 1;
+  string current_value = 2;
+  string suggested_value = 3;
+  string reason = 4;
+}
+
+message QueryInsight {
+  string query = 1;
+  int64 calls = 2;
+  double total_time = 3;
+  double min_time = 4;
+  double max_time = 5;
+  double mean_time = 6;
+  int64 rows = 7;
+}
+
+message LockInsight {
+  int32 pid = 1;
+  string locktype = 2;
+  string mode = 3;
+  bool granted = 4;
+  string query = 5;
+}
+
+message ReplicationInsight {
+  int32 pid = 1;
+  string state = 2;
+  string sent_lsn = 3;
+  string write_lsn = 4;
+  string flush_lsn = 5;
+  string replay_lsn = 6;
+}

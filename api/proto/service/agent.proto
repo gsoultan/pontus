@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package api.proto.service;
+
+option go_package = "github.com/gsoultan/pontus/api/proto/service";
+
+import "api/proto/endpoints/agent.proto";
+
+// AgentService defines the operations that can be performed on a database host.
+service AgentService {
+  // GetSystemInfo returns basic information about the host system.
+  rpc GetSystemInfo(.api.proto.endpoints.GetSystemInfoRequest) returns (.api.proto.endpoints.GetSystemInfoResponse);
+
+  // UpdateConfig updates a configuration file on the host.
+  rpc UpdateConfig(.api.proto.endpoints.UpdateConfigRequest) returns (.api.proto.endpoints.UpdateConfigResponse);
+
+  // ExecuteCommand executes a shell command on the host and streams the output.
+  rpc ExecuteCommand(.api.proto.endpoints.ExecuteCommandRequest) returns (stream .api.proto.endpoints.ExecuteCommandResponse);
+
+  // RestartService restarts a system service (e.g., postgresql).
+  rpc RestartService(.api.proto.endpoints.RestartServiceRequest) returns (.api.proto.endpoints.RestartServiceResponse);
+
+  // StreamLogs streams the logs of a database instance.
+  rpc StreamLogs(.api.proto.endpoints.LogStreamRequest) returns (stream .api.proto.endpoints.LogStreamResponse);
+
+  // ScheduleMaintenance schedules a maintenance task.
+  rpc ScheduleMaintenance(.api.proto.endpoints.ScheduleMaintenanceRequest) returns (.api.proto.endpoints.ScheduleMaintenanceResponse);
+
+  // SetupReplication configures the host as a replica of another host.
+  rpc SetupReplication(.api.proto.endpoints.SetupReplicationRequest) returns (stream .api.proto.endpoints.ReplicationProgress);
+
+  // PromoteNode promotes a replica to a primary.
+  rpc PromoteNode(.api.proto.endpoints.PromoteNodeRequest) returns (.api.proto.endpoints.PromoteNodeResponse);
+
+  // InitializeDatabase initializes a new database instance.
+  rpc InitializeDatabase(.api.proto.endpoints.InitializeDatabaseRequest) returns (stream .api.proto.endpoints.InitializeProgress);
+
+  // InstallDatabase installs the database software.
+  rpc InstallDatabase(.api.proto.endpoints.InstallDatabaseRequest) returns (stream .api.proto.endpoints.InstallProgress);
+
+  // BackupDatabase creates a backup of the database.
+  rpc BackupDatabase(.api.proto.endpoints.BackupDatabaseRequest) returns (stream .api.proto.endpoints.BackupProgress);
+
+  // RestoreDatabase restores the database from a backup.
+  rpc RestoreDatabase(.api.proto.endpoints.RestoreDatabaseRequest) returns (stream .api.proto.endpoints.RestoreProgress);
+
+  // GetPostgresInsights returns database-specific insights for Postgres.
+  rpc GetPostgresInsights(.api.proto.endpoints.GetPostgresInsightsRequest) returns (.api.proto.endpoints.GetPostgresInsightsResponse);
+
+  // ShutdownDatabase stops the database service.
+  rpc ShutdownDatabase(.api.proto.endpoints.ShutdownDatabaseRequest) returns (.api.proto.endpoints.ShutdownDatabaseResponse);
+
+  // RemoveDatabase stops the database and removes its data directory.
+  rpc RemoveDatabase(.api.proto.endpoints.RemoveDatabaseRequest) returns (.api.proto.endpoints.RemoveDatabaseResponse);
+  
+  // VacuumDatabase performs a VACUUM operation on the database.
+  rpc VacuumDatabase(.api.proto.endpoints.VacuumDatabaseRequest) returns (stream .api.proto.endpoints.VacuumProgress);
+}

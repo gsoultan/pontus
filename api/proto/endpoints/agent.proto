@@ -1,0 +1,200 @@
+syntax = "proto3";
+
+package api.proto.endpoints;
+
+option go_package = "github.com/gsoultan/pontus/api/proto/endpoints";
+
+import "google/protobuf/timestamp.proto";
+import "api/proto/domain/metrics.proto";
+import "api/proto/domain/query.proto";
+
+message GetSystemInfoRequest {}
+
+message GetSystemInfoResponse {
+  string os = 1;
+  string hostname = 2;
+  map<string, string> env_vars = 3;
+  .api.proto.domain.SystemMetrics metrics = 4;
+  HealthPrediction health_prediction = 5;
+  string detected_version = 6;
+  repeated string available_versions = 7;
+  string agent_version = 8;
+  string recommended_version = 9;
+  bool postgres_running = 10;
+  string postgres_address = 11;
+  string postgres_data_dir = 12;
+  repeated .api.proto.domain.TuningSuggestion tuning_suggestions = 13;
+}
+
+message HealthPrediction {
+  bool degradation_detected = 1;
+  string reason = 2;
+  float confidence = 3;
+  google.protobuf.Timestamp estimated_failure_time = 4;
+}
+
+message UpdateConfigRequest {
+  string file_path = 1;
+  string content = 2;
+}
+
+message UpdateConfigResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message ExecuteCommandRequest {
+  string command = 1;
+  repeated string args = 2;
+  map<string, string> env = 3;
+}
+
+message ExecuteCommandResponse {
+  string stdout = 1;
+  string stderr = 2;
+  int32 exit_code = 3;
+}
+
+message RestartServiceRequest {
+  string service_name = 1;
+}
+
+message RestartServiceResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message LogStreamRequest {
+  string log_path = 1;
+  bool follow = 2;
+}
+
+message LogStreamResponse {
+  string line = 1;
+}
+
+message ScheduleMaintenanceRequest {
+  string task_type = 1;
+  string database = 2;
+  string cron_expression = 3;
+}
+
+message ScheduleMaintenanceResponse {
+  bool success = 1;
+  string task_id = 2;
+  string error_message = 3;
+}
+
+message SetupReplicationRequest {
+  string primary_host = 1;
+  int32 primary_port = 2;
+  string replication_user = 3;
+  string replication_password = 4;
+  string slot_name = 5;
+  bool use_rewind = 6;
+  string data_directory = 7;
+}
+
+message ReplicationProgress {
+  string stage = 1;
+  int32 percentage = 2;
+  string message = 3;
+}
+
+message PromoteNodeRequest {
+  string wait_for_completion = 1;
+}
+
+message PromoteNodeResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message InitializeDatabaseRequest {
+  string data_directory = 1;
+  string version = 2;
+  string initial_database = 3;
+  string initial_user = 4;
+  string initial_password = 5;
+}
+
+message InitializeProgress {
+  string stage = 1;
+  int32 percentage = 2;
+  string message = 3;
+}
+
+message InstallDatabaseRequest {
+  string version = 1;
+  string target_directory = 2;
+}
+
+message InstallProgress {
+  string stage = 1;
+  int32 percentage = 2;
+  string message = 3;
+  string error_message = 4;
+}
+
+message BackupDatabaseRequest {
+  string backup_path = 1;
+  string database = 2;
+}
+
+message BackupProgress {
+  string stage = 1;
+  int32 percentage = 2;
+  string message = 3;
+}
+
+message RestoreDatabaseRequest {
+  string backup_path = 1;
+  string target_database = 2;
+}
+
+message RestoreProgress {
+  string stage = 1;
+  int32 percentage = 2;
+  string message = 3;
+}
+
+message GetPostgresInsightsRequest {
+  string database = 1;
+}
+
+message GetPostgresInsightsResponse {
+  repeated .api.proto.domain.QueryInsight top_queries = 1;
+  repeated .api.proto.domain.LockInsight active_locks = 2;
+  repeated .api.proto.domain.ReplicationInsight replication_status = 3;
+}
+
+message ShutdownDatabaseRequest {
+  string data_directory = 1;
+}
+
+message ShutdownDatabaseResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message RemoveDatabaseRequest {
+  string data_directory = 1;
+  bool delete_data = 2;
+}
+
+message RemoveDatabaseResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message VacuumDatabaseRequest {
+  string database = 1;
+  bool full = 2;
+  bool analyze = 3;
+}
+
+message VacuumProgress {
+  string stage = 1;
+  int32 percentage = 2;
+  string message = 3;
+}
