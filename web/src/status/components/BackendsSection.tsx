@@ -14,22 +14,24 @@ interface BackendsSectionProps {
   onVacuum: (address: string) => void;
   onRestart: (address: string) => void;
   onShutdown: (address: string) => void;
+  onPromote: (address: string) => void;
   onShowInsights: (address: string) => void;
   isAdmin?: boolean;
 }
 
-export const BackendsSection = memo(({ 
-  backends, 
-  onAdd, 
-  onEdit, 
-  onRemove, 
-  onBackup, 
-  onRestore, 
-  onVacuum, 
+export const BackendsSection = memo(({
+  backends,
+  onAdd,
+  onEdit,
+  onRemove,
+  onBackup,
+  onRestore,
+  onVacuum,
   onRestart,
   onShutdown,
+  onPromote,
   onShowInsights,
-  isAdmin 
+  isAdmin
 }: BackendsSectionProps) => {
   const { colorScheme } = useMantineColorScheme();
 
@@ -81,6 +83,7 @@ export const BackendsSection = memo(({
               onVacuum={onVacuum}
               onRestart={onRestart}
               onShutdown={onShutdown}
+              onPromote={onPromote}
               onShowInsights={onShowInsights}
               isAdmin={isAdmin}
             />

@@ -1,10 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
-import { StatusContainer } from '../status/components/StatusContainer'
+import { QueriesView } from '../status/components/QueriesView'
 
 export const Route = createLazyFileRoute('/queries')({
-  component: QueriesPage,
+  component: QueriesView,
 })
-
-function QueriesPage() {
-  return <StatusContainer view="queries" />
-}

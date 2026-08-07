@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": ["dist", "dev-dist", "src/gen", "src/routeTree.gen.ts"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "plugins": ["react", "typescript", "unicorn", "oxc"],
+  "env": {
+    "browser": true,
+    "es2023": true
+  },
+  "rules": {
+    "eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error",
+    "typescript/no-explicit-any": "warn",
+    "react/react-in-jsx-scope": "off",
+    "react/jsx-key": "error",
+    "unicorn/prefer-node-protocol": "off",
+    "unicorn/filename-case": "off"
+  },
+  "overrides": [
+    {
+      "files": ["src/workers/**/*.ts"],
+      "env": { "browser": false, "worker": true }
+    }
+  ]
+}

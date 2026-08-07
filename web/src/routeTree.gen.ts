@@ -11,65 +11,71 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TuningRouteImport } from './routes/tuning'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as QueriesRouteImport } from './routes/queries'
-import { Route as ProjectsRouteImport } from './routes/projects'
-import { Route as MetricsRouteImport } from './routes/metrics'
-import { Route as LogsRouteImport } from './routes/logs'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as BackendsRouteImport } from './routes/backends'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BackendsRouteImport } from './routes/backends'
+import { Route as ClusterRouteImport } from './routes/cluster'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as LogsRouteImport } from './routes/logs'
+import { Route as MetricsRouteImport } from './routes/metrics'
+import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as QueriesRouteImport } from './routes/queries'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as TuningRouteImport } from './routes/tuning'
 import { Route as ProjectsProjectIdProxiesNewRouteImport } from './routes/projects.$projectId.proxies.new'
 import { Route as ProjectsProjectIdProxiesProxyIdEditRouteImport } from './routes/projects.$projectId.proxies.$proxyId.edit'
 
 const ProjectsIndexLazyRouteImport = createFileRoute('/projects/')()
 
-const TuningRoute = TuningRouteImport.update({
-  id: '/tuning',
-  path: '/tuning',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/tuning.lazy').then((d) => d.Route))
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/settings.lazy').then((d) => d.Route))
-const QueriesRoute = QueriesRouteImport.update({
-  id: '/queries',
-  path: '/queries',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/queries.lazy').then((d) => d.Route))
-const ProjectsRoute = ProjectsRouteImport.update({
-  id: '/projects',
-  path: '/projects',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MetricsRoute = MetricsRouteImport.update({
-  id: '/metrics',
-  path: '/metrics',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/metrics.lazy').then((d) => d.Route))
-const LogsRoute = LogsRouteImport.update({
-  id: '/logs',
-  path: '/logs',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/logs.lazy').then((d) => d.Route))
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BackendsRoute = BackendsRouteImport.update({
-  id: '/backends',
-  path: '/backends',
-  getParentRoute: () => rootRouteImport,
-} as any).lazy(() => import('./routes/backends.lazy').then((d) => d.Route))
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/index.lazy').then((d) => d.Route))
+const BackendsRoute = BackendsRouteImport.update({
+  id: '/backends',
+  path: '/backends',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/backends.lazy').then((d) => d.Route))
+const ClusterRoute = ClusterRouteImport.update({
+  id: '/cluster',
+  path: '/cluster',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/cluster.lazy').then((d) => d.Route))
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/login.lazy').then((d) => d.Route))
+const LogsRoute = LogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/logs.lazy').then((d) => d.Route))
+const MetricsRoute = MetricsRouteImport.update({
+  id: '/metrics',
+  path: '/metrics',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/metrics.lazy').then((d) => d.Route))
+const ProjectsRoute = ProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QueriesRoute = QueriesRouteImport.update({
+  id: '/queries',
+  path: '/queries',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/queries.lazy').then((d) => d.Route))
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/settings.lazy').then((d) => d.Route))
+const TuningRoute = TuningRouteImport.update({
+  id: '/tuning',
+  path: '/tuning',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/tuning.lazy').then((d) => d.Route))
 const ProjectsIndexLazyRoute = ProjectsIndexLazyRouteImport.update({
   id: '/',
   path: '/',
@@ -101,6 +107,7 @@ const ProjectsProjectIdProxiesProxyIdEditRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/backends': typeof BackendsRoute
+  '/cluster': typeof ClusterRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
   '/metrics': typeof MetricsRoute
@@ -115,6 +122,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/backends': typeof BackendsRoute
+  '/cluster': typeof ClusterRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
   '/metrics': typeof MetricsRoute
@@ -129,6 +137,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/backends': typeof BackendsRoute
+  '/cluster': typeof ClusterRoute
   '/login': typeof LoginRoute
   '/logs': typeof LogsRoute
   '/metrics': typeof MetricsRoute
@@ -145,6 +154,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/backends'
+    | '/cluster'
     | '/login'
     | '/logs'
     | '/metrics'
@@ -159,6 +169,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/backends'
+    | '/cluster'
     | '/login'
     | '/logs'
     | '/metrics'
@@ -172,6 +183,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/backends'
+    | '/cluster'
     | '/login'
     | '/logs'
     | '/metrics'
@@ -187,6 +199,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BackendsRoute: typeof BackendsRoute
+  ClusterRoute: typeof ClusterRoute
   LoginRoute: typeof LoginRoute
   LogsRoute: typeof LogsRoute
   MetricsRoute: typeof MetricsRoute
@@ -198,53 +211,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/tuning': {
-      id: '/tuning'
-      path: '/tuning'
-      fullPath: '/tuning'
-      preLoaderRoute: typeof TuningRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/queries': {
-      id: '/queries'
-      path: '/queries'
-      fullPath: '/queries'
-      preLoaderRoute: typeof QueriesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/projects': {
-      id: '/projects'
-      path: '/projects'
-      fullPath: '/projects'
-      preLoaderRoute: typeof ProjectsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/metrics': {
-      id: '/metrics'
-      path: '/metrics'
-      fullPath: '/metrics'
-      preLoaderRoute: typeof MetricsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/logs': {
-      id: '/logs'
-      path: '/logs'
-      fullPath: '/logs'
-      preLoaderRoute: typeof LogsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/backends': {
@@ -254,11 +225,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BackendsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/cluster': {
+      id: '/cluster'
+      path: '/cluster'
+      fullPath: '/cluster'
+      preLoaderRoute: typeof ClusterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logs': {
+      id: '/logs'
+      path: '/logs'
+      fullPath: '/logs'
+      preLoaderRoute: typeof LogsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/metrics': {
+      id: '/metrics'
+      path: '/metrics'
+      fullPath: '/metrics'
+      preLoaderRoute: typeof MetricsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects': {
+      id: '/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/queries': {
+      id: '/queries'
+      path: '/queries'
+      fullPath: '/queries'
+      preLoaderRoute: typeof QueriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tuning': {
+      id: '/tuning'
+      path: '/tuning'
+      fullPath: '/tuning'
+      preLoaderRoute: typeof TuningRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects/': {
@@ -305,6 +325,7 @@ const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BackendsRoute: BackendsRoute,
+  ClusterRoute: ClusterRoute,
   LoginRoute: LoginRoute,
   LogsRoute: LogsRoute,
   MetricsRoute: MetricsRoute,

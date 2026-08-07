@@ -1,10 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
-import { StatusContainer } from '../status/components/StatusContainer'
+import { DashboardView } from '../status/components/DashboardView'
 
 export const Route = createLazyFileRoute('/')({
-  component: Index,
+  component: DashboardView,
 })
-
-function Index() {
-  return <StatusContainer view="dashboard" />
-}
