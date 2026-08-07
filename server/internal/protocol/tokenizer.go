@@ -106,9 +106,31 @@ func Tokenize(q string) iter.Seq[Token] {
 	}
 }
 
+// isKeyword decides whether a word is emitted as TokenKeyword.
+//
+// Every word ClassifyQuery or the firewall switches on has to be in here. It is
+// not a style question: a word that is missing arrives as TokenIdentifier, the
+// switch case never matches, and the branch is silently unreachable. That is how
+// `SELECT 1; DROP TABLE users` stayed classified read-only and how `INSERT INTO
+// orders` recorded no affected table.
 func isKeyword(s string) bool {
 	switch s {
-	case "SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE", "JOIN", "ON", "GROUP", "BY", "ORDER", "LIMIT", "BEGIN", "COMMIT", "ROLLBACK", "START", "TRANSACTION", "FOR", "SHARE", "SKIP", "LOCKED", "NOWAIT", "UNION", "OR", "AND":
+	case
+		// statements
+		"SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "MERGE",
+		"CREATE", "DROP", "ALTER", "GRANT", "REVOKE", "COMMENT",
+		"SHOW", "DESCRIBE", "DESC", "EXPLAIN", "ANALYZE", "VACUUM",
+		"CALL", "DO", "COPY", "REFRESH", "REINDEX", "CLUSTER",
+		// clauses and structure
+		"FROM", "WHERE", "JOIN", "ON", "INTO", "TABLE", "VALUES", "SET",
+		"GROUP", "BY", "ORDER", "LIMIT", "OFFSET", "HAVING", "WITH", "AS",
+		"RETURNING", "USING", "ONLY",
+		// transactions
+		"BEGIN", "COMMIT", "ROLLBACK", "START", "TRANSACTION", "SAVEPOINT",
+		// locking
+		"FOR", "SHARE", "SKIP", "LOCKED", "NOWAIT", "LOCK",
+		// operators
+		"UNION", "INTERSECT", "EXCEPT", "OR", "AND", "NOT", "IN", "EXISTS":
 		return true
 	}
 	return false

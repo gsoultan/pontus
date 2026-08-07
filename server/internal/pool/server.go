@@ -8,11 +8,11 @@ import (
 	"log/slog"
 	"math"
 	"net"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/gsoultan/gpool/pkg/pooling"
 	"github.com/gsoultan/pontus/api/proto/domain"
 	"github.com/gsoultan/pontus/api/proto/endpoints"
 	"github.com/gsoultan/pontus/api/proto/service"
@@ -28,17 +28,18 @@ import (
 
 // Server manages a pool of connections to a single backend server.
 type Server struct {
-	address            string
-	zone               string
-	roleMu             sync.RWMutex
-	role               Role
-	activeConns        atomic.Int64 // Total active across all shards
+	address string
+	zone    string
+	roleMu  sync.RWMutex
+	role    Role
+	core    *pooling.Core[*Conn]
+	// checkedOut counts connections currently held by a caller. The engine's
+	// Stat samples its total and its shard counters independently, so an active
+	// count derived from them can read high while the background warm-up is in
+	// flight — and the balancer's cost function multiplies by this number.
+	checkedOut         atomic.Int64
 	maxConns           int32
 	minConns           int32
-	currentMax         atomic.Int32
-	shards             []*shard
-	shardMask          uint32
-	waitDelay          atomic.Int64 // nanoseconds (total)
 	healthy            atomic.Bool
 	dialTimeout        time.Duration
 	maxIdleTime        time.Duration
@@ -54,7 +55,6 @@ type Server struct {
 	cancel             context.CancelFunc
 	mu                 sync.RWMutex
 	weight             int
-	maxWaiters         int
 	waitTimeout        time.Duration
 	replicationLag     atomic.Int64 // nanoseconds
 	draining           atomic.Bool
@@ -77,6 +77,7 @@ type Server struct {
 var (
 	ErrPoolExhausted = errors.New("connection pool exhausted")
 	ErrPoolClosed    = errors.New("connection pool closed")
+	ErrDraining      = errors.New("backend is draining")
 )
 
 // NewServer creates a new Server for the given address and role.
@@ -87,11 +88,6 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	numShards := nextPowerOf2(uint32(runtime.GOMAXPROCS(0)))
-	if numShards > 64 {
-		numShards = 64
-	}
-
 	p := &Server{
 		address:     address,
 		zone:        zone,
@@ -101,8 +97,6 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 		weight:      weight,
 		maxConns:    maxConns,
 		minConns:    minIdle,
-		shards:      make([]*shard, numShards),
-		shardMask:   numShards - 1,
 		dialTimeout: dialTimeout,
 		maxIdleTime: 5 * time.Minute,
 		maxLifetime: 1 * time.Hour,
@@ -112,25 +106,38 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 		breaker:     health2.NewCircuitBreaker(5, 30*time.Second),
 		ctx:         ctx,
 		cancel:      cancel,
-		maxWaiters:  1000,
 		waitTimeout: 5 * time.Second,
 		monitor:     monitor,
 	}
 
 	p.controller = NewAdaptivePoolController(p, monitor)
 
-	for i := range numShards {
-		s := &shard{
-			idleConns: make(chan pooledConn, max(int(maxConns)/int(numShards), 1)),
-		}
-		for j := range s.waiters {
-			s.waiters[j] = make(chan net.Conn)
-		}
-		s.cond = sync.NewCond(&s.mu)
-		p.shards[i] = s
+	// The engine owns capacity, idle buckets, the reaper and statistics. MaxConns
+	// is a structural ceiling here — a connection is only created while its
+	// acquirer holds a permit — rather than the check-then-act the previous
+	// implementation used, which two concurrent acquirers could both pass.
+	core, err := pooling.New[*Conn](&connDriver{
+		address:     address,
+		dialTimeout: dialTimeout,
+		tlsConfig:   tlsConfig,
+		handler:     handler,
+	}, pooling.Config{
+		MaxConns: maxConns,
+		// The adaptive controller may lower capacity under pressure and raise it
+		// again, but never above the configured max_conns.
+		MaxConnsLimit:     maxConns,
+		MinConns:          minIdle,
+		MaxConnIdleTime:   p.maxIdleTime,
+		MaxConnLifetime:   p.maxLifetime,
+		HealthCheckPeriod: time.Minute,
+		ConnectTimeout:    dialTimeout,
+	}.WithDefaults())
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("pool for backend %s: %w", address, err)
 	}
+	p.core = core
 
-	p.currentMax.Store(max(minIdle, 1))
 	p.roleCheckChan = make(chan struct{}, 1)
 	p.healthy.Store(true)
 
@@ -162,176 +169,50 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 	return p, nil
 }
 
-func nextPowerOf2(n uint32) uint32 {
-	if n <= 1 {
-		return 1
-	}
-	n--
-	n |= n >> 1
-	n |= n >> 2
-	n |= n >> 4
-	n |= n >> 8
-	n |= n >> 16
-	n++
-	return n
-}
-
-func (p *Server) getShard() *shard {
-	// Simple sharding by atomic counter to avoid lock contention
-	idx := uint32(p.totalRequests.Load()) & p.shardMask
-	return p.shards[idx]
-}
-
-// Acquire gets a connection from the pool or creates a new one.
+// Acquire gets a connection from the pool, creating one if capacity allows.
+//
+// The wait, the capacity ceiling and the idle-vs-fresh decision all belong to
+// the engine now; what stays here is Pontus-specific: refusing a draining
+// backend and keeping dial failures behind the circuit breaker.
 func (p *Server) Acquire(ctx context.Context) (net.Conn, error) {
-	start := time.Now()
-	defer func() {
-		p.waitDelay.Add(time.Since(start).Nanoseconds())
-	}()
-
-	s := p.getShard()
-
-	// 1. Try to get a fresh idle connection from current shard
-	for {
-		select {
-		case pc := <-s.idleConns:
-			if time.Since(pc.at) > p.maxIdleTime || (p.maxLifetime > 0 && time.Since(pc.createdAt) > p.maxLifetime) {
-				pc.conn.Close()
-				p.releaseSlot(s)
-				continue
-			}
-			if c, ok := pc.conn.(*Conn); ok {
-				c.IncUseCount()
-			}
-			p.activeConns.Add(1)
-			s.activeConns.Add(1)
-			return pc.conn, nil
-		default:
-			goto tryAcquireSlot
-		}
+	if p.IsDraining() {
+		return nil, ErrDraining
 	}
 
-tryAcquireSlot:
-	// 2. Try to acquire a slot to create a new one
-	if p.acquireSlot(ctx, s) {
-		// Slot acquired, dial a new connection using the circuit breaker
-		var conn net.Conn
-		err := p.breaker.Call(ctx, func() error {
-			var derr error
-			conn, derr = p.dial(ctx)
-			return derr
-		})
-
-		if err != nil {
-			p.releaseSlot(s)
-			return nil, err
-		}
-		if c, ok := conn.(*Conn); ok {
-			c.IncUseCount()
-		}
-		p.activeConns.Add(1)
-		s.activeConns.Add(1)
-		return conn, nil
-	}
-
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
-	priority := getPriority(ctx)
-
-	// Automatic Adaptive maxWaiters adjustment
-	dynamicMaxWaiters := int64(p.maxWaiters)
-	if p.monitor != nil {
-		stats := p.monitor.Stats()
-		// If goroutine count is high, we should be more aggressive about rejecting waiters
-		// to prevent cascading failure
-		if stats.NumGoroutines > 100000 {
-			dynamicMaxWaiters = int64(float64(p.maxWaiters) * 0.5)
-		}
-	}
-
-	if s.waitersCount[priority].Load() >= dynamicMaxWaiters/int64(len(p.shards)) {
-		return nil, fmt.Errorf("wait queue full (adaptive limit %d) for priority %d", dynamicMaxWaiters, priority)
-	}
-
-	s.waitersCount[priority].Add(1)
-	defer s.waitersCount[priority].Add(-1)
-
-	// Create a sub-context with timeout if not already set or shorter
 	waitCtx, cancel := context.WithTimeoutCause(ctx, p.waitTimeout, ErrPoolExhausted)
 	defer cancel()
 
-	select {
-	case pc := <-s.idleConns:
-		if c, ok := pc.conn.(*Conn); ok {
-			c.IncUseCount()
+	var handle pooling.Handle[*Conn]
+	err := p.breaker.Call(waitCtx, func() error {
+		var aerr error
+		handle, aerr = p.core.Acquire(waitCtx)
+		return aerr
+	})
+	if err != nil {
+		if cause := context.Cause(waitCtx); cause != nil && errors.Is(cause, ErrPoolExhausted) {
+			return nil, cause
 		}
-		p.activeConns.Add(1)
-		s.activeConns.Add(1)
-		return pc.conn, nil
-	case <-waitCtx.Done():
-		return nil, context.Cause(waitCtx)
-	case conn := <-s.waiters[priority]:
-		if c, ok := conn.(*Conn); ok {
-			c.IncUseCount()
-		}
-		p.activeConns.Add(1)
-		s.activeConns.Add(1)
-		return conn, nil
+		return nil, err
 	}
+
+	conn := handle.Conn()
+	// Store the one copy of the handle; Release goes back through it.
+	conn.handle = handle
+	conn.IncUseCount()
+	p.checkedOut.Add(1)
+	return conn, nil
 }
 
-func (p *Server) acquireSlot(ctx context.Context, s *shard) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for {
-		if int32(p.activeConns.Load()) < p.currentMax.Load() {
-			return true
-		}
-
-		select {
-		case <-ctx.Done():
-			return false
-		default:
-			return false
-		}
-	}
-}
-
-func (p *Server) releaseSlot(s *shard) {
-	s.cond.Signal()
-}
-
-// ReportResult informs the pool about the success or failure of a request,
-// allowing it to adjust its capacity (AIMD).
+// ReportResult records the outcome of a request.
+//
+// This used to halve pool capacity on every error (AIMD). That made capacity
+// remotely controllable: proxyResponse reports a *client* write failure as an
+// error, so a client that connected, sent a query and disconnected in a loop
+// drove every other tenant's ceiling down to minConns. Capacity is now a fixed
+// structural bound owned by the engine, and this only feeds the error rate.
 func (p *Server) ReportResult(err error) {
 	if err != nil {
-		// Multiplicative Decrease
-		p.mu.Lock()
-		curr := p.currentMax.Load()
-		newMax := int32(float64(curr) * 0.5)
-		if newMax < max(p.minConns, 1) {
-			newMax = max(p.minConns, 1)
-		}
-		p.currentMax.Store(newMax)
-		p.mu.Unlock()
-		return
-	}
-
-	// Additive Increase
-	// Only increase if we've reached the current limit
-	if int32(p.activeConns.Load()) >= p.currentMax.Load() {
-		p.mu.Lock()
-		curr := p.currentMax.Load()
-		if curr < p.maxConns {
-			p.currentMax.Store(curr + 1)
-			for _, s := range p.shards {
-				s.cond.Broadcast()
-			}
-		}
-		p.mu.Unlock()
+		p.IncErrors()
 	}
 }
 
@@ -344,55 +225,28 @@ func (p *Server) AgentToken() string {
 }
 
 // Release returns a connection to the pool.
+//
+// A connection that is not ours never came from the engine, so closing it is the
+// only correct disposal. Everything else — the recycle gate, idle bookkeeping,
+// permit return — happens inside Handle.Release, which is idempotent.
 func (p *Server) Release(conn net.Conn) error {
-	p.activeConns.Add(-1)
-
-	var createdAt time.Time
-	if c, ok := conn.(*Conn); ok {
-		createdAt = c.CreatedAt()
-	} else {
-		createdAt = time.Now()
+	c, ok := conn.(*Conn)
+	if !ok {
+		return conn.Close()
 	}
+	p.checkedOut.Add(-1)
 
-	s := p.getShard()
-	s.activeConns.Add(-1)
-	return p.releaseWithMetadata(s, conn, createdAt)
-}
-
-func (p *Server) releaseWithMetadata(s *shard, conn net.Conn, createdAt time.Time) error {
-	// If it's our wrapped Conn, use its actual createdAt
-	if c, ok := conn.(*Conn); ok {
-		createdAt = c.CreatedAt()
-	}
-
-	// If draining, close connection and release slot
 	if p.IsDraining() {
-		p.releaseSlot(s)
-		if p.activeConns.Load() == 0 {
-			p.SetDraining(false) // Finished draining
-		}
-		return conn.Close()
+		// Do not put it back; a draining backend should shed connections.
+		c.MarkBroken()
 	}
 
-	// Try to hand off to prioritized waiters first in the current shard
-	for i := len(s.waiters) - 1; i >= 0; i-- {
-		select {
-		case s.waiters[i] <- conn:
-			return nil
-		default:
-		}
-	}
+	c.handle.Release()
 
-	select {
-	case <-p.ctx.Done():
-		return conn.Close()
-	case s.idleConns <- pooledConn{conn: conn, at: time.Now(), createdAt: createdAt}:
-		return nil
-	default:
-		// Pool full, close connection and release slot
-		p.releaseSlot(s)
-		return conn.Close()
+	if p.IsDraining() && p.ActiveConns() == 0 {
+		p.SetDraining(false) // Finished draining
 	}
+	return nil
 }
 
 // IsHealthy returns the current health status.
@@ -420,9 +274,16 @@ func (p *Server) SetWeight(weight int) {
 	p.mu.Unlock()
 }
 
-// ActiveConns returns the number of active connections.
+// SetMaxConns adjusts the pool ceiling within the configured max_conns. It does
+// not block, and a value outside [min_idle, max_conns] is refused rather than
+// clamped, so a miscalculated target is visible instead of silently ignored.
+func (p *Server) SetMaxConns(n int32) error {
+	return p.core.SetMaxConns(n)
+}
+
+// ActiveConns returns the number of connections currently checked out.
 func (p *Server) ActiveConns() int64 {
-	return p.activeConns.Load()
+	return p.checkedOut.Load()
 }
 
 // Role returns the backend role.
@@ -446,18 +307,12 @@ func (p *Server) setRole(role Role) {
 	}
 }
 
+// clearIdleConns discards every pooled connection, so a backend that has just
+// changed role does not hand a connection opened against the old role to the
+// next caller. Connections still checked out are judged when they are released.
 func (p *Server) clearIdleConns() {
-	for _, s := range p.shards {
-		n := len(s.idleConns)
-		for range n {
-			select {
-			case pc := <-s.idleConns:
-				pc.conn.Close()
-				p.releaseSlot(s)
-			default:
-				break
-			}
-		}
+	if n := p.core.EvictIdle(); n > 0 {
+		slog.Info("Discarded pooled connections after role change", "address", p.address, "count", n)
 	}
 }
 
@@ -528,27 +383,20 @@ func (p *Server) SetDraining(draining bool) {
 
 // ReevaluateRole triggers an immediate check of the backend role and health.
 func (p *Server) Stats() BackendStats {
-	var totalWaiters int64
-	var totalIdle int32
-	for _, s := range p.shards {
-		for i := range s.waitersCount {
-			totalWaiters += s.waitersCount[i].Load()
-		}
-		totalIdle += int32(len(s.idleConns))
-	}
+	st := p.core.Stat()
 
+	// Only blocked acquisitions are timed, so the mean wait is over those.
 	avgWaitDelay := time.Duration(0)
-	reqs := p.totalRequests.Load()
-	if reqs > 0 {
-		avgWaitDelay = time.Duration(p.waitDelay.Load() / reqs)
+	if empty := st.EmptyAcquireCount(); empty > 0 {
+		avgWaitDelay = st.AcquireDuration() / time.Duration(empty)
 	}
 
 	return BackendStats{
-		MaxConns:      p.maxConns,
-		ActiveConns:   int32(p.activeConns.Load()),
-		IdleConns:     totalIdle,
-		WaitQueueSize: totalWaiters,
-		TotalRequests: reqs,
+		MaxConns:      st.MaxConnections(),
+		ActiveConns:   int32(p.checkedOut.Load()),
+		IdleConns:     st.IdleConnections(),
+		WaitQueueSize: int64(st.WaitingAcquires()),
+		TotalRequests: p.totalRequests.Load(),
 		TotalErrors:   p.totalErrors.Load(),
 		AvgWaitDelay:  avgWaitDelay,
 	}
@@ -565,7 +413,9 @@ func (p *Server) AdaptiveStatus() (isThrottled bool, reason string, currentMaxWa
 		goroutines = int32(p.monitor.Stats().NumGoroutines)
 	}
 
-	return isThrottled, reason, int32(p.maxWaiters), goroutines, suggestions
+	// Callers parked for a connection right now — the actual saturation signal,
+	// rather than the cumulative "has been short at some point" counter.
+	return isThrottled, reason, p.core.Stat().WaitingAcquires(), goroutines, suggestions
 }
 
 func (p *Server) DatabaseMetrics() *domain.DatabaseMetrics {
@@ -648,8 +498,8 @@ func (p *Server) SetHealthy(healthy bool) {
 
 // Start starts background tasks for the pool.
 func (p *Server) Start(ctx context.Context) {
-	idleTicker := time.NewTicker(p.maxIdleTime / 2)
-	minIdleTicker := time.NewTicker(10 * time.Second)
+	// No idle/min-idle tickers: the engine reaps expired connections and warms
+	// back up to MinConns on its own maintenance goroutine.
 	deepCheckTicker := time.NewTicker(30 * time.Second)
 	metricsTicker := time.NewTicker(5 * time.Second)
 	agentInfoTicker := time.NewTicker(5 * time.Minute)
@@ -662,8 +512,6 @@ func (p *Server) Start(ctx context.Context) {
 	p.fetchAgentInfo(ctx)
 
 	go func() {
-		defer idleTicker.Stop()
-		defer minIdleTicker.Stop()
 		defer deepCheckTicker.Stop()
 		defer metricsTicker.Stop()
 		defer agentInfoTicker.Stop()
@@ -672,10 +520,6 @@ func (p *Server) Start(ctx context.Context) {
 
 		for {
 			select {
-			case <-idleTicker.C:
-				p.cleanIdle()
-			case <-minIdleTicker.C:
-				p.maintainMinIdle(ctx)
 			case <-deepCheckTicker.C:
 				if !p.deepCheck(ctx) {
 					consecutiveFailures++
@@ -714,45 +558,27 @@ func (p *Server) reportMetrics() {
 }
 
 func (p *Server) deepCheck(ctx context.Context) bool {
-	var conn net.Conn
-	var pc pooledConn
-	var fromPool bool
-	var s *shard
-
-	// Try to pick one idle connection from a random shard
-	s = p.getShard()
-	select {
-	case pc = <-s.idleConns:
-		conn = pc.conn
-		fromPool = true
-	default:
-		// Dial a new one if none idle
-		var err error
-		conn, err = p.dial(ctx)
-		if err != nil {
-			p.SetHealthy(false)
-			return false
-		}
-		defer conn.Close()
+	// Go through the pool rather than reaching into it: the engine owns whether
+	// this reuses an idle connection or dials a fresh one, and releasing through
+	// the handle keeps the accounting honest either way.
+	conn, err := p.core.Acquire(ctx)
+	if err != nil {
+		p.SetHealthy(false)
+		return false
 	}
-
-	if fromPool {
-		defer p.releaseWithMetadata(s, conn, pc.createdAt)
-	}
+	c := conn.Conn()
+	defer conn.Release()
 
 	// 1. Basic Deep Check
-	if err := p.handler.DeepCheck(ctx, conn); err != nil {
-		if fromPool {
-			conn.Close()
-			p.releaseSlot(s)
-		}
+	if err := p.handler.DeepCheck(ctx, c); err != nil {
+		c.MarkBroken()
 		p.SetHealthy(false)
 		return false
 	}
 	p.SetHealthy(true)
 
 	// 2. Detect Role change
-	if isReadOnly, err := p.handler.IsReadOnly(ctx, conn); err == nil {
+	if isReadOnly, err := p.handler.IsReadOnly(ctx, c); err == nil {
 		newRole := RolePrimary
 		if isReadOnly {
 			newRole = RoleReplica
@@ -764,12 +590,12 @@ func (p *Server) deepCheck(ctx context.Context) bool {
 	}
 
 	// 3. Check Replication Lag
-	if lag, err := p.handler.GetReplicationLag(ctx, conn); err == nil {
+	if lag, err := p.handler.GetReplicationLag(ctx, c); err == nil {
 		p.replicationLag.Store(lag.Nanoseconds())
 	}
 
 	// 4. Collect detailed Database Metrics
-	p.collectDatabaseMetrics(ctx, conn)
+	p.collectDatabaseMetrics(ctx, c)
 
 	return true
 }
@@ -795,91 +621,21 @@ func (p *Server) collectDatabaseMetrics(ctx context.Context, conn net.Conn) {
 	observability.ReplicationLagBytes.WithLabelValues(p.address).Set(float64(metrics.ReplicationLagBytes))
 }
 
-func (p *Server) maintainMinIdle(ctx context.Context) {
-	if p.minIdle <= 0 {
-		return
-	}
-
-	totalIdle := int32(0)
-	for _, s := range p.shards {
-		totalIdle += int32(len(s.idleConns))
-	}
-
-	if totalIdle >= p.minIdle {
-		return
-	}
-
-	needed := p.minIdle - totalIdle
-	for range needed {
-		// Try to acquire a slot and dial in a random shard
-		s := p.getShard()
-		if p.acquireSlot(ctx, s) {
-			go func(sh *shard) {
-				conn, err := p.dial(ctx)
-				if err != nil {
-					p.releaseSlot(sh)
-					return
-				}
-				// Put in pool
-				if err := p.releaseWithMetadata(sh, conn, time.Now()); err != nil {
-					// Connection closed by releaseWithMetadata if pool full
-				}
-			}(s)
-		} else {
-			// No slots available
-			return
-		}
-	}
-}
-
-func (p *Server) cleanIdle() {
-	for _, s := range p.shards {
-		n := len(s.idleConns)
-		for range n {
-			select {
-			case pc := <-s.idleConns:
-				if time.Since(pc.at) > p.maxIdleTime {
-					pc.conn.Close()
-					p.releaseSlot(s)
-				} else {
-					s.idleConns <- pc
-				}
-			default:
-				break
-			}
-		}
-	}
-}
+// maintainMinIdle and cleanIdle are gone: the engine warms up to MinConns and
+// reaps against MaxConnIdleTime / MaxConnLifetime on its own HealthCheckPeriod
+// goroutine, so duplicating either here would just race with it.
 
 // Close shuts down the pool.
 func (p *Server) Close() error {
 	if p.cancel != nil {
 		p.cancel()
 	}
-
-	// Close all idle connections in all shards
-	for _, s := range p.shards {
-		close(s.idleConns)
-		for pc := range s.idleConns {
-			pc.conn.Close()
-		}
+	if p.core != nil {
+		// Drains checked-out connections, then destroys the idle ones.
+		p.core.Close()
 	}
-
+	if p.agentConn != nil {
+		_ = p.agentConn.Close()
+	}
 	return nil
-}
-
-func (p *Server) dial(ctx context.Context) (net.Conn, error) {
-	d := net.Dialer{Timeout: p.dialTimeout}
-	var conn net.Conn
-	var err error
-	if p.tlsConfig != nil {
-		conn, err = tls.DialWithDialer(&d, "tcp", p.address, p.tlsConfig)
-	} else {
-		conn, err = d.DialContext(ctx, "tcp", p.address)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-	return NewConn(conn), nil
 }

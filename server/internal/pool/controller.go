@@ -169,23 +169,29 @@ func (c *AdaptivePoolController) adjust() {
 	c.suggestions = newSuggestions
 	c.mu.Unlock()
 
-	// Ensure some minimums and respect configured maximums
-	if targetPoolSize < 10 {
-		targetPoolSize = 10
+	// Keep the target inside what the engine will accept: below MinConns or above
+	// the configured max_conns is refused, not clamped.
+	if floor := max(c.pool.minConns, 1); targetPoolSize < floor {
+		targetPoolSize = floor
 	}
 	if targetPoolSize > c.pool.maxConns {
 		targetPoolSize = c.pool.maxConns
 	}
 
-	currentMax := c.pool.currentMax.Load()
-	if targetPoolSize != currentMax {
-		slog.Info("BBR-style adaptive pooling adjustment",
-			"address", c.pool.Address(),
-			"old", currentMax,
-			"new", targetPoolSize,
-			"rps", rps,
-			"min_latency", c.minLatency)
-		c.pool.currentMax.Store(targetPoolSize)
+	if current := c.pool.core.MaxConns(); targetPoolSize != current {
+		// Shrinking never blocks: the engine reclaims free permits now and takes
+		// the rest from connections as they are released.
+		if err := c.pool.SetMaxConns(targetPoolSize); err != nil {
+			slog.Warn("Adaptive pool resize refused",
+				"address", c.pool.Address(), "target", targetPoolSize, "error", err)
+		} else {
+			slog.Info("Adaptive pool resize",
+				"address", c.pool.Address(),
+				"old", current,
+				"new", targetPoolSize,
+				"rps", rps,
+				"min_latency", c.minLatency)
+		}
 	}
 
 	c.lastCheck = now

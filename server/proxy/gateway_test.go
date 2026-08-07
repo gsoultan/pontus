@@ -130,6 +130,12 @@ func (m *mockBackend) ReportResult(error)                      {}
 func (m *mockBackend) AgentClient() service.AgentServiceClient { return nil }
 func (m *mockBackend) AgentToken() string                      { return "" }
 func (m *mockBackend) Close() error                            { return nil }
+func (m *mockBackend) InstalledVersion() string                { return "" }
+func (m *mockBackend) RecommendedVersion() string              { return "" }
+func (m *mockBackend) AvailableVersions() []string             { return nil }
+func (m *mockBackend) DatabaseMetrics() *domain.DatabaseMetrics {
+	return nil
+}
 
 type mockBalancer struct {
 	backend *mockBackend

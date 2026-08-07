@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gsoultan/pontus/api/proto/domain"
 	"github.com/gsoultan/pontus/api/proto/endpoints"
 	"github.com/gsoultan/pontus/api/proto/service"
 	"github.com/gsoultan/pontus/pkg/config"
@@ -67,6 +68,12 @@ func (m *mockIntegrationBackend) ReportResult(error)                      {}
 func (m *mockIntegrationBackend) AgentClient() service.AgentServiceClient { return nil }
 func (m *mockIntegrationBackend) AgentToken() string                      { return "" }
 func (m *mockIntegrationBackend) Close() error                            { return nil }
+func (m *mockIntegrationBackend) InstalledVersion() string                { return "" }
+func (m *mockIntegrationBackend) RecommendedVersion() string              { return "" }
+func (m *mockIntegrationBackend) AvailableVersions() []string             { return nil }
+func (m *mockIntegrationBackend) DatabaseMetrics() *domain.DatabaseMetrics {
+	return nil
+}
 
 type mockIntegrationHandler struct {
 	mockHandler
