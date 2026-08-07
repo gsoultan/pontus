@@ -82,6 +82,24 @@ jobs:
           go build -v -o /dev/null ./cmd/agent
           go build -v -o /dev/null ./cmd/pontusctl
 
+      # End-to-end suite against a real PostgreSQL. Skips itself when no
+      # backend is reachable, so it never blocks on infrastructure being down.
+      - name: Start PostgreSQL
+        run: |
+          docker run -d --name pontus-e2e-pg -p 5433:5432 \
+            -e POSTGRES_PASSWORD=postgres postgres:17-alpine
+          for i in $(seq 1 30); do
+            docker exec pontus-e2e-pg pg_isready -U postgres && break
+            sleep 2
+          done
+
+      - name: Go E2E
+        run: go test -tags e2e -timeout 20m ./e2e/...
+
+      - name: Stop PostgreSQL
+        if: always()
+        run: docker rm -f pontus-e2e-pg || true
+
       - name: GoReleaser Check
         uses: goreleaser/goreleaser-action@v6
         with:
