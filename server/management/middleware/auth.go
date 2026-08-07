@@ -17,6 +17,8 @@ import (
 // security decision, not a formality.
 var readOnlyProcedures = []string{
 	"/GetStatus",
+	// Streaming form of GetStatus; same data, same read-only classification.
+	"/StreamStatus",
 	"/ListProjects",
 	"/GetMetricsHistory",
 	"/GetTopQueriesHistory",
