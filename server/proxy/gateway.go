@@ -63,6 +63,11 @@ func NewGateway(h protocol.Handler, b balancer2.Balancer, orch FailoverOrchestra
 
 	g := new(Gateway)
 	g.ctx, g.cancel = context.WithCancel(context.Background())
+	// Built once and never replaced. reconfigure() used to rebuild it on every
+	// hot reload, which both raced with handleClient reading it unlocked and
+	// stranded any goroutine already parked in pauseCond.Wait() — Broadcast on
+	// the new cond cannot wake a waiter on the old one.
+	g.pauseCond = sync.NewCond(g.failoverMu.RLocker())
 	g.handler = h
 	g.balancer = b
 	g.orchestrator = orch
@@ -80,7 +85,6 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	if cfg.QueryTimeout > 0 {
 		g.queryTimeout = cfg.QueryTimeout
 	}
-	g.pauseCond = sync.NewCond(g.failoverMu.RLocker())
 	if cfg.RateLimit != nil && cfg.RateLimit.Enabled {
 		g.limiter = rate.NewLimiter(rate.Limit(cfg.RateLimit.RPS), cfg.RateLimit.Burst)
 		// Per-tenant limiters share the configured rate and live in a bounded,

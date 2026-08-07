@@ -129,6 +129,18 @@ func (m *FailoverManager) monitor(ctx context.Context) {
 	}
 }
 
+// setState stores the failover state under the lock.
+//
+// The transitions on the error and success paths below used to assign
+// m.state directly while monitor(), State() and the deferred reset read it
+// under m.mu — a data race on the variable that decides whether a failover is
+// already running, which is the last place a torn read is acceptable.
+func (m *FailoverManager) setState(state FailoverState) {
+	m.mu.Lock()
+	m.state = state
+	m.mu.Unlock()
+}
+
 func (m *FailoverManager) TriggerFailover(ctx context.Context) error {
 	m.mu.Lock()
 	if m.state == StatePromoting {
@@ -151,7 +163,7 @@ func (m *FailoverManager) TriggerFailover(ctx context.Context) error {
 	// 1. Find best replica (lowest lag)
 	bestReplica, err := m.findBestReplica(ctx)
 	if err != nil {
-		m.state = StateFailed
+		m.setState(StateFailed)
 		return fmt.Errorf("failed to find replica to promote: %w", err)
 	}
 
@@ -159,7 +171,7 @@ func (m *FailoverManager) TriggerFailover(ctx context.Context) error {
 
 	// 2. Promote
 	if err := m.provisioner.PromoteToPrimary(ctx, bestReplica.Address()); err != nil {
-		m.state = StateFailed
+		m.setState(StateFailed)
 		return fmt.Errorf("failed to promote %s: %w", bestReplica.Address(), err)
 	}
 
@@ -171,7 +183,7 @@ func (m *FailoverManager) TriggerFailover(ctx context.Context) error {
 	}
 
 	slog.Info("Replica promoted successfully", "address", bestReplica.Address())
-	m.state = StateVerifying
+	m.setState(StateVerifying)
 
 	// Reset to idle after verification period (simulated)
 	go func() {
