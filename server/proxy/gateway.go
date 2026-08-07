@@ -32,7 +32,7 @@ type Gateway struct {
 	orchestrator   FailoverOrchestrator
 	wg             sync.WaitGroup
 	limiter        *rate.Limiter
-	tenantLimiters sync.Map // string -> *rate.Limiter
+	tenantLimiters *middleware.TenantLimiters
 	fwConfig       *config.Firewall
 	fwPatterns     []*regexp.Regexp
 	cacheConfig    *config.Cache
@@ -49,6 +49,11 @@ type Gateway struct {
 	shadowBackends []pool2.Backend
 	monitor        *system.Monitor
 	backendTLS     *tls.Config
+
+	// ctx bounds gateway-owned background work (the cache janitor) so it stops
+	// with the gateway rather than outliving it.
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewGateway creates a new Gateway.
@@ -57,6 +62,7 @@ func NewGateway(h protocol.Handler, b balancer2.Balancer, orch FailoverOrchestra
 	m.Start(5 * time.Second)
 
 	g := new(Gateway)
+	g.ctx, g.cancel = context.WithCancel(context.Background())
 	g.handler = h
 	g.balancer = b
 	g.orchestrator = orch
@@ -77,8 +83,14 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	g.pauseCond = sync.NewCond(g.failoverMu.RLocker())
 	if cfg.RateLimit != nil && cfg.RateLimit.Enabled {
 		g.limiter = rate.NewLimiter(rate.Limit(cfg.RateLimit.RPS), cfg.RateLimit.Burst)
+		// Per-tenant limiters share the configured rate and live in a bounded,
+		// self-evicting map. The key is a client-supplied username, so an
+		// unbounded map is a remote OOM rather than a rate limit.
+		g.tenantLimiters = middleware.NewTenantLimiters(
+			rate.Limit(cfg.RateLimit.RPS), cfg.RateLimit.Burst, middleware.DefaultMaxTenants)
 	} else {
 		g.limiter = nil
+		g.tenantLimiters = nil
 	}
 	if cfg.Firewall != nil && cfg.Firewall.Enabled {
 		g.fwConfig = cfg.Firewall
@@ -97,7 +109,11 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	if cfg.Cache != nil && cfg.Cache.Enabled {
 		g.cacheConfig = cfg.Cache
 		if g.cacheManager == nil {
-			g.cacheManager = cache.NewManager()
+			// MaxSize was parsed and never read, so the map grew without bound
+			// keyed by client-supplied query text. The janitor is what reclaims
+			// entries no write happens to invalidate.
+			g.cacheManager = cache.NewManagerWithSize(cfg.Cache.MaxSize)
+			g.cacheManager.StartJanitor(time.Minute, g.ctx.Done())
 		}
 	} else {
 		g.cacheConfig = nil
@@ -139,7 +155,7 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 
 	// Initialize middleware chain
 	g.chain = middleware.Chain{
-		middleware.NewRateLimit(g.limiter, &g.tenantLimiters),
+		middleware.NewRateLimit(g.limiter, g.tenantLimiters),
 		middleware.NewFirewall(g.fwConfig, g.handler),
 		middleware.NewCache(g.cacheManager, g.cacheConfig, g.handler),
 	}
@@ -182,7 +198,9 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	canCollapse := s.QueryInfo.ReadOnly && !s.QueryInfo.InTransaction && s.State.TxState == protocol.StateIdle
 	var call *inflightCall
 	if canCollapse {
-		key := string(s.Data)
+		// Same rule as the cache: collapsing two requests means one client is
+		// served the other's bytes, so the key has to include who asked.
+		key := middleware.CacheKey(s)
 		m.collapserMu.Lock()
 		if c, ok := m.inFlight[key]; ok {
 			m.collapserMu.Unlock()
@@ -246,8 +264,12 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 
 	// 3. Traffic Shadowing (Mirroring)
 	if len(m.shadowBackends) > 0 {
+		// Copy: s.Data is a view into the one per-session buffer that the read
+		// loop overwrites on the next client message, so a goroutine reading it
+		// later mirrors whatever the session moved on to.
+		mirrored := bytes.Clone(s.Data)
 		m.wg.Go(func() {
-			m.mirrorRequest(context.Background(), s.Data, s.State)
+			m.mirrorRequest(context.Background(), mirrored, s.State)
 		})
 	}
 
@@ -265,6 +287,17 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 		s.Backend.Release(s.Server)
 		s.Server = nil
 		return err
+	}
+
+	// Track only what the backend has actually been told, and only after the
+	// firewall admitted it. Recording the statement against this specific
+	// connection is what stops a later replay re-parsing a name it already has.
+	m.handler.TrackSessionState(s.State, s.Data)
+	m.handler.TrackPreparedStatement(s.State, s.Data)
+	if name := protocol.ParseStatementName(s.Data); name != "" {
+		if holder, ok := s.Server.(protocol.StatementHolder); ok {
+			holder.AddStatement(name)
+		}
 	}
 
 	var capture *bytes.Buffer
@@ -406,14 +439,11 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 
 		session.Data = buf[:n]
 
-		// Fast Path: Check if this is a query message ('Q' or 'P')
-		isQuery := n > 0 && (session.Data[0] == 'Q' || session.Data[0] == 'P')
-
-		if isQuery {
-			// Track session state changes
-			g.handler.TrackSessionState(session.State, session.Data)
-			g.handler.TrackPreparedStatement(session.State, session.Data)
-		}
+		// Session state is tracked in executeRequest, once the message has actually
+		// been written to a backend. Doing it here meant a query the firewall went
+		// on to *block* was still recorded and later replayed verbatim onto a fresh
+		// connection with no firewall check, and it meant a statement was replayed
+		// onto the very connection about to parse it.
 
 		session.Normalized = g.handler.NormalizeQuery(session.Data)
 		session.QueryInfo = g.handler.ClassifyQuery(session.Data)
@@ -528,6 +558,9 @@ func (g *Gateway) triggerFailover() {
 // Stop waits for all active connections to close.
 func (g *Gateway) Stop(ctx context.Context) error {
 	slog.Info("Gateway stopping, waiting for active connections")
+	if g.cancel != nil {
+		g.cancel()
+	}
 	if g.monitor != nil {
 		g.monitor.Stop()
 	}

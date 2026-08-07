@@ -3,19 +3,18 @@ package middleware
 import (
 	"context"
 	"strings"
-	"sync"
 
 	"github.com/gsoultan/pontus/server/internal/protocol"
 	"golang.org/x/time/rate"
 )
 
 type RateLimit struct {
-	limiter        *rate.Limiter
-	tenantLimiters *sync.Map
+	limiter *rate.Limiter
+	tenants *TenantLimiters
 }
 
-func NewRateLimit(limiter *rate.Limiter, tenantLimiters *sync.Map) *RateLimit {
-	return &RateLimit{limiter: limiter, tenantLimiters: tenantLimiters}
+func NewRateLimit(limiter *rate.Limiter, tenants *TenantLimiters) *RateLimit {
+	return &RateLimit{limiter: limiter, tenants: tenants}
 }
 
 func (m *RateLimit) Handle(ctx context.Context, s *Session, next HandlerFunc) error {
@@ -27,9 +26,10 @@ func (m *RateLimit) Handle(ctx context.Context, s *Session, next HandlerFunc) er
 		}
 	}
 
-	if s.State.User != "" {
-		limiter, _ := m.tenantLimiters.LoadOrStore(s.State.User, rate.NewLimiter(rate.Limit(100), 200))
-		if err := limiter.(*rate.Limiter).WaitN(ctx, cost); err != nil {
+	// Per-tenant limits use the configured rate; they were previously pinned
+	// to a hardcoded 100rps/200burst that ignored config entirely.
+	if s.State.User != "" && m.tenants != nil {
+		if err := m.tenants.Get(s.State.User).WaitN(ctx, cost); err != nil {
 			return err
 		}
 	}
