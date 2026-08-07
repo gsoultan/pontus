@@ -17,6 +17,10 @@ type MetricStore interface {
 	GetHistory(ctx context.Context, start, end time.Time) ([]*domain.MetricSnapshot, error)
 	SaveTopQueries(ctx context.Context, stats []*domain.TopQuery) error
 	GetTopQueries(ctx context.Context, start, end time.Time, limit int) ([]*domain.TopQuery, error)
+	// SaveCounters/LoadCounters carry lifetime totals across restarts so the
+	// dashboard's cumulative tiles do not reset to zero on every deploy.
+	SaveCounters(ctx context.Context, totalRequests, totalErrors int64) error
+	LoadCounters(ctx context.Context) (totalRequests, totalErrors int64, err error)
 	Prune(ctx context.Context, olderThan time.Time) (int64, error)
 	Close() error
 }
@@ -74,10 +78,54 @@ func initMetricSchema(db *sql.DB) error {
 		last_seen DATETIME
 	);
 	CREATE INDEX IF NOT EXISTS idx_queries_timestamp ON top_queries_history(timestamp);
-	CREATE INDEX IF NOT EXISTS idx_queries_query ON top_queries_history(query);
+	CREATE TABLE IF NOT EXISTS counters (
+		name TEXT PRIMARY KEY,
+		value INTEGER NOT NULL
+	);
 	`
-	_, err := db.Exec(query)
+	if _, err := db.Exec(query); err != nil {
+		return err
+	}
+
+	// idx_queries_query indexed the full statement text — client-supplied and
+	// unbounded in length, so the index could outgrow the table it indexed.
+	// Reads always bound by timestamp first; the GROUP BY does not need it.
+	if _, err := db.Exec(`DROP INDEX IF EXISTS idx_queries_query`); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *sqliteMetricStore) SaveCounters(ctx context.Context, totalRequests, totalErrors int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO counters (name, value) VALUES ('total_requests', ?), ('total_errors', ?)
+		ON CONFLICT(name) DO UPDATE SET value = excluded.value
+	`, totalRequests, totalErrors)
 	return err
+}
+
+func (s *sqliteMetricStore) LoadCounters(ctx context.Context) (int64, int64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT name, value FROM counters WHERE name IN ('total_requests','total_errors')`)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer rows.Close()
+
+	var totalRequests, totalErrors int64
+	for rows.Next() {
+		var name string
+		var value int64
+		if err := rows.Scan(&name, &value); err != nil {
+			return 0, 0, err
+		}
+		switch name {
+		case "total_requests":
+			totalRequests = value
+		case "total_errors":
+			totalErrors = value
+		}
+	}
+	return totalRequests, totalErrors, rows.Err()
 }
 
 func (s *sqliteMetricStore) SaveSnapshot(ctx context.Context, snap *domain.MetricSnapshot) error {

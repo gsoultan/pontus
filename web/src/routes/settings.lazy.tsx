@@ -1,190 +1,407 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
-import { Container, Paper, Text, Stack, ThemeIcon, Box, Group, Button, TextInput, NumberInput, Select, LoadingOverlay, Divider, Switch, rem, useMantineColorScheme, SimpleGrid } from "@mantine/core"
-import { IconSettings, IconDeviceFloppy, IconRefresh, IconShieldLock } from "@tabler/icons-react"
-import { PageHeader } from "../layout/components/PageHeader"
-import { useClusterConfig } from "../status/hooks/useClusterConfig"
-import { useForm } from "@mantine/form"
-import { useEffect } from "react"
+import { useState } from 'react'
+import {
+  Alert,
+  Badge,
+  Box,
+  Button,
+  Container,
+  Divider,
+  Group,
+  NumberInput,
+  Paper,
+  Select,
+  SimpleGrid,
+  Skeleton,
+  Stack,
+  Switch,
+  Text,
+  TextInput,
+  ThemeIcon,
+  rem,
+} from '@mantine/core'
+import {
+  IconAlertTriangle,
+  IconDeviceFloppy,
+  IconRefresh,
+  IconSettings,
+  IconShieldLock,
+  IconUserPlus,
+  IconUsers,
+} from '@tabler/icons-react'
+import { useForm } from '@tanstack/react-form'
+import { PageHeader } from '../layout/components/PageHeader'
+import { useClusterConfig } from '../status/hooks/useClusterConfig'
+import { useServerInfo } from '../services/useServerInfo'
+import { useAuthStore } from '../store/useAuthStore'
+import { CreateUserModal } from '../users/components/CreateUserModal'
 
 export const Route = createLazyFileRoute('/settings')({
   component: SettingsPage,
 })
 
-function SettingsPage() {
-  const { colorScheme } = useMantineColorScheme();
-  const { config, isLoading, isUpdating, updateConfig, refetch } = useClusterConfig();
+const BALANCERS = [
+  { value: 'round-robin', label: 'Round Robin' },
+  { value: 'least-conns', label: 'Least Connections' },
+  { value: 'random', label: 'Random' },
+  { value: 'ip-hash', label: 'IP Hash' },
+]
 
+const POOLING_MODES = [
+  { value: 'transaction', label: 'Transaction' },
+  { value: 'session', label: 'Session' },
+  { value: 'statement', label: 'Statement' },
+]
+
+interface SettingsFormProps {
+  initialValues: {
+    query_timeout: string
+    max_conns: number
+    balancer: string
+    pooling_mode: string
+    firewall_enabled: boolean
+    firewall_max_response_size: number
+  }
+  isUpdating: boolean
+  onSubmit: (parameters: Record<string, string>) => Promise<unknown>
+  onSync: () => void
+}
+
+/**
+ * Split from the page so the form is constructed once the config has loaded.
+ * Seeding TanStack Form from `defaultValues` removes the effect that used to
+ * copy server state into form state on every render pass.
+ */
+function SettingsForm({ initialValues, isUpdating, onSubmit, onSync }: SettingsFormProps) {
   const form = useForm({
-    initialValues: {
-      query_timeout: '30s',
-      max_conns: 1000,
-      balancer: 'round-robin',
-      pooling_mode: 'transaction',
-      firewall_enabled: true,
-      firewall_max_response_size: 10,
+    defaultValues: initialValues,
+    onSubmit: async ({ value }) => {
+      await onSubmit({
+        query_timeout: value.query_timeout,
+        max_conns: String(value.max_conns),
+        balancer: value.balancer,
+        pooling_mode: value.pooling_mode,
+        firewall_enabled: value.firewall_enabled ? 'true' : 'false',
+        firewall_max_response_size: String(value.firewall_max_response_size),
+      })
+      form.reset(value)
     },
-  });
-
-  useEffect(() => {
-    if (config) {
-      form.setValues({
-        query_timeout: config.query_timeout || '30s',
-        max_conns: parseInt(config.max_conns || '1000'),
-        balancer: config.balancer || 'round-robin',
-        pooling_mode: config.pooling_mode || 'transaction',
-        firewall_enabled: config.firewall_enabled === 'true',
-        firewall_max_response_size: parseInt(config.firewall_max_response_size || '10'),
-      });
-    }
-  }, [config]);
-
-  const handleSubmit = async (values: typeof form.values) => {
-    await updateConfig({
-      query_timeout: values.query_timeout,
-      max_conns: values.max_conns.toString(),
-      balancer: values.balancer,
-      pooling_mode: values.pooling_mode,
-      firewall_enabled: values.firewall_enabled ? 'true' : 'false',
-      firewall_max_response_size: values.firewall_max_response_size.toString(),
-    });
-  };
+  })
 
   return (
-    <Container size="xl" py="md">
-      <PageHeader 
-        title="Settings" 
-        description="Global system configuration and security parameters" 
-      />
-      
-      <Stack gap="xl" pos="relative">
-        <LoadingOverlay visible={isLoading} overlayProps={{ blur: 2 }} />
-        
-        <form onSubmit={form.onSubmit(handleSubmit)}>
-          <Stack gap="lg">
-            <Paper p="md" radius="md">
-              <Stack gap="md">
-                <Group justify="space-between">
-                  <Group gap="sm">
-                    <ThemeIcon size="lg" variant="light" color="pontusBlue">
-                      <IconSettings size={20} />
-                    </ThemeIcon>
-                    <Box>
-                      <Text fw={700} size="md">Runtime Parameters</Text>
-                      <Text size="xs" c="dimmed">Global cluster configuration</Text>
-                    </Box>
-                  </Group>
-                  <Group gap="xs">
-                    <Button 
-                      variant="subtle" 
-                      color="gray" 
+    <form
+      onSubmit={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        void form.handleSubmit()
+      }}
+    >
+      <Stack gap="lg">
+        <Paper p="md" radius="md">
+          <Stack gap="md">
+            <Group justify="space-between">
+              <Group gap="sm">
+                <ThemeIcon size="lg" variant="light" color="pontusBlue">
+                  <IconSettings size={20} />
+                </ThemeIcon>
+                <Box>
+                  <Text fw={700} size="md">
+                    Runtime Parameters
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    Applied across every node in the cluster
+                  </Text>
+                </Box>
+              </Group>
+              <Group gap="xs">
+                <form.Subscribe selector={(state) => state.isDirty}>
+                  {(isDirty) =>
+                    isDirty ? (
+                      <Badge variant="light" color="orange" size="sm">
+                        Unsaved
+                      </Badge>
+                    ) : null
+                  }
+                </form.Subscribe>
+                <Button
+                  variant="subtle"
+                  color="gray"
+                  size="sm"
+                  leftSection={<IconRefresh size={16} />}
+                  onClick={onSync}
+                  disabled={isUpdating}
+                >
+                  Sync
+                </Button>
+                <form.Subscribe selector={(state) => [state.canSubmit, state.isDirty] as const}>
+                  {([canSubmit, isDirty]) => (
+                    <Button
+                      type="submit"
                       size="sm"
-                      leftSection={<IconRefresh size={16} />} 
-                      onClick={() => refetch()}
-                      disabled={isLoading}
-                    >
-                      Sync
-                    </Button>
-                    <Button 
-                      type="submit" 
-                      size="sm"
-                      leftSection={<IconDeviceFloppy size={16} />} 
+                      leftSection={<IconDeviceFloppy size={16} />}
                       loading={isUpdating}
+                      disabled={!canSubmit || !isDirty}
                     >
                       Save Changes
                     </Button>
-                  </Group>
-                </Group>
+                  )}
+                </form.Subscribe>
+              </Group>
+            </Group>
 
-                <Divider />
+            <Divider />
 
-                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+              <form.Field
+                name="query_timeout"
+                validators={{
+                  onChange: ({ value }) =>
+                    /^\d+(ms|s|m|h)$/.test(value.trim())
+                      ? undefined
+                      : 'Use a Go duration such as 30s or 500ms',
+                }}
+              >
+                {(field) => (
                   <TextInput
                     label="Query Timeout"
                     description="Maximum time for a single query"
                     placeholder="30s"
-                    {...form.getInputProps('query_timeout')}
+                    value={field.state.value}
+                    onChange={(event) => field.handleChange(event.currentTarget.value)}
+                    onBlur={field.handleBlur}
+                    error={field.state.meta.errors.join(', ') || undefined}
                   />
+                )}
+              </form.Field>
+
+              <form.Field
+                name="max_conns"
+                validators={{
+                  onChange: ({ value }) =>
+                    value > 0 ? undefined : 'Must be greater than zero',
+                }}
+              >
+                {(field) => (
                   <NumberInput
                     label="Global Connection Limit"
                     description="Concurrent sessions per proxy"
                     placeholder="1000"
-                    {...form.getInputProps('max_conns')}
+                    min={1}
+                    value={field.state.value}
+                    onChange={(value) => field.handleChange(Number(value) || 0)}
+                    onBlur={field.handleBlur}
+                    error={field.state.meta.errors.join(', ') || undefined}
                   />
+                )}
+              </form.Field>
+
+              <form.Field name="balancer">
+                {(field) => (
                   <Select
                     label="Balancing Strategy"
                     description="Logic for backend routing"
-                    data={[
-                      { value: 'round-robin', label: 'Round Robin' },
-                      { value: 'least-conns', label: 'Least Connections' },
-                      { value: 'random', label: 'Random' },
-                      { value: 'ip-hash', label: 'IP Hash' },
-                    ]}
-                    {...form.getInputProps('balancer')}
+                    data={BALANCERS}
+                    value={field.state.value}
+                    onChange={(value) => field.handleChange(value ?? 'round-robin')}
+                    allowDeselect={false}
                   />
+                )}
+              </form.Field>
+
+              <form.Field name="pooling_mode">
+                {(field) => (
                   <Select
                     label="Pooling Mode"
                     description="Database link management"
-                    data={[
-                      { value: 'transaction', label: 'Transaction' },
-                      { value: 'session', label: 'Session' },
-                      { value: 'statement', label: 'Statement' },
-                    ]}
-                    {...form.getInputProps('pooling_mode')}
+                    data={POOLING_MODES}
+                    value={field.state.value}
+                    onChange={(value) => field.handleChange(value ?? 'transaction')}
+                    allowDeselect={false}
                   />
-                </SimpleGrid>
-              </Stack>
-            </Paper>
+                )}
+              </form.Field>
+            </SimpleGrid>
+          </Stack>
+        </Paper>
 
-            <Paper p="md" radius="md">
-              <Stack gap="md">
-                <Group gap="sm">
-                  <ThemeIcon size="lg" variant="light" color="red">
-                    <IconShieldLock size={20} />
-                  </ThemeIcon>
-                  <Box>
-                    <Text fw={700} size="md">Security Settings</Text>
-                    <Text size="xs" c="dimmed">Firewall and guardrail configuration</Text>
-                  </Box>
-                </Group>
+        <Paper p="md" radius="md">
+          <Stack gap="md">
+            <Group gap="sm">
+              <ThemeIcon size="lg" variant="light" color="red">
+                <IconShieldLock size={20} />
+              </ThemeIcon>
+              <Box>
+                <Text fw={700} size="md">
+                  Security Settings
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Firewall and guardrail configuration
+                </Text>
+              </Box>
+            </Group>
 
-                <Divider />
+            <Divider />
 
-                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                  <Paper withBorder p="sm" radius="md" bg={colorScheme === 'dark' ? 'var(--mantine-color-dark-8)' : 'var(--mantine-color-gray-0)'}>
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+              <form.Field name="firewall_enabled">
+                {(field) => (
+                  <Paper
+                    withBorder
+                    p="sm"
+                    radius="md"
+                    bg="light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8))"
+                  >
                     <Switch
                       label="SQL Firewall"
                       description="Active deep packet inspection"
-                      {...form.getInputProps('firewall_enabled', { type: 'checkbox' })}
+                      checked={field.state.value}
+                      onChange={(event) => field.handleChange(event.currentTarget.checked)}
                     />
                   </Paper>
+                )}
+              </form.Field>
+
+              <form.Field name="firewall_max_response_size">
+                {(field) => (
                   <NumberInput
                     label="Max Response Size (MB)"
                     description="Limit for database responses"
                     placeholder="10"
-                    {...form.getInputProps('firewall_max_response_size')}
+                    min={1}
+                    value={field.state.value}
+                    onChange={(value) => field.handleChange(Number(value) || 0)}
                   />
-                </SimpleGrid>
-              </Stack>
-            </Paper>
+                )}
+              </form.Field>
+            </SimpleGrid>
 
-            <Paper p="md" radius="md" style={{ borderLeft: `${rem(3)} solid var(--mantine-color-pontusBlue-6)` }}>
-               <Stack gap="xs">
-                  <Text fw={700} size="sm">System Information</Text>
-                  <Group gap="xl">
-                    <Box>
-                      <Text size="10px" c="dimmed" fw={600}>Version</Text>
-                      <Text size="xs" fw={600}>v1.0.0-stable</Text>
-                    </Box>
-                    <Box>
-                      <Text size="10px" c="dimmed" fw={600}>Runtime</Text>
-                      <Text size="xs" fw={600}>Go 1.26</Text>
-                    </Box>
-                  </Group>
-               </Stack>
-            </Paper>
+            <form.Subscribe selector={(state) => state.values.firewall_enabled}>
+              {(enabled) =>
+                enabled ? null : (
+                  <Alert
+                    color="red"
+                    variant="light"
+                    radius="md"
+                    icon={<IconAlertTriangle size={16} />}
+                  >
+                    With the firewall off, every statement reaching the proxy is forwarded to the
+                    database unchecked.
+                  </Alert>
+                )
+              }
+            </form.Subscribe>
           </Stack>
-        </form>
+        </Paper>
       </Stack>
+    </form>
+  )
+}
+
+function SettingsPage() {
+  const { config, isLoading, isUpdating, updateConfig, refetch } = useClusterConfig()
+  const { data: serverInfo } = useServerInfo()
+  const isAdmin = useAuthStore((state) => state.role === 'admin')
+  const [userModalOpen, setUserModalOpen] = useState(false)
+
+  return (
+    <Container size="xl" py="md">
+      <PageHeader
+        title="Settings"
+        description="Global system configuration and security parameters"
+      />
+
+      <Stack gap="lg">
+        {isLoading ? (
+          <Stack gap="lg">
+            <Skeleton height={260} radius="md" />
+            <Skeleton height={200} radius="md" />
+          </Stack>
+        ) : (
+          <SettingsForm
+            initialValues={{
+              query_timeout: config.query_timeout || '30s',
+              max_conns: Number.parseInt(config.max_conns || '1000', 10),
+              balancer: config.balancer || 'round-robin',
+              pooling_mode: config.pooling_mode || 'transaction',
+              firewall_enabled: config.firewall_enabled === 'true',
+              firewall_max_response_size: Number.parseInt(
+                config.firewall_max_response_size || '10',
+                10,
+              ),
+            }}
+            isUpdating={isUpdating}
+            onSubmit={updateConfig}
+            onSync={() => void refetch()}
+          />
+        )}
+
+        {isAdmin && (
+          <Paper p="md" radius="md">
+            <Group justify="space-between" wrap="wrap" gap="sm">
+              <Group gap="sm">
+                <ThemeIcon size="lg" variant="light" color="pontusBlue">
+                  <IconUsers size={20} />
+                </ThemeIcon>
+                <Box>
+                  <Text fw={700} size="md">
+                    Management Users
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    Accounts that can sign in to this dashboard
+                  </Text>
+                </Box>
+              </Group>
+              <Button
+                variant="light"
+                leftSection={<IconUserPlus size={16} />}
+                onClick={() => setUserModalOpen(true)}
+              >
+                Create user
+              </Button>
+            </Group>
+          </Paper>
+        )}
+
+        <Paper
+          p="md"
+          radius="md"
+          style={{ borderLeft: `${rem(3)} solid var(--mantine-color-pontusBlue-6)` }}
+        >
+          <Stack gap="xs">
+            <Text fw={700} size="sm">
+              System Information
+            </Text>
+            <Group gap="xl">
+              <Box>
+                <Text size="10px" c="dimmed" fw={600}>
+                  Version
+                </Text>
+                <Text size="xs" fw={600}>
+                  {serverInfo?.version || '—'}
+                </Text>
+              </Box>
+              <Box>
+                <Text size="10px" c="dimmed" fw={600}>
+                  Commit
+                </Text>
+                <Text size="xs" fw={600} ff="monospace">
+                  {serverInfo?.commit ? serverInfo.commit.slice(0, 12) : '—'}
+                </Text>
+              </Box>
+              <Box>
+                <Text size="10px" c="dimmed" fw={600}>
+                  Built
+                </Text>
+                <Text size="xs" fw={600}>
+                  {serverInfo?.buildTime || '—'}
+                </Text>
+              </Box>
+            </Group>
+          </Stack>
+        </Paper>
+      </Stack>
+
+      <CreateUserModal opened={userModalOpen} onClose={() => setUserModalOpen(false)} />
     </Container>
   )
 }

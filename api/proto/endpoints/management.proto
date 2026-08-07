@@ -66,6 +66,14 @@ message GetStatusRequest {
   string proxy_id = 2;
 }
 
+message StreamStatusRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  // Server-side push interval in milliseconds. Clamped by the server to a
+  // sane floor so a client cannot ask it to busy-loop. Zero takes the default.
+  int32 interval_ms = 3;
+}
+
 message GetStatusResponse {
   repeated .api.proto.domain.BackendStatus backends = 1;
   int64 total_conns = 2;

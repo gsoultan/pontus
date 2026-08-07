@@ -5,6 +5,7 @@ import { Notifications } from '@mantine/notifications'
 import { MainLayout } from '../layout/MainLayout'
 import { theme } from '../theme'
 import { useAuthStore } from '../store/useAuthStore'
+import { PwaUpdatePrompt } from '../pwa/PwaUpdatePrompt'
 import '@mantine/core/styles.css'
 import '@mantine/notifications/styles.css'
 import '@mantine/charts/styles.css'
@@ -23,9 +24,10 @@ function RootComponent() {
 
   return (
     <MantineProvider theme={theme} defaultColorScheme="dark">
-      <Notifications />
+      <Notifications position="bottom-right" limit={4} />
+      <PwaUpdatePrompt />
       {location.pathname === '/login' ? <Outlet /> : <MainLayout />}
-      {process.env.NODE_ENV === 'development' && <TanStackRouterDevtools />}
+      {import.meta.env.DEV && <TanStackRouterDevtools />}
     </MantineProvider>
   )
 }

@@ -13,7 +13,7 @@ import {
   ThemeIcon,
   rem,
 } from "@mantine/core";
-import { useForm } from "@mantine/form";
+import { useForm } from "@tanstack/react-form";
 import { notifications } from "@mantine/notifications";
 import { IconCheck, IconDatabase } from "@tabler/icons-react";
 import { createClient } from "@connectrpc/connect";
@@ -21,10 +21,38 @@ import { ManagementService } from "../gen/api/proto/service/management_pb";
 import { transport } from "../services/transport";
 import { useAuthStore } from "../store/useAuthStore";
 import { useNavigate } from "@tanstack/react-router";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 
-const MotionStack = motion(Stack);
-const MotionListItem = motion(List.Item);
+const MotionStack = motion.create(Stack);
+const MotionListItem = motion.create(List.Item);
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.2, delayChildren: 0.5 },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, x: -20 },
+  visible: { opacity: 1, x: 0, transition: { duration: 0.5 } },
+};
+
+const FEATURES = [
+  {
+    title: "High-performance Proxy",
+    desc: "Intelligent connection pooling and query routing.",
+  },
+  {
+    title: "Real-time Observability",
+    desc: "Live query analysis and granular metrics.",
+  },
+  {
+    title: "Cluster Management",
+    desc: "Provision and manage globally distributed nodes.",
+  },
+];
 
 export function LoginPage() {
   const [loading, setLoading] = useState(false);
@@ -32,60 +60,35 @@ export function LoginPage() {
   const navigate = useNavigate();
 
   const form = useForm({
-    initialValues: {
-      username: "",
-      password: "",
-    },
-    validate: {
-      username: (value) => (value.length < 1 ? "Username is required" : null),
-      password: (value) => (value.length < 1 ? "Password is required" : null),
+    defaultValues: { username: "", password: "" },
+    onSubmit: async ({ value }) => {
+      setLoading(true);
+      try {
+        const client = createClient(ManagementService, transport);
+        const response = await client.login(value);
+
+        setAuth(response.token, response.username, response.role);
+        notifications.show({
+          title: "Login successful",
+          message: `Welcome back, ${response.username}!`,
+          color: "green",
+          icon: <IconCheck size={18} />,
+        });
+        navigate({ to: "/" });
+      } catch (error) {
+        notifications.show({
+          title: "Login failed",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Invalid username or password",
+          color: "red",
+        });
+      } finally {
+        setLoading(false);
+      }
     },
   });
-
-  const handleSubmit = async (values: typeof form.values) => {
-    setLoading(true);
-    try {
-      const client = createClient(ManagementService, transport);
-      const response = await client.login({
-        username: values.username,
-        password: values.password,
-      });
-
-      setAuth(response.token, response.username, response.role);
-      notifications.show({
-        title: "Login successful",
-        message: `Welcome back, ${response.username}!`,
-        color: "green",
-        icon: <IconCheck size={18} />,
-      });
-      navigate({ to: "/" });
-    } catch (error: any) {
-      notifications.show({
-        title: "Login failed",
-        message: error.message || "Invalid username or password",
-        color: "red",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.2,
-        delayChildren: 0.5,
-      },
-    },
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, x: -20 },
-    visible: { opacity: 1, x: 0, transition: { duration: 0.5 } },
-  };
-
 
   return (
     <Box
@@ -199,29 +202,11 @@ export function LoginPage() {
               </ThemeIcon>
             }
           >
-            {[
-              {
-                title: "High-performance Proxy",
-                desc: "Intelligent connection pooling and query routing."
-              },
-              {
-                title: "Real-time Observability",
-                desc: "Live query analysis and granular metrics."
-              },
-              {
-                title: "Cluster Management",
-                desc: "Provision and manage globally distributed nodes."
-              }
-            ].map((feature) => (
-              <MotionListItem
-                key={feature.title}
-                variants={itemVariants}
-              >
+            {FEATURES.map((feature) => (
+              <MotionListItem key={feature.title} variants={itemVariants}>
                 <Box>
                   <Text fw={600} size="md">{feature.title}</Text>
-                  <Text opacity={0.8}>
-                    {feature.desc}
-                  </Text>
+                  <Text opacity={0.8}>{feature.desc}</Text>
                 </Box>
               </MotionListItem>
             ))}
@@ -263,21 +248,55 @@ export function LoginPage() {
             </Text>
           </Stack>
 
-          <form onSubmit={form.onSubmit(handleSubmit)}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void form.handleSubmit();
+            }}
+          >
             <Stack gap="sm">
-              <TextInput
-                label="Username"
-                placeholder="Username"
-                required
-                {...form.getInputProps("username")}
-              />
+              <form.Field
+                name="username"
+                validators={{
+                  onSubmit: ({ value }) =>
+                    value.trim() ? undefined : "Username is required",
+                }}
+              >
+                {(field) => (
+                  <TextInput
+                    label="Username"
+                    placeholder="Username"
+                    required
+                    autoComplete="username"
+                    value={field.state.value}
+                    onChange={(event) => field.handleChange(event.currentTarget.value)}
+                    onBlur={field.handleBlur}
+                    error={field.state.meta.errors.join(", ") || undefined}
+                  />
+                )}
+              </form.Field>
 
-              <PasswordInput
-                label="Password"
-                placeholder="Password"
-                required
-                {...form.getInputProps("password")}
-              />
+              <form.Field
+                name="password"
+                validators={{
+                  onSubmit: ({ value }) =>
+                    value ? undefined : "Password is required",
+                }}
+              >
+                {(field) => (
+                  <PasswordInput
+                    label="Password"
+                    placeholder="Password"
+                    required
+                    autoComplete="current-password"
+                    value={field.state.value}
+                    onChange={(event) => field.handleChange(event.currentTarget.value)}
+                    onBlur={field.handleBlur}
+                    error={field.state.meta.errors.join(", ") || undefined}
+                  />
+                )}
+              </form.Field>
 
               <Button type="submit" loading={loading} fullWidth mt="md">
                 Sign In

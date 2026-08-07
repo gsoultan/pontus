@@ -1,10 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
-import { StatusContainer } from '../status/components/StatusContainer'
+import { TuningView } from '../status/components/TuningView'
 
 export const Route = createLazyFileRoute('/tuning')({
-  component: TuningPage,
+  component: TuningView,
 })
-
-function TuningPage() {
-  return <StatusContainer view="tuning" />
-}

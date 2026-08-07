@@ -33,70 +33,56 @@ func NewPostgresHandler() *PostgresHandler {
 
 // Handshake manages the PostgreSQL startup sequence.
 func (p *PostgresHandler) Handshake(ctx context.Context, client, server net.Conn, state *SessionState) error {
-	buf := buffer.Get()
-	defer buffer.Put(buf)
-
-	// 1. Read StartupMessage from client
-	n, err := client.Read(buf)
+	startup, err := p.readClientStartup(client)
 	if err != nil {
-		return fmt.Errorf("failed to read startup message: %w", err)
+		return err
 	}
 
-	// Extract user from startup message
-	if n >= 8 {
-		// PostgreSQL startup message: length(4), version(4), [key\0, value\0]*
-		payload := buf[8:n]
-		for {
-			idx := bytes.IndexByte(payload, 0)
-			if idx == -1 {
-				break
-			}
-			key := string(payload[:idx])
-			payload = payload[idx+1:]
-			idx = bytes.IndexByte(payload, 0)
-			if idx == -1 {
-				break
-			}
-			value := string(payload[:idx])
-			payload = payload[idx+1:]
-			if key == "user" {
-				state.User = value
-				break
-			}
-		}
+	state.User, state.Database = extractStartupParams(startup)
+	if state.Database == "" {
+		state.Database = state.User // PostgreSQL defaults the database to the user name
 	}
 
-	// 2. Forward to server
-	if _, err := server.Write(buf[:n]); err != nil {
+	if _, err := server.Write(startup.raw); err != nil {
 		return fmt.Errorf("failed to forward startup message: %w", err)
 	}
 
-	// 3. Forward server response until ReadyForQuery ('Z')
-	for {
-		n, err := server.Read(buf)
+	// Carry the exchange in both directions until ReadyForQuery. Authentication
+	// methods that take more than one round trip only work because the client's
+	// reply is forwarded back to the server here.
+	return relayAuth(client, server)
+}
+
+// readClientStartup returns the client's StartupMessage, answering any
+// encryption negotiation that precedes it.
+//
+// libpq defaults to sslmode=prefer, so the very first packet from an ordinary
+// client is an SSLRequest, not a StartupMessage. It is a bare 8-byte packet
+// answered by a single byte, so treating it as a StartupMessage and piping it to
+// the backend leaves both sides waiting — the reason a default-configured client
+// used to hang instead of connecting.
+func (p *PostgresHandler) readClientStartup(client net.Conn) (*startupPacket, error) {
+	for range 2 { // at most one SSLRequest and one GSSENCRequest precede the real one
+		pkt, err := readStartupPacket(client)
 		if err != nil {
-			return fmt.Errorf("failed to read from server during handshake: %w", err)
+			return nil, fmt.Errorf("failed to read startup message: %w", err)
 		}
 
-		if _, err := client.Write(buf[:n]); err != nil {
-			return fmt.Errorf("failed to forward server response: %w", err)
-		}
-
-		// Check if we got ReadyForQuery
-		// Multiple messages might be in one packet
-		for i := 0; i < n; {
-			msgType := buf[i]
-			if msgType == 'Z' {
-				return nil
+		switch pkt.code {
+		case sslRequestCode, gssEncRequestCode:
+			// Decline. Pontus terminates no TLS on the client side, and saying so
+			// lets a sslmode=prefer client fall back to plaintext and continue.
+			if _, err := client.Write([]byte{'N'}); err != nil {
+				return nil, fmt.Errorf("failed to decline encryption request: %w", err)
 			}
-			// Skip msgType (1) + length (4)
-			if i+5 > n {
-				break
-			}
-			length := int(uint32(buf[i+1])<<24 | uint32(buf[i+2])<<16 | uint32(buf[i+3])<<8 | uint32(buf[i+4]))
-			i += 1 + length
+		case cancelRequestCode:
+			return nil, fmt.Errorf("cancel request is not a session startup")
+		default:
+			return pkt, nil
 		}
 	}
+
+	return nil, fmt.Errorf("client sent no startup message after encryption negotiation")
 }
 
 // PeekTransactionState inspects PostgreSQL packets to determine the transaction status.
@@ -141,39 +127,63 @@ func (p *PostgresHandler) ClassifyQuery(data []byte) QueryInfo {
 		return QueryInfo{ReadOnly: false, InTransaction: false}
 	}
 
-	info := QueryInfo{ReadOnly: false}
+	info := QueryInfo{}
 	tokens := Tokenize(query)
+
+	// sawWrite latches. A statement that writes stays a write even though a
+	// SELECT appears later in it — `INSERT INTO audit SELECT …`,
+	// `UPDATE t SET x = (SELECT …)` and `DELETE … WHERE id IN (SELECT …)` are all
+	// writes, and routing them to a replica because of the nested SELECT is how a
+	// write ends up on a read-only backend.
+	sawWrite := false
+	sawRead := false
 
 	var lastKeyword string
 	for token := range tokens {
 		if token.Type == TokenKeyword {
 			switch token.Value {
-			case "SELECT", "SHOW", "DESCRIBE", "EXPLAIN":
-				info.ReadOnly = true
+			case "SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "WITH":
+				sawRead = true
 			case "BEGIN", "START":
 				info.InTransaction = true
 			case "FOR":
-				// Check for FOR UPDATE/SHARE
-				// We need to peek next tokens, but with iterator we can just set a flag
+				// FOR UPDATE / FOR SHARE take row locks, so they are not read-only.
 				lastKeyword = "FOR"
+				continue
 			case "UPDATE", "SHARE":
 				if lastKeyword == "FOR" {
-					info.ReadOnly = false
+					sawWrite = true
+				} else if token.Value == "UPDATE" {
+					sawWrite = true
 				}
-			case "INSERT", "DELETE", "TRUNCATE", "DROP", "ALTER", "GRANT", "REVOKE":
-				info.ReadOnly = false
+			case "INSERT", "DELETE", "TRUNCATE", "MERGE", "DROP", "ALTER", "GRANT",
+				"REVOKE", "CREATE", "COMMENT", "COPY", "CALL", "DO", "VACUUM",
+				"REFRESH", "REINDEX", "CLUSTER", "LOCK":
+				sawWrite = true
 			}
 
-			if token.Value != "FOR" {
-				lastKeyword = token.Value
-			}
-		} else if token.Type == TokenIdentifier {
-			if lastKeyword == "FROM" || lastKeyword == "JOIN" || lastKeyword == "UPDATE" || lastKeyword == "INTO" || lastKeyword == "TABLE" {
-				t := strings.ToLower(strings.Trim(token.Value, `"`))
-				info.AffectedTables = append(info.AffectedTables, t)
-			}
+			lastKeyword = token.Value
+			continue
 		}
+
+		if token.Type != TokenIdentifier {
+			continue
+		}
+
+		// The identifier right after one of these names a table the statement
+		// touches. INTO and TABLE matter for INSERT and DDL; without them an
+		// INSERT target was never recorded and write-invalidation could not fire.
+		switch lastKeyword {
+		case "FROM", "JOIN", "UPDATE", "INTO", "TABLE", "ONLY":
+			info.AffectedTables = append(info.AffectedTables,
+				strings.ToLower(strings.Trim(token.Value, `"`)))
+		}
+		// An identifier does not change what the previous keyword governs, so
+		// lastKeyword is deliberately left alone: `INSERT INTO public.orders` and
+		// `FROM a, b` both still resolve against the keyword that introduced them.
 	}
+
+	info.ReadOnly = sawRead && !sawWrite
 
 	// De-duplicate tables
 	if len(info.AffectedTables) > 1 {
@@ -208,47 +218,85 @@ func (p *PostgresHandler) NormalizeQuery(data []byte) string {
 	return p.basicNormalize(query)
 }
 
+// basicNormalize replaces literal values with '?' so that queries differing only
+// in their constants share a metrics bucket and a cache key.
+//
+// Two properties matter and both were previously wrong:
+//
+//   - A digit inside an identifier is part of the *name*, not a literal.
+//     Collapsing it made `tenant1_orders` and `tenant2_orders` normalize to the
+//     same string, so two different tables shared one cache entry.
+//   - Quoting must never swallow the rest of the statement. The firewall inspects
+//     the normalized text while the backend receives the raw bytes, so anything
+//     dropped here is a WAF blind spot. An unterminated quote now yields a
+//     trailing '?' rather than silently truncating, and backslash is not treated
+//     as an escape because PostgreSQL's standard_conforming_strings is on by
+//     default — treating it as one desynchronised the scanner from the server.
 func (p *PostgresHandler) basicNormalize(q string) string {
-	// Simple heuristic normalization:
-	// 1. Replace numbers with ?
-	// 2. Replace strings with ?
-	// 3. Replace IN (...) with IN (...)
 	sb := builderPool.Get().(*strings.Builder)
 	sb.Reset()
 	defer builderPool.Put(sb)
 
-	inString := false
-	inEscape := false
-	for _, r := range q {
-		if inString {
-			if inEscape {
-				inEscape = false
-				continue
-			}
-			if r == '\\' {
-				inEscape = true
-				continue
-			}
-			if r == '\'' {
-				inString = false
-				sb.WriteRune('?')
-			}
-			continue
-		}
-		if r == '\'' {
-			inString = true
-			continue
-		}
-		if r >= '0' && r <= '9' {
-			if sb.Len() > 0 && sb.String()[sb.Len()-1] == '?' {
-				continue
+	runes := []rune(q)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+
+		switch {
+		case r == '\'':
+			// Consume through the closing quote, honouring '' as an escaped quote.
+			i++
+			for i < len(runes) {
+				if runes[i] == '\'' {
+					if i+1 < len(runes) && runes[i+1] == '\'' {
+						i += 2
+						continue
+					}
+					break
+				}
+				i++
 			}
 			sb.WriteRune('?')
-			continue
+
+		case r == '"':
+			// A quoted identifier is a name: keep it verbatim.
+			sb.WriteRune('"')
+			i++
+			for i < len(runes) && runes[i] != '"' {
+				sb.WriteRune(runes[i])
+				i++
+			}
+			sb.WriteRune('"')
+
+		case isIdentStart(r):
+			// Identifiers keep their digits — the digits are part of the name.
+			for i < len(runes) && isIdentPart(runes[i]) {
+				sb.WriteRune(runes[i])
+				i++
+			}
+			i--
+
+		case r >= '0' && r <= '9':
+			// A numeric literal, because an identifier would have been taken above.
+			for i < len(runes) && (runes[i] >= '0' && runes[i] <= '9' || runes[i] == '.') {
+				i++
+			}
+			i--
+			sb.WriteRune('?')
+
+		default:
+			sb.WriteRune(r)
 		}
-		sb.WriteRune(r)
 	}
+
 	return sb.String()
+}
+
+func isIdentStart(r rune) bool {
+	return r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r > 127
+}
+
+func isIdentPart(r rune) bool {
+	return isIdentStart(r) || r >= '0' && r <= '9' || r == '$'
 }
 
 func (p *PostgresHandler) extractQuery(data []byte) string {
@@ -394,7 +442,15 @@ func (p *PostgresHandler) ReplayPreparedStatements(ctx context.Context, conn net
 		return nil
 	}
 
+	holder, tracksStatements := conn.(StatementHolder)
+
 	for name, query := range state.Stmts {
+		// Only replay what this particular connection is missing. Re-parsing a
+		// name the server already has fails with 42P05 and poisons the session.
+		if tracksStatements && holder.HasStatement(name) {
+			continue
+		}
+
 		// Construct 'P' message
 		payload := make([]byte, 1+4+len(name)+1+len(query)+1+2)
 		payload[0] = 'P'
@@ -442,6 +498,9 @@ func (p *PostgresHandler) ReplayPreparedStatements(ctx context.Context, conn net
 			}
 		}
 	nextStmt:
+		if tracksStatements {
+			holder.AddStatement(name)
+		}
 	}
 	return nil
 }

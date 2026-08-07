@@ -25,6 +25,18 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// runtimeConfig is the hot-reloadable state the query path reads.
+//
+// It is swapped as one immutable value rather than mutated field by field:
+// handleClient and proxyResponse read it on every request and cannot take a
+// lock without holding it across connection I/O. Publishing a snapshot also
+// keeps the chain and the firewall config consistent with each other — with
+// separate fields a request could run a new chain against an old fwConfig.
+type runtimeConfig struct {
+	chain    middleware.Chain
+	fwConfig *config.Firewall
+}
+
 // Gateway implements the proxy.Provider interface.
 type Gateway struct {
 	handler        protocol.Handler
@@ -32,7 +44,7 @@ type Gateway struct {
 	orchestrator   FailoverOrchestrator
 	wg             sync.WaitGroup
 	limiter        *rate.Limiter
-	tenantLimiters sync.Map // string -> *rate.Limiter
+	tenantLimiters *middleware.TenantLimiters
 	fwConfig       *config.Firewall
 	fwPatterns     []*regexp.Regexp
 	cacheConfig    *config.Cache
@@ -44,11 +56,17 @@ type Gateway struct {
 	inFlight       map[string]*inflightCall
 	queryTimeout   time.Duration
 	chain          middleware.Chain
+	runtime        atomic.Pointer[runtimeConfig]
 	configMu       sync.RWMutex
 	config         *config.Options
 	shadowBackends []pool2.Backend
 	monitor        *system.Monitor
 	backendTLS     *tls.Config
+
+	// ctx bounds gateway-owned background work (the cache janitor) so it stops
+	// with the gateway rather than outliving it.
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewGateway creates a new Gateway.
@@ -57,6 +75,12 @@ func NewGateway(h protocol.Handler, b balancer2.Balancer, orch FailoverOrchestra
 	m.Start(5 * time.Second)
 
 	g := new(Gateway)
+	g.ctx, g.cancel = context.WithCancel(context.Background())
+	// Built once and never replaced. reconfigure() used to rebuild it on every
+	// hot reload, which both raced with handleClient reading it unlocked and
+	// stranded any goroutine already parked in pauseCond.Wait() — Broadcast on
+	// the new cond cannot wake a waiter on the old one.
+	g.pauseCond = sync.NewCond(g.failoverMu.RLocker())
 	g.handler = h
 	g.balancer = b
 	g.orchestrator = orch
@@ -74,11 +98,16 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	if cfg.QueryTimeout > 0 {
 		g.queryTimeout = cfg.QueryTimeout
 	}
-	g.pauseCond = sync.NewCond(g.failoverMu.RLocker())
 	if cfg.RateLimit != nil && cfg.RateLimit.Enabled {
 		g.limiter = rate.NewLimiter(rate.Limit(cfg.RateLimit.RPS), cfg.RateLimit.Burst)
+		// Per-tenant limiters share the configured rate and live in a bounded,
+		// self-evicting map. The key is a client-supplied username, so an
+		// unbounded map is a remote OOM rather than a rate limit.
+		g.tenantLimiters = middleware.NewTenantLimiters(
+			rate.Limit(cfg.RateLimit.RPS), cfg.RateLimit.Burst, middleware.DefaultMaxTenants)
 	} else {
 		g.limiter = nil
+		g.tenantLimiters = nil
 	}
 	if cfg.Firewall != nil && cfg.Firewall.Enabled {
 		g.fwConfig = cfg.Firewall
@@ -97,7 +126,11 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	if cfg.Cache != nil && cfg.Cache.Enabled {
 		g.cacheConfig = cfg.Cache
 		if g.cacheManager == nil {
-			g.cacheManager = cache.NewManager()
+			// MaxSize was parsed and never read, so the map grew without bound
+			// keyed by client-supplied query text. The janitor is what reclaims
+			// entries no write happens to invalidate.
+			g.cacheManager = cache.NewManagerWithSize(cfg.Cache.MaxSize)
+			g.cacheManager.StartJanitor(time.Minute, g.ctx.Done())
 		}
 	} else {
 		g.cacheConfig = nil
@@ -139,10 +172,22 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 
 	// Initialize middleware chain
 	g.chain = middleware.Chain{
-		middleware.NewRateLimit(g.limiter, &g.tenantLimiters),
+		middleware.NewRateLimit(g.limiter, g.tenantLimiters),
 		middleware.NewFirewall(g.fwConfig, g.handler),
 		middleware.NewCache(g.cacheManager, g.cacheConfig, g.handler),
 	}
+
+	// Publish atomically for the query path.
+	g.runtime.Store(&runtimeConfig{chain: g.chain, fwConfig: g.fwConfig})
+}
+
+// current returns the active runtime configuration. Never nil after
+// NewGateway, which calls reconfigure before returning.
+func (g *Gateway) current() *runtimeConfig {
+	if rc := g.runtime.Load(); rc != nil {
+		return rc
+	}
+	return &runtimeConfig{}
 }
 
 // UpdateConfig updates the gateway configuration at runtime.
@@ -182,7 +227,9 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	canCollapse := s.QueryInfo.ReadOnly && !s.QueryInfo.InTransaction && s.State.TxState == protocol.StateIdle
 	var call *inflightCall
 	if canCollapse {
-		key := string(s.Data)
+		// Same rule as the cache: collapsing two requests means one client is
+		// served the other's bytes, so the key has to include who asked.
+		key := middleware.CacheKey(s)
 		m.collapserMu.Lock()
 		if c, ok := m.inFlight[key]; ok {
 			m.collapserMu.Unlock()
@@ -246,8 +293,12 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 
 	// 3. Traffic Shadowing (Mirroring)
 	if len(m.shadowBackends) > 0 {
+		// Copy: s.Data is a view into the one per-session buffer that the read
+		// loop overwrites on the next client message, so a goroutine reading it
+		// later mirrors whatever the session moved on to.
+		mirrored := bytes.Clone(s.Data)
 		m.wg.Go(func() {
-			m.mirrorRequest(context.Background(), s.Data, s.State)
+			m.mirrorRequest(context.Background(), mirrored, s.State)
 		})
 	}
 
@@ -265,6 +316,17 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 		s.Backend.Release(s.Server)
 		s.Server = nil
 		return err
+	}
+
+	// Track only what the backend has actually been told, and only after the
+	// firewall admitted it. Recording the statement against this specific
+	// connection is what stops a later replay re-parsing a name it already has.
+	m.handler.TrackSessionState(s.State, s.Data)
+	m.handler.TrackPreparedStatement(s.State, s.Data)
+	if name := protocol.ParseStatementName(s.Data); name != "" {
+		if holder, ok := s.Server.(protocol.StatementHolder); ok {
+			holder.AddStatement(name)
+		}
 	}
 
 	var capture *bytes.Buffer
@@ -406,20 +468,17 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 
 		session.Data = buf[:n]
 
-		// Fast Path: Check if this is a query message ('Q' or 'P')
-		isQuery := n > 0 && (session.Data[0] == 'Q' || session.Data[0] == 'P')
-
-		if isQuery {
-			// Track session state changes
-			g.handler.TrackSessionState(session.State, session.Data)
-			g.handler.TrackPreparedStatement(session.State, session.Data)
-		}
+		// Session state is tracked in executeRequest, once the message has actually
+		// been written to a backend. Doing it here meant a query the firewall went
+		// on to *block* was still recorded and later replayed verbatim onto a fresh
+		// connection with no firewall check, and it meant a statement was replayed
+		// onto the very connection about to parse it.
 
 		session.Normalized = g.handler.NormalizeQuery(session.Data)
 		session.QueryInfo = g.handler.ClassifyQuery(session.Data)
 
 		// Execute through middleware chain
-		if err := g.chain.Handle(qctx, session, g.executeRequest); err != nil {
+		if err := g.current().chain.Handle(qctx, session, g.executeRequest); err != nil {
 			slog.Error("Request failed", "client", remoteAddr, "error", err)
 			qcancel()
 			if session.Server != nil {
@@ -528,6 +587,9 @@ func (g *Gateway) triggerFailover() {
 // Stop waits for all active connections to close.
 func (g *Gateway) Stop(ctx context.Context) error {
 	slog.Info("Gateway stopping, waiting for active connections")
+	if g.cancel != nil {
+		g.cancel()
+	}
 	if g.monitor != nil {
 		g.monitor.Stop()
 	}
@@ -552,7 +614,8 @@ func (g *Gateway) CacheManager() *cache.Manager {
 
 func (g *Gateway) proxyResponse(client, server net.Conn, buf []byte, capture *bytes.Buffer, readOnly bool) (protocol.TransactionState, bool, time.Duration, error) {
 	// Fast Path: If it's a simple read-only query and no capture/firewall needed, use optimized steering
-	if readOnly && capture == nil && (g.fwConfig == nil || g.fwConfig.MaxResponseSizeMB == 0) {
+	fw := g.current().fwConfig
+	if readOnly && capture == nil && (fw == nil || fw.MaxResponseSizeMB == 0) {
 		return g.proxyResponseFastPath(client, server, buf)
 	}
 
@@ -595,8 +658,8 @@ func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, 
 	firstByte := true
 	var totalSize int64
 	maxSize := int64(0)
-	if g.fwConfig != nil && g.fwConfig.MaxResponseSizeMB > 0 {
-		maxSize = g.fwConfig.MaxResponseSizeMB * 1024 * 1024
+	if fw := g.current().fwConfig; fw != nil && fw.MaxResponseSizeMB > 0 {
+		maxSize = fw.MaxResponseSizeMB * 1024 * 1024
 	}
 
 	for {

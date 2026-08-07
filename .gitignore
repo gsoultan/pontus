@@ -18,3 +18,10 @@
 /web/node_modules
 /.idea
 
+
+# local dev stack (scripts/dev.sh)
+/.dev/
+web/bun.lock
+
+# generated knowledge graph (regenerate with: rtk graphify update .)
+/graphify-out/

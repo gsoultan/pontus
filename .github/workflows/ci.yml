@@ -33,9 +33,13 @@ jobs:
         with:
           setup_only: true
 
+      # go.sum is intentionally not tracked, so the module graph has to be
+      # resolved before any Go command runs. Plain `go mod download` is NOT
+      # enough: it writes a partial go.sum and the build still fails with
+      # "missing go.sum entry". `all` resolves the full package graph.
       - name: Install dependencies
         run: |
-          go mod download
+          go mod download all
           bun install --cwd web
 
       - name: Generate Protobuf
@@ -49,24 +53,34 @@ jobs:
             exit 1
           fi
 
+      # The dashboard bundle is an INPUT to the Go build, not an output of it:
+      # web/ui.go does //go:embed all:dist and web/dist is gitignored. Every Go
+      # step below needs it to exist, so the web build comes first.
+      - name: Web Lint
+        run: bun run --cwd web lint
+
+      - name: Web Typecheck
+        run: bun run --cwd web typecheck
+
+      - name: Web Build
+        run: bun run --cwd web build
+
       - name: Go Lint
         uses: golangci-lint/golangci-lint-action@v6
         with:
           version: latest
 
+      - name: Go Vet
+        run: go vet ./...
+
       - name: Go Test
-        run: go test -v ./...
-
-      - name: Web Lint
-        run: bun run --cwd web lint
-
-      - name: Web Build
-        run: bun run --cwd web build
+        run: go test -race -v ./...
 
       - name: Go Build Check
         run: |
           go build -v -o /dev/null ./cmd/pontus
           go build -v -o /dev/null ./cmd/agent
+          go build -v -o /dev/null ./cmd/pontusctl
 
       - name: GoReleaser Check
         uses: goreleaser/goreleaser-action@v6

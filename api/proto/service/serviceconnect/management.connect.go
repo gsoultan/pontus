@@ -56,6 +56,9 @@ const (
 	// ManagementServiceGetStatusProcedure is the fully-qualified name of the ManagementService's
 	// GetStatus RPC.
 	ManagementServiceGetStatusProcedure = "/api.proto.service.ManagementService/GetStatus"
+	// ManagementServiceStreamStatusProcedure is the fully-qualified name of the ManagementService's
+	// StreamStatus RPC.
+	ManagementServiceStreamStatusProcedure = "/api.proto.service.ManagementService/StreamStatus"
 	// ManagementServiceAddBackendProcedure is the fully-qualified name of the ManagementService's
 	// AddBackend RPC.
 	ManagementServiceAddBackendProcedure = "/api.proto.service.ManagementService/AddBackend"
@@ -156,6 +159,13 @@ type ManagementServiceClient interface {
 	UpdateProxy(context.Context, *connect.Request[endpoints.UpdateProxyRequest]) (*connect.Response[endpoints.UpdateProxyResponse], error)
 	// GetStatus returns the current status of all backends and global metrics.
 	GetStatus(context.Context, *connect.Request[endpoints.GetStatusRequest]) (*connect.Response[endpoints.GetStatusResponse], error)
+	// StreamStatus pushes status updates for as long as the client is connected.
+	//
+	// Replaces polling GetStatus on a timer. The dashboard re-fetched the entire
+	// payload — every backend, twenty top queries with full SQL text, topology,
+	// system metrics — on a fixed interval whether anything had changed or not,
+	// per connected dashboard. Read-only, same as GetStatus.
+	StreamStatus(context.Context, *connect.Request[endpoints.StreamStatusRequest]) (*connect.ServerStreamForClient[endpoints.GetStatusResponse], error)
 	// AddBackend adds a new backend to the pool.
 	AddBackend(context.Context, *connect.Request[endpoints.AddBackendRequest]) (*connect.Response[endpoints.AddBackendResponse], error)
 	// RemoveBackend removes a backend from the pool.
@@ -267,6 +277,12 @@ func NewManagementServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+ManagementServiceGetStatusProcedure,
 			connect.WithSchema(managementServiceMethods.ByName("GetStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		streamStatus: connect.NewClient[endpoints.StreamStatusRequest, endpoints.GetStatusResponse](
+			httpClient,
+			baseURL+ManagementServiceStreamStatusProcedure,
+			connect.WithSchema(managementServiceMethods.ByName("StreamStatus")),
 			connect.WithClientOptions(opts...),
 		),
 		addBackend: connect.NewClient[endpoints.AddBackendRequest, endpoints.AddBackendResponse](
@@ -455,6 +471,7 @@ type managementServiceClient struct {
 	removeProxy           *connect.Client[endpoints.RemoveProxyRequest, endpoints.RemoveProxyResponse]
 	updateProxy           *connect.Client[endpoints.UpdateProxyRequest, endpoints.UpdateProxyResponse]
 	getStatus             *connect.Client[endpoints.GetStatusRequest, endpoints.GetStatusResponse]
+	streamStatus          *connect.Client[endpoints.StreamStatusRequest, endpoints.GetStatusResponse]
 	addBackend            *connect.Client[endpoints.AddBackendRequest, endpoints.AddBackendResponse]
 	removeBackend         *connect.Client[endpoints.RemoveBackendRequest, endpoints.RemoveBackendResponse]
 	updateBackend         *connect.Client[endpoints.UpdateBackendRequest, endpoints.UpdateBackendResponse]
@@ -519,6 +536,11 @@ func (c *managementServiceClient) UpdateProxy(ctx context.Context, req *connect.
 // GetStatus calls api.proto.service.ManagementService.GetStatus.
 func (c *managementServiceClient) GetStatus(ctx context.Context, req *connect.Request[endpoints.GetStatusRequest]) (*connect.Response[endpoints.GetStatusResponse], error) {
 	return c.getStatus.CallUnary(ctx, req)
+}
+
+// StreamStatus calls api.proto.service.ManagementService.StreamStatus.
+func (c *managementServiceClient) StreamStatus(ctx context.Context, req *connect.Request[endpoints.StreamStatusRequest]) (*connect.ServerStreamForClient[endpoints.GetStatusResponse], error) {
+	return c.streamStatus.CallServerStream(ctx, req)
 }
 
 // AddBackend calls api.proto.service.ManagementService.AddBackend.
@@ -678,6 +700,13 @@ type ManagementServiceHandler interface {
 	UpdateProxy(context.Context, *connect.Request[endpoints.UpdateProxyRequest]) (*connect.Response[endpoints.UpdateProxyResponse], error)
 	// GetStatus returns the current status of all backends and global metrics.
 	GetStatus(context.Context, *connect.Request[endpoints.GetStatusRequest]) (*connect.Response[endpoints.GetStatusResponse], error)
+	// StreamStatus pushes status updates for as long as the client is connected.
+	//
+	// Replaces polling GetStatus on a timer. The dashboard re-fetched the entire
+	// payload — every backend, twenty top queries with full SQL text, topology,
+	// system metrics — on a fixed interval whether anything had changed or not,
+	// per connected dashboard. Read-only, same as GetStatus.
+	StreamStatus(context.Context, *connect.Request[endpoints.StreamStatusRequest], *connect.ServerStream[endpoints.GetStatusResponse]) error
 	// AddBackend adds a new backend to the pool.
 	AddBackend(context.Context, *connect.Request[endpoints.AddBackendRequest]) (*connect.Response[endpoints.AddBackendResponse], error)
 	// RemoveBackend removes a backend from the pool.
@@ -785,6 +814,12 @@ func NewManagementServiceHandler(svc ManagementServiceHandler, opts ...connect.H
 		ManagementServiceGetStatusProcedure,
 		svc.GetStatus,
 		connect.WithSchema(managementServiceMethods.ByName("GetStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	managementServiceStreamStatusHandler := connect.NewServerStreamHandler(
+		ManagementServiceStreamStatusProcedure,
+		svc.StreamStatus,
+		connect.WithSchema(managementServiceMethods.ByName("StreamStatus")),
 		connect.WithHandlerOptions(opts...),
 	)
 	managementServiceAddBackendHandler := connect.NewUnaryHandler(
@@ -977,6 +1012,8 @@ func NewManagementServiceHandler(svc ManagementServiceHandler, opts ...connect.H
 			managementServiceUpdateProxyHandler.ServeHTTP(w, r)
 		case ManagementServiceGetStatusProcedure:
 			managementServiceGetStatusHandler.ServeHTTP(w, r)
+		case ManagementServiceStreamStatusProcedure:
+			managementServiceStreamStatusHandler.ServeHTTP(w, r)
 		case ManagementServiceAddBackendProcedure:
 			managementServiceAddBackendHandler.ServeHTTP(w, r)
 		case ManagementServiceRemoveBackendProcedure:
@@ -1070,6 +1107,10 @@ func (UnimplementedManagementServiceHandler) UpdateProxy(context.Context, *conne
 
 func (UnimplementedManagementServiceHandler) GetStatus(context.Context, *connect.Request[endpoints.GetStatusRequest]) (*connect.Response[endpoints.GetStatusResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.proto.service.ManagementService.GetStatus is not implemented"))
+}
+
+func (UnimplementedManagementServiceHandler) StreamStatus(context.Context, *connect.Request[endpoints.StreamStatusRequest], *connect.ServerStream[endpoints.GetStatusResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("api.proto.service.ManagementService.StreamStatus is not implemented"))
 }
 
 func (UnimplementedManagementServiceHandler) AddBackend(context.Context, *connect.Request[endpoints.AddBackendRequest]) (*connect.Response[endpoints.AddBackendResponse], error) {

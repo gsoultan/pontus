@@ -22,6 +22,14 @@ service ManagementService {
   // GetStatus returns the current status of all backends and global metrics.
   rpc GetStatus(.api.proto.endpoints.GetStatusRequest) returns (.api.proto.endpoints.GetStatusResponse);
 
+  // StreamStatus pushes status updates for as long as the client is connected.
+  //
+  // Replaces polling GetStatus on a timer. The dashboard re-fetched the entire
+  // payload — every backend, twenty top queries with full SQL text, topology,
+  // system metrics — on a fixed interval whether anything had changed or not,
+  // per connected dashboard. Read-only, same as GetStatus.
+  rpc StreamStatus(.api.proto.endpoints.StreamStatusRequest) returns (stream .api.proto.endpoints.GetStatusResponse);
+
   // AddBackend adds a new backend to the pool.
   rpc AddBackend(.api.proto.endpoints.AddBackendRequest) returns (.api.proto.endpoints.AddBackendResponse);
 

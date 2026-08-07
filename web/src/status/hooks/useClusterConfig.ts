@@ -20,11 +20,25 @@ export function useClusterConfig() {
         create(SetClusterConfigRequestSchema, { parameters })
       );
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ["clusterConfig"] });
+
+      // A cluster-wide write can succeed on some nodes and fail on others.
+      // Reporting only "success" would leave the operator believing the whole
+      // cluster took the change when part of it silently did not.
+      if (response.failedNodes.length > 0) {
+        notifications.show({
+          title: "Applied with failures",
+          message: `Updated ${response.updatedNodes.length} node(s); failed on ${response.failedNodes.join(", ")}`,
+          color: "orange",
+          autoClose: false,
+        });
+        return;
+      }
+
       notifications.show({
         title: "Success",
-        message: "Cluster configuration updated successfully",
+        message: `Configuration applied to ${response.updatedNodes.length || "all"} node(s)`,
         color: "green",
       });
     },
@@ -42,6 +56,7 @@ export function useClusterConfig() {
     isLoading: configQuery.isLoading,
     isUpdating: setConfigMutation.isPending,
     updateConfig: setConfigMutation.mutateAsync,
+    lastResult: setConfigMutation.data,
     refetch: configQuery.refetch,
   };
 }

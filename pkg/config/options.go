@@ -28,8 +28,32 @@ type Options struct {
 	PoolingMode    string        `json:"pooling_mode,omitzero" yaml:"pooling_mode"` // "transaction" or "statement"
 	ShadowBackends []Backend     `json:"shadow_backends,omitzero" yaml:"shadow_backends"`
 	AdminToken     string        `json:"admin_token,omitzero" yaml:"admin_token"`
-	JWTSecret      string        `json:"jwt_secret,omitzero" yaml:"jwt_secret"`
-	DataDir        string        `json:"data_dir,omitzero" yaml:"data_dir"`
+	// JWTSecret keys the management session tokens. The name is kept for
+	// config compatibility; tokens are PASETO v4.local, not JWT. Prefer the
+	// auth_key alias below. There is no default — startup fails without one.
+	JWTSecret string `json:"jwt_secret,omitzero" yaml:"jwt_secret"`
+	AuthKey   string `json:"auth_key,omitzero" yaml:"auth_key"`
+	// AllowedOrigins lists browser origins permitted to call the management
+	// API cross-origin. Empty means same-origin only, which is correct when
+	// the dashboard is served by this binary. "*" is rejected at startup.
+	AllowedOrigins []string `json:"allowed_origins,omitzero" yaml:"allowed_origins"`
+	DataDir        string   `json:"data_dir,omitzero" yaml:"data_dir"`
+}
+
+// resolveSecrets applies the auth_key alias and the environment overrides.
+//
+// Secrets belong in the environment more often than in a checked-in config
+// file, so PONTUS_AUTH_KEY and PONTUS_ADMIN_TOKEN take precedence.
+func (c *Options) resolveSecrets() {
+	if c.AuthKey != "" && c.JWTSecret == "" {
+		c.JWTSecret = c.AuthKey
+	}
+	if v := os.Getenv("PONTUS_AUTH_KEY"); v != "" {
+		c.JWTSecret = v
+	}
+	if v := os.Getenv("PONTUS_ADMIN_TOKEN"); v != "" {
+		c.AdminToken = v
+	}
 }
 
 // Load loads the configuration from a YAML file.
@@ -44,6 +68,7 @@ func Load(path string) (*Options, error) {
 		return nil, err
 	}
 
+	cfg.resolveSecrets()
 	return cfg, nil
 }
 

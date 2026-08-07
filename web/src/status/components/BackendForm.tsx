@@ -22,7 +22,7 @@ import {
   IconAdjustmentsHorizontal
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useBackendManagement } from "../hooks/useBackendManagement";
 import { useStatus } from "../hooks/useStatus";
 import { POSTGRES_VERSIONS, DEFAULT_POSTGRES_VERSION } from "../constants";
@@ -106,16 +106,7 @@ export function BackendForm({ initialValues, onSubmit, loading, onCancel, hasPri
     }
   }, [postgresNotFound, managedByAgent]);
 
-  useEffect(() => {
-    if (agentAddress && agentAddress.includes(":")) {
-      const timer = setTimeout(() => {
-        handleDetectVersion();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [agentAddress, agentToken]);
-
-  const handleDetectVersion = async () => {
+  const handleDetectVersion = useCallback(async () => {
     if (!agentAddress) {
       notifications.show({ title: "Error", message: "Enter agent address first", color: "red" });
       return;
@@ -161,7 +152,14 @@ export function BackendForm({ initialValues, onSubmit, loading, onCancel, hasPri
         color: "red" 
       });
     }
-  };
+  }, [agentAddress, agentToken, getAgentInfo, hasPrimary]);
+
+  // Debounced auto-detect once the operator has typed a host:port.
+  useEffect(() => {
+    if (!agentAddress.includes(":")) return;
+    const timer = setTimeout(() => void handleDetectVersion(), 1000);
+    return () => clearTimeout(timer);
+  }, [agentAddress, handleDetectVersion]);
 
   const validateAddress = (addr: string) => {
     if (postgresNotFound && !addr) return null;
