@@ -88,7 +88,11 @@ message GetStatusResponse {
   bool in_failover = 11;
   string leader_id = 12;
   .api.proto.domain.CacheStats cache_stats = 13;
-  .api.proto.domain.FirewallStats firewall_stats = 14;
+  // 14 held firewall_stats. The SQL firewall was removed from Pontus; the tag
+  // and name are reserved so neither can be reused and silently decode as the
+  // old message against an older client.
+  reserved 14;
+  reserved "firewall_stats";
   repeated .api.proto.domain.MetricSnapshot history = 15;
   .api.proto.domain.Topology topology = 16;
   .api.proto.domain.AdaptiveStatus adaptive_status = 17;

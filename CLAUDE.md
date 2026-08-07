@@ -12,7 +12,7 @@ done live in `AGENTS.md`. Code style rules live in `.junie/guidelines.md`.
 | :--- | :--- |
 | `cmd/{pontus,agent,pontusctl}` | Entrypoints: proxy server, DB-host sidecar, CLI |
 | `internal/app` | Wiring — config load, stores, migrations, mgmt HTTP server, service install |
-| `server/proxy` | Data plane: `Gateway`, middleware chain (rate limit → firewall → cache), TLS, failover orchestration |
+| `server/proxy` | Data plane: `Gateway`, middleware chain (rate limit → cache), TLS, failover orchestration |
 | `server/internal/protocol` | Postgres/MySQL wire handlers, tokenizer, classifier, session & transaction state, LSN consistency |
 | `server/internal/pool` | Sharded per-backend connection pools, adaptive (BBR-style) controller |
 | `server/internal/balancer` | Round-robin, least-conns, P2C, peak-EWMA, consistent hash + shared cost function |
@@ -116,7 +116,7 @@ working tree waiting to be asked. This applies to every task, not just large one
 - One logical change per commit. If a task touched several concerns (a security
   default, a data-plane fix, a UI change), split them so each can be reviewed and
   reverted on its own.
-- Security-sensitive changes (auth, secrets, TLS, WAF, RBAC) get their **own**
+- Security-sensitive changes (auth, secrets, TLS, RBAC) get their **own**
   commit, never folded into an unrelated one.
 - Write what changed and *why* — name the root cause in one sentence for a bug fix.
 - Never commit generated artifacts that are gitignored (`web/dist`, `go.sum`), and

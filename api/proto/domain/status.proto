@@ -75,12 +75,6 @@ message MetricSnapshot {
   float latency_ms = 4;
 }
 
-message FirewallStats {
-  int64 blocked_by_word = 1;
-  int64 blocked_by_pattern = 2;
-  int64 blocked_by_size = 3;
-}
-
 message CacheStats {
   int64 hits = 1;
   int64 misses = 2;

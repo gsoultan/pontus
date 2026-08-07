@@ -62,7 +62,7 @@ An agent RPC must never build a shell command from a request field.
 
 ## `pkg/observability/` — telemetry
 
-- `metrics.go` — Prometheus collectors (`QueriesTotal`, firewall violations, …).
+- `metrics.go` — Prometheus collectors (`QueriesTotal`, …).
 - `tracing.go` — OpenTelemetry spans (`StartSpan`).
 - `logs.go` — `BroadcastHandler` wraps the default `slog` handler so logs fan out to the
   dashboard live stream and into `store/log_store.go`.

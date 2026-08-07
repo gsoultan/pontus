@@ -5,14 +5,12 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gsoultan/pontus/api/proto/domain"
 	"github.com/gsoultan/pontus/pkg/buffer"
-	"github.com/gsoultan/pontus/pkg/config"
 )
 
 var (
@@ -226,7 +224,7 @@ func (p *PostgresHandler) NormalizeQuery(data []byte) string {
 //   - A digit inside an identifier is part of the *name*, not a literal.
 //     Collapsing it made `tenant1_orders` and `tenant2_orders` normalize to the
 //     same string, so two different tables shared one cache entry.
-//   - Quoting must never swallow the rest of the statement. The firewall inspects
+//   - Quoting must never swallow the rest of the statement. The classifier inspects
 //     the normalized text while the backend receives the raw bytes, so anything
 //     dropped here is a WAF blind spot. An unterminated quote now yields a
 //     trailing '?' rather than silently truncating, and backslash is not treated
@@ -1055,63 +1053,4 @@ func (p *PostgresHandler) queryInt64(ctx context.Context, conn net.Conn, query s
 			i += 1 + msgLen
 		}
 	}
-}
-
-func (p *PostgresHandler) RewriteQuery(data []byte, rules []config.MaskingRule) ([]byte, error) {
-	if len(data) < 6 || data[0] != 'Q' {
-		return data, nil
-	}
-
-	query := p.extractQuery(data)
-	if query == "" {
-		return data, nil
-	}
-
-	modified := false
-	tokens := slices.Collect(Tokenize(query))
-	var sb strings.Builder
-
-	for i, t := range tokens {
-		if i > 0 {
-			sb.WriteRune(' ')
-		}
-
-		val := t.Value
-		if t.Type == TokenIdentifier {
-			for _, rule := range rules {
-				if strings.EqualFold(t.Value, rule.Column) {
-					switch rule.Format {
-					case "hash":
-						val = fmt.Sprintf("md5(%s)", t.Value)
-						modified = true
-					case "redact":
-						val = "'REDACTED'"
-						modified = true
-					case "mask":
-						val = "regexp_replace(" + t.Value + ", '.', '*', 'g')"
-						modified = true
-					}
-					break
-				}
-			}
-		}
-		sb.WriteString(val)
-	}
-
-	if !modified {
-		return data, nil
-	}
-
-	newQuery := sb.String()
-	// Re-encode 'Q' message
-	payload := make([]byte, 1+4+len(newQuery)+1)
-	payload[0] = 'Q'
-	length := 4 + len(newQuery) + 1
-	payload[1] = byte(length >> 24)
-	payload[2] = byte(length >> 16)
-	payload[3] = byte(length >> 8)
-	payload[4] = byte(length)
-	copy(payload[5:], newQuery)
-	payload[len(payload)-1] = 0
-	return payload, nil
 }

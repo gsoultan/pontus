@@ -5,10 +5,8 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net"
-	"regexp"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,13 +26,10 @@ import (
 // runtimeConfig is the hot-reloadable state the query path reads.
 //
 // It is swapped as one immutable value rather than mutated field by field:
-// handleClient and proxyResponse read it on every request and cannot take a
-// lock without holding it across connection I/O. Publishing a snapshot also
-// keeps the chain and the firewall config consistent with each other — with
-// separate fields a request could run a new chain against an old fwConfig.
+// handleClient reads it on every request and cannot take a lock without
+// holding it across connection I/O.
 type runtimeConfig struct {
-	chain    middleware.Chain
-	fwConfig *config.Firewall
+	chain middleware.Chain
 }
 
 // Gateway implements the proxy.Provider interface.
@@ -45,8 +40,6 @@ type Gateway struct {
 	wg             sync.WaitGroup
 	limiter        *rate.Limiter
 	tenantLimiters *middleware.TenantLimiters
-	fwConfig       *config.Firewall
-	fwPatterns     []*regexp.Regexp
 	cacheConfig    *config.Cache
 	cacheManager   *cache.Manager
 	failoverMu     sync.RWMutex
@@ -109,20 +102,6 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 		g.limiter = nil
 		g.tenantLimiters = nil
 	}
-	if cfg.Firewall != nil && cfg.Firewall.Enabled {
-		g.fwConfig = cfg.Firewall
-		g.fwPatterns = nil
-		for _, p := range cfg.Firewall.Patterns {
-			if re, err := regexp.Compile(p); err == nil {
-				g.fwPatterns = append(g.fwPatterns, re)
-			} else {
-				slog.Error("Failed to compile firewall pattern", "pattern", p, "error", err)
-			}
-		}
-	} else {
-		g.fwConfig = nil
-		g.fwPatterns = nil
-	}
 	if cfg.Cache != nil && cfg.Cache.Enabled {
 		g.cacheConfig = cfg.Cache
 		if g.cacheManager == nil {
@@ -173,12 +152,11 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	// Initialize middleware chain
 	g.chain = middleware.Chain{
 		middleware.NewRateLimit(g.limiter, g.tenantLimiters),
-		middleware.NewFirewall(g.fwConfig, g.handler),
 		middleware.NewCache(g.cacheManager, g.cacheConfig, g.handler),
 	}
 
 	// Publish atomically for the query path.
-	g.runtime.Store(&runtimeConfig{chain: g.chain, fwConfig: g.fwConfig})
+	g.runtime.Store(&runtimeConfig{chain: g.chain})
 }
 
 // current returns the active runtime configuration. Never nil after
@@ -319,7 +297,7 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	}
 
 	// Track only what the backend has actually been told, and only after the
-	// firewall admitted it. Recording the statement against this specific
+	// been admitted. Recording the statement against this specific
 	// connection is what stops a later replay re-parsing a name it already has.
 	m.handler.TrackSessionState(s.State, s.Data)
 	m.handler.TrackPreparedStatement(s.State, s.Data)
@@ -474,9 +452,7 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		session.Data = buf[:n]
 
 		// Session state is tracked in executeRequest, once the message has actually
-		// been written to a backend. Doing it here meant a query the firewall went
-		// on to *block* was still recorded and later replayed verbatim onto a fresh
-		// connection with no firewall check, and it meant a statement was replayed
+		// been written to a backend.
 		// onto the very connection about to parse it.
 
 		session.Normalized = g.handler.NormalizeQuery(session.Data)
@@ -618,9 +594,8 @@ func (g *Gateway) CacheManager() *cache.Manager {
 }
 
 func (g *Gateway) proxyResponse(client, server net.Conn, buf []byte, capture *bytes.Buffer, readOnly bool) (protocol.TransactionState, bool, time.Duration, error) {
-	// Fast Path: If it's a simple read-only query and no capture/firewall needed, use optimized steering
-	fw := g.current().fwConfig
-	if readOnly && capture == nil && (fw == nil || fw.MaxResponseSizeMB == 0) {
+	// Fast Path: a read-only query with nothing to capture can be steered straight through.
+	if readOnly && capture == nil {
 		return g.proxyResponseFastPath(client, server, buf)
 	}
 
@@ -661,22 +636,9 @@ func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, 
 	var rtt time.Duration
 	start := time.Now()
 	firstByte := true
-	var totalSize int64
-	maxSize := int64(0)
-	if fw := g.current().fwConfig; fw != nil && fw.MaxResponseSizeMB > 0 {
-		maxSize = fw.MaxResponseSizeMB * 1024 * 1024
-	}
-
 	for {
 		n, err := server.Read(buf)
 		if n > 0 {
-			totalSize += int64(n)
-			if maxSize > 0 && totalSize > maxSize {
-				slog.Error("Response size exceeded maximum limit (Exfiltration Guard)", "size", totalSize, "limit", maxSize)
-				observability2.DefaultTracker.RecordFirewallViolation("size")
-				observability2.FirewallViolations.WithLabelValues("size").Inc()
-				return protocol.StateError, false, rtt, fmt.Errorf("response size limit exceeded")
-			}
 			if firstByte {
 				rtt = time.Since(start)
 				firstByte = false

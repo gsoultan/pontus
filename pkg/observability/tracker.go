@@ -30,12 +30,6 @@ type QueryStat struct {
 	ErrorCount int64
 }
 
-type FirewallStats struct {
-	BlockedByWord    atomic.Int64
-	BlockedByPattern atomic.Int64
-	BlockedBySize    atomic.Int64
-}
-
 const numShards = 16
 
 type shard struct {
@@ -92,7 +86,6 @@ type QueryTracker struct {
 	startTime     time.Time
 	totalRequests atomic.Int64
 	totalErrors   atomic.Int64
-	firewallStats FirewallStats
 	store         store.MetricStore
 
 	// Live rate, resampled on a short interval. RPS used to be reported as
@@ -191,23 +184,6 @@ func (t *QueryTracker) Record(query string, duration time.Duration, err error) {
 		s.ErrorCount++
 	}
 	s.LastSeen = time.Now()
-}
-
-func (t *QueryTracker) RecordFirewallViolation(reason string) {
-	switch reason {
-	case "word":
-		t.firewallStats.BlockedByWord.Add(1)
-	case "pattern":
-		t.firewallStats.BlockedByPattern.Add(1)
-	case "size":
-		t.firewallStats.BlockedBySize.Add(1)
-	}
-}
-
-func (t *QueryTracker) GetFirewallStats() (int64, int64, int64) {
-	return t.firewallStats.BlockedByWord.Load(),
-		t.firewallStats.BlockedByPattern.Load(),
-		t.firewallStats.BlockedBySize.Load()
 }
 
 func (t *QueryTracker) Uptime() time.Duration {

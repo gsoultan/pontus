@@ -6,7 +6,7 @@ block on I/O while holding a lock, or grow a map keyed by client input.
 ## `server/proxy/` — Gateway
 
 `gateway.go` is the centre of gravity. `Gateway` holds the handler, balancer, failover
-orchestrator, rate limiters, firewall config + compiled patterns, cache manager, the
+orchestrator, rate limiters, cache manager, the
 in-flight collapser map, the middleware chain, and shadow backends.
 
 - `Serve` → accept loop, one `handleClient` goroutine per connection.
@@ -109,3 +109,18 @@ in-flight collapser.
   commands and a `clusterState` snapshot.
 
 The gateway pauses traffic during failover via `failoverMu` + `pauseCond`, then broadcasts.
+
+## The SQL firewall was removed (2026-08-07)
+
+Pontus no longer inspects or rewrites SQL. Deleted: `middleware/firewall.go`,
+`pkg/config/firewall.go`, the `firewall` config block, `RecordFirewallViolation`
+and the Prometheus counter, the data-masking `RewriteQuery` path on both
+protocol handlers, the response-size cap, `SecurityCard` and the Settings
+security section.
+
+Proto: `FirewallStats` is gone and `GetStatusResponse` field **14 is reserved**
+(name `firewall_stats` reserved too) — do not reuse the tag.
+
+The middleware chain is now **rate limit → cache**. Scope decision, not a
+regression: SQL policy is not this product's job. Do not reintroduce it without
+asking.

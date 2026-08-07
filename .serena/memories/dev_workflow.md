@@ -52,7 +52,7 @@ a problem with the script or your setup.
   `"pontus-secret-key"` and an empty `admin_token` makes the auth interceptor a no-op, so a
   dev run with defaults is wide open and does not exercise the auth path at all. With both
   set, `GetStatus` correctly returns 401 without a token — verified.
-- The dev config disables `cache` and `firewall` by default: the cache is never invalidated
+- The dev config disables `cache` by default: the cache is never invalidated
   on writes and the blocked-word match is `strings.Contains`. Enable them deliberately.
   See `mem:findings` A1 and C16.
 - macOS has no `setsid` and no `timeout`; don't reach for them in scripts here.

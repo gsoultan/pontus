@@ -31,7 +31,7 @@ lock · `cache` ↔ `sec` on anything that reuses a response · `lb` ↔ `ha` on
 `api` ↔ `data` on schema · `ui` ↔ `ux` on the dashboard · `qa` on every bug fix ·
 `ops` on anything that changes the shipped artifact or a default.
 
-A cache that ignores who asked is a data leak. A fast path that skips the WAF is a
+A cache that ignores who asked is a data leak. A fast path that skips a check is a
 vulnerability. A pool that never shrinks is an outage on the database, not on Pontus.
 
 ### Data plane
@@ -49,7 +49,7 @@ vulnerability. A pool that never shrinks is an outage on the database, not on Po
 
 | Profile | Owns | Vetoes (non-negotiable) | Proof |
 | :--- | :--- | :--- | :--- |
-| **`sec`** WAF, boundary & auth | `server/proxy/middleware/{firewall,rate_limit}.go`, masking rules, `server/proxy/tls.go`, `server/management/middleware/auth.go`, `pkg/auth/` | **a hardcoded or defaulted secret** (`jwt_secret` falling back to a literal); auth that no-ops when a token is unset; a default credential; `jwt.Parse` without `WithValidMethods`; `AllowedOrigins: ["*"]` on an authenticated mux; a rate-limit map keyed by attacker-supplied identity with no eviction; a fast path that *skips* a check instead of *cheapening* it | a test showing the optimized path still blocks + no secret with a fallback value |
+| **`sec`** Boundary & auth | `server/proxy/middleware/rate_limit.go`, `server/proxy/tls.go`, `server/management/middleware/auth.go`, `pkg/auth/` | **a hardcoded or defaulted secret** (a token key falling back to a literal); auth that no-ops when a token is unset; a default credential; a token verified without its scheme pinned; `AllowedOrigins: ["*"]` on an authenticated mux; a rate-limit map keyed by attacker-supplied identity with no eviction; a fast path that *skips* a check instead of *cheapening* it | a test showing the optimized path still blocks + no secret with a fallback value |
 | **`api`** Contract integrity | `api/proto/`, `buf.gen.yaml`, generated Go stubs + `web/src/gen/`, ConnectRPC handlers in `server/management/handler/` | a hand-edited generated file; a reused or un-`reserved` field tag; a proto change without `buf generate` **and** a matching store change; an unpaginated list RPC; a new RPC not added to the RBAC allowlist decision (public or admin-only — pick one deliberately) | `buf generate` regenerates clean with no uncommitted diff; Go **and** TS both compile |
 | **`data`** Stores & migrations | `server/management/store/`, `pkg/repository/`, `pkg/observability/store/`, SQLite schema, JSON→SQLite migrations, pruners | unparameterized SQL; a synchronous store write on the query path; editing a shipped migration instead of adding one; a table with no retention or pruner; a migration that isn't idempotent | migration applied twice on a fresh **and** a populated DB |
 | **`obs`** Observability & cost | `pkg/observability/` — metrics, tracing, log broadcaster, tracker, throttler, top queries | an unbounded metric label (query text, client addr, user as a Prometheus label); a log or metric emitted per query with no sampling or throttle; "feels faster" with no benchstat | before/after numbers in the summary + a stated cardinality bound per new label |
@@ -142,9 +142,6 @@ precedent to copy.
     reads `g.chain` (line ~422) and `g.fwConfig` (lines ~555, ~598) with no lock. Hot reload
     is a data race. Separately, replacing `pauseCond` strands any goroutine already in
     `pauseCond.Wait()`.
-12. `firewall.go` matches blocked words with `strings.Contains` on the uppercased query, so
-    a column named `dropdown` trips a `DROP` rule. Match on the token stream — `Tokenize`
-    is already there and already used for the structural checks.
 13. `cache.go` discards the error from `s.Client.Write(cachedResponse)` on the hit path.
 
 **Ops**

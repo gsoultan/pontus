@@ -71,7 +71,6 @@ func TestReadWriteAndTransaction(t *testing.T) {
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		// The firewall blocks DROP, so tear down with a separate direct session.
 		direct, err := pgx.Connect(cleanupCtx, fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
 			backendUser(), backendPass(), backendAddr(), backendDB()))
 		if err != nil {
@@ -231,28 +230,6 @@ func TestManagementRequiresAuth(t *testing.T) {
 	projectID, proxyID := s.project(token)
 	if out, code := s.rpc("GetStatus", map[string]string{"projectId": projectID, "proxyId": proxyID}, token); code != http.StatusOK {
 		t.Errorf("GetStatus rejected a valid token (%d): %v", code, out)
-	}
-}
-
-// The firewall is configured to block DROP. It must block the statement and
-// not the identifier that merely contains it.
-func TestFirewallBlocksAndAllows(t *testing.T) {
-	s := startStack(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	conn := connect(t, ctx, s)
-
-	if _, err := conn.Exec(ctx, "DROP TABLE IF EXISTS pontus_e2e_should_not_exist"); err == nil {
-		t.Error("firewall allowed a DROP statement")
-	}
-
-	// Reconnect: the blocked statement may have closed the session.
-	conn2 := connect(t, ctx, s)
-	var dropdown int
-	if err := conn2.QueryRow(ctx, "SELECT 1 AS dropdown").Scan(&dropdown); err != nil {
-		t.Errorf("firewall blocked an identifier containing a keyword: %v", err)
 	}
 }
 

@@ -38,7 +38,7 @@ service lifecycle.
 3. A backend is acquired for the handshake; `protocol.Handler.Handshake` bridges client↔server auth.
 4. Transaction loop: read from client → `ClassifyQuery` + `NormalizeQuery` → run the
    middleware chain → `executeRequest`.
-5. Chain order is **rate limit → firewall → cache**, built in `Gateway.reconfigure`.
+5. Chain order is **rate limit → cache**, built in `Gateway.reconfigure`.
 6. `executeRequest` does request collapsing for idempotent reads, LSN-consistency wait when
    reading from a replica, optional traffic shadowing, session-state and prepared-statement
    replay after a backend switch, then proxies the response.

@@ -40,7 +40,7 @@ go build -o pontusctl ./cmd/pontusctl
 
 Config is YAML (`pkg/config/options.go` and siblings): `proxy_addr`, `mgmt_addr`, `protocol`,
 `pooling_mode`, `balancer`, `backends[]` (addr, agent_addr, role, weight, zone),
-`firewall`, `cache`, `rate_limit`, `tls`, `backend_tls`, `shadow_backends`, `jwt_secret`,
+`cache`, `rate_limit`, `tls`, `backend_tls`, `shadow_backends`, `auth_key`,
 `admin_token`, `data_dir`, `query_timeout`, `max_conns`, `min_idle`, `dial_timeout`.
 
 ## Load-bearing constraints

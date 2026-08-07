@@ -16,10 +16,9 @@ func newTestGateway(t *testing.T) *Gateway {
 	return NewGateway(handler, lb, nil, &config.Options{}, nil)
 }
 
-// handleClient and proxyResponse read the middleware chain and the firewall
-// config on every request while UpdateConfig rewrote them, with no
-// synchronization on the read side. Run with -race this fails against the
-// pre-fix code.
+// handleClient reads the middleware chain on every request while UpdateConfig
+// rewrites it, with no synchronization on the read side. Run with -race this
+// fails against the pre-fix code.
 func TestUpdateConfigIsRaceFreeUnderLoad(t *testing.T) {
 	g := newTestGateway(t)
 
@@ -35,11 +34,7 @@ func TestUpdateConfigIsRaceFreeUnderLoad(t *testing.T) {
 					return
 				default:
 					rc := g.current()
-					// Touch both fields: they must always be a consistent pair.
 					_ = rc.chain
-					if rc.fwConfig != nil {
-						_ = rc.fwConfig.MaxResponseSizeMB
-					}
 				}
 			}
 		})
@@ -51,9 +46,10 @@ func TestUpdateConfigIsRaceFreeUnderLoad(t *testing.T) {
 			for j := range 50 {
 				enabled := (i+j)%2 == 0
 				g.UpdateConfig(&config.Options{
-					Firewall: &config.Firewall{
-						Enabled:           enabled,
-						MaxResponseSizeMB: int64(j%8 + 1),
+					RateLimit: &config.RateLimit{
+						Enabled: enabled,
+						RPS:     float64(100 + j),
+						Burst:   200 + j,
 					},
 				})
 			}

@@ -5,7 +5,6 @@ import { AdaptiveStatusCard } from './AdaptiveStatusCard'
 import { AdvancedMetrics } from './AdvancedMetrics'
 import { ClusterOverview } from './ClusterOverview'
 import { PerformanceAdvisor } from './PerformanceAdvisor'
-import { SecurityCard } from './SecurityCard'
 import { StatusPageShell } from './StatusPageShell'
 import { StatusStats } from './StatusStats'
 import { SystemMetrics } from './SystemMetrics'
@@ -45,10 +44,7 @@ export function DashboardView() {
           </Suspense>
         </SimpleGrid>
 
-        <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
-          <ClusterOverview backends={data?.backends ?? []} protocol={data?.protocol ?? 'Unknown'} />
-          <SecurityCard stats={data?.firewallStats} />
-        </SimpleGrid>
+        <ClusterOverview backends={data?.backends ?? []} protocol={data?.protocol ?? 'Unknown'} />
 
         <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
           <AdaptiveStatusCard status={data?.adaptiveStatus} />

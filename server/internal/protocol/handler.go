@@ -3,8 +3,6 @@ package protocol
 import (
 	"context"
 	"net"
-
-	"github.com/gsoultan/pontus/pkg/config"
 )
 
 // Handler defines the protocol-specific logic for database communication.
@@ -27,7 +25,4 @@ type Handler interface {
 
 	// Execute executes a simple query and waits for completion.
 	Execute(ctx context.Context, conn net.Conn, query string) error
-
-	// RewriteQuery allows the protocol handler to modify the query (e.g. for masking).
-	RewriteQuery(data []byte, rules []config.MaskingRule) ([]byte, error)
 }

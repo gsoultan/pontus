@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"net"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/gsoultan/pontus/api/proto/domain"
 	"github.com/gsoultan/pontus/pkg/buffer"
-	"github.com/gsoultan/pontus/pkg/config"
 	"github.com/pingcap/tidb/pkg/parser"
 	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 )
@@ -419,62 +417,4 @@ func (m *MySQLHandler) GetCurrentLSN(ctx context.Context, conn net.Conn) (string
 // WaitLSN is a stub for MySQL.
 func (m *MySQLHandler) WaitLSN(ctx context.Context, conn net.Conn, targetLSN string) error {
 	return nil
-}
-
-func (m *MySQLHandler) RewriteQuery(data []byte, rules []config.MaskingRule) ([]byte, error) {
-	if len(data) < 5 || data[4] != 0x03 {
-		return data, nil
-	}
-
-	query := m.extractQuery(data)
-	if query == "" {
-		return data, nil
-	}
-
-	modified := false
-	tokens := slices.Collect(Tokenize(query))
-	var sb strings.Builder
-
-	for i, t := range tokens {
-		if i > 0 {
-			sb.WriteRune(' ')
-		}
-
-		val := t.Value
-		if t.Type == TokenIdentifier {
-			for _, rule := range rules {
-				if strings.EqualFold(t.Value, rule.Column) {
-					switch rule.Format {
-					case "hash":
-						val = fmt.Sprintf("MD5(%s)", t.Value)
-						modified = true
-					case "redact":
-						val = "'REDACTED'"
-						modified = true
-					case "mask":
-						val = "RPAD('', CHAR_LENGTH(" + t.Value + "), '*')"
-						modified = true
-					}
-					break
-				}
-			}
-		}
-		sb.WriteString(val)
-	}
-
-	if !modified {
-		return data, nil
-	}
-
-	newQuery := sb.String()
-	// Re-encode COM_QUERY packet
-	payloadLen := 1 + len(newQuery)
-	payload := make([]byte, 4+payloadLen)
-	payload[0] = byte(payloadLen)
-	payload[1] = byte(payloadLen >> 8)
-	payload[2] = byte(payloadLen >> 16)
-	payload[3] = data[3] // Keep sequence id
-	payload[4] = 0x03    // COM_QUERY
-	copy(payload[5:], newQuery)
-	return payload, nil
 }

@@ -82,10 +82,6 @@ func (m *mockHandler) CollectMetrics(ctx context.Context, conn net.Conn) (*domai
 	return &domain.DatabaseMetrics{}, nil
 }
 
-func (m *mockHandler) RewriteQuery(data []byte, rules []config.MaskingRule) ([]byte, error) {
-	return data, nil
-}
-
 func (m *mockHandler) IsPinned(state *protocol2.SessionState) bool {
 	return false
 }

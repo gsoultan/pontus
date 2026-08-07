@@ -60,24 +60,6 @@ func (m *Cluster) SetClusterConfig(ctx context.Context, req *endpoints.SetCluste
 		applied = true
 	}
 
-	if v, ok := req.Parameters["firewall_enabled"]; ok {
-		if cfg.Firewall == nil {
-			cfg.Firewall = &config.Firewall{}
-		}
-		cfg.Firewall.Enabled = v == "true"
-		applied = true
-	}
-
-	if v, ok := req.Parameters["firewall_max_response_size"]; ok {
-		if i, err := strconv.ParseInt(v, 10, 64); err == nil {
-			if cfg.Firewall == nil {
-				cfg.Firewall = &config.Firewall{}
-			}
-			cfg.Firewall.MaxResponseSizeMB = i
-			applied = true
-		}
-	}
-
 	if applied {
 		m.registry.UpdateConfig(cfg)
 	}

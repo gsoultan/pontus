@@ -108,7 +108,7 @@ func Tokenize(q string) iter.Seq[Token] {
 
 // isKeyword decides whether a word is emitted as TokenKeyword.
 //
-// Every word ClassifyQuery or the firewall switches on has to be in here. It is
+// Every word ClassifyQuery switches on has to be in here. It is
 // not a style question: a word that is missing arrives as TokenIdentifier, the
 // switch case never matches, and the branch is silently unreachable. That is how
 // `SELECT 1; DROP TABLE users` stayed classified read-only and how `INSERT INTO

@@ -755,7 +755,6 @@ type GetStatusResponse struct {
 	InFailover             bool                            `protobuf:"varint,11,opt,name=in_failover,json=inFailover,proto3" json:"in_failover,omitempty"`
 	LeaderId               string                          `protobuf:"bytes,12,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"`
 	CacheStats             *domain.CacheStats              `protobuf:"bytes,13,opt,name=cache_stats,json=cacheStats,proto3" json:"cache_stats,omitempty"`
-	FirewallStats          *domain.FirewallStats           `protobuf:"bytes,14,opt,name=firewall_stats,json=firewallStats,proto3" json:"firewall_stats,omitempty"`
 	History                []*domain.MetricSnapshot        `protobuf:"bytes,15,rep,name=history,proto3" json:"history,omitempty"`
 	Topology               *domain.Topology                `protobuf:"bytes,16,opt,name=topology,proto3" json:"topology,omitempty"`
 	AdaptiveStatus         *domain.AdaptiveStatus          `protobuf:"bytes,17,opt,name=adaptive_status,json=adaptiveStatus,proto3" json:"adaptive_status,omitempty"`
@@ -881,13 +880,6 @@ func (x *GetStatusResponse) GetLeaderId() string {
 func (x *GetStatusResponse) GetCacheStats() *domain.CacheStats {
 	if x != nil {
 		return x.CacheStats
-	}
-	return nil
-}
-
-func (x *GetStatusResponse) GetFirewallStats() *domain.FirewallStats {
-	if x != nil {
-		return x.FirewallStats
 	}
 	return nil
 }
@@ -4192,7 +4184,7 @@ const file_api_proto_endpoints_management_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +
 	"\bproxy_id\x18\x02 \x01(\tR\aproxyId\x12\x1f\n" +
 	"\vinterval_ms\x18\x03 \x01(\x05R\n" +
-	"intervalMs\"\xbe\a\n" +
+	"intervalMs\"\x8c\a\n" +
 	"\x11GetStatusResponse\x12;\n" +
 	"\bbackends\x18\x01 \x03(\v2\x1f.api.proto.domain.BackendStatusR\bbackends\x12\x1f\n" +
 	"\vtotal_conns\x18\x02 \x01(\x03R\n" +
@@ -4211,12 +4203,11 @@ const file_api_proto_endpoints_management_proto_rawDesc = "" +
 	"inFailover\x12\x1b\n" +
 	"\tleader_id\x18\f \x01(\tR\bleaderId\x12=\n" +
 	"\vcache_stats\x18\r \x01(\v2\x1c.api.proto.domain.CacheStatsR\n" +
-	"cacheStats\x12F\n" +
-	"\x0efirewall_stats\x18\x0e \x01(\v2\x1f.api.proto.domain.FirewallStatsR\rfirewallStats\x12:\n" +
+	"cacheStats\x12:\n" +
 	"\ahistory\x18\x0f \x03(\v2 .api.proto.domain.MetricSnapshotR\ahistory\x126\n" +
 	"\btopology\x18\x10 \x01(\v2\x1a.api.proto.domain.TopologyR\btopology\x12I\n" +
 	"\x0fadaptive_status\x18\x11 \x01(\v2 .api.proto.domain.AdaptiveStatusR\x0eadaptiveStatus\x12`\n" +
-	"\x17performance_suggestions\x18\x12 \x03(\v2'.api.proto.domain.PerformanceSuggestionR\x16performanceSuggestions\"\x86\x01\n" +
+	"\x17performance_suggestions\x18\x12 \x03(\v2'.api.proto.domain.PerformanceSuggestionR\x16performanceSuggestionsJ\x04\b\x0e\x10\x0fR\x0efirewall_stats\"\x86\x01\n" +
 	"\x11AddBackendRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +
@@ -4575,19 +4566,18 @@ var file_api_proto_endpoints_management_proto_goTypes = []any{
 	(*domain.TopQuery)(nil),                    // 78: api.proto.domain.TopQuery
 	(*domain.SystemMetrics)(nil),               // 79: api.proto.domain.SystemMetrics
 	(*domain.CacheStats)(nil),                  // 80: api.proto.domain.CacheStats
-	(*domain.FirewallStats)(nil),               // 81: api.proto.domain.FirewallStats
-	(*domain.MetricSnapshot)(nil),              // 82: api.proto.domain.MetricSnapshot
-	(*domain.Topology)(nil),                    // 83: api.proto.domain.Topology
-	(*domain.AdaptiveStatus)(nil),              // 84: api.proto.domain.AdaptiveStatus
-	(*domain.PerformanceSuggestion)(nil),       // 85: api.proto.domain.PerformanceSuggestion
-	(*domain.BackendConfig)(nil),               // 86: api.proto.domain.BackendConfig
-	(*domain.Recommendation)(nil),              // 87: api.proto.domain.Recommendation
-	(*domain.TuningSuggestion)(nil),            // 88: api.proto.domain.TuningSuggestion
-	(*timestamppb.Timestamp)(nil),              // 89: google.protobuf.Timestamp
-	(*domain.LogEntry)(nil),                    // 90: api.proto.domain.LogEntry
-	(*domain.QueryInsight)(nil),                // 91: api.proto.domain.QueryInsight
-	(*domain.LockInsight)(nil),                 // 92: api.proto.domain.LockInsight
-	(*domain.ReplicationInsight)(nil),          // 93: api.proto.domain.ReplicationInsight
+	(*domain.MetricSnapshot)(nil),              // 81: api.proto.domain.MetricSnapshot
+	(*domain.Topology)(nil),                    // 82: api.proto.domain.Topology
+	(*domain.AdaptiveStatus)(nil),              // 83: api.proto.domain.AdaptiveStatus
+	(*domain.PerformanceSuggestion)(nil),       // 84: api.proto.domain.PerformanceSuggestion
+	(*domain.BackendConfig)(nil),               // 85: api.proto.domain.BackendConfig
+	(*domain.Recommendation)(nil),              // 86: api.proto.domain.Recommendation
+	(*domain.TuningSuggestion)(nil),            // 87: api.proto.domain.TuningSuggestion
+	(*timestamppb.Timestamp)(nil),              // 88: google.protobuf.Timestamp
+	(*domain.LogEntry)(nil),                    // 89: api.proto.domain.LogEntry
+	(*domain.QueryInsight)(nil),                // 90: api.proto.domain.QueryInsight
+	(*domain.LockInsight)(nil),                 // 91: api.proto.domain.LockInsight
+	(*domain.ReplicationInsight)(nil),          // 92: api.proto.domain.ReplicationInsight
 }
 var file_api_proto_endpoints_management_proto_depIdxs = []int32{
 	75, // 0: api.proto.endpoints.ListProjectsResponse.projects:type_name -> api.proto.domain.Project
@@ -4600,37 +4590,36 @@ var file_api_proto_endpoints_management_proto_depIdxs = []int32{
 	78, // 7: api.proto.endpoints.GetStatusResponse.top_queries:type_name -> api.proto.domain.TopQuery
 	79, // 8: api.proto.endpoints.GetStatusResponse.system_metrics:type_name -> api.proto.domain.SystemMetrics
 	80, // 9: api.proto.endpoints.GetStatusResponse.cache_stats:type_name -> api.proto.domain.CacheStats
-	81, // 10: api.proto.endpoints.GetStatusResponse.firewall_stats:type_name -> api.proto.domain.FirewallStats
-	82, // 11: api.proto.endpoints.GetStatusResponse.history:type_name -> api.proto.domain.MetricSnapshot
-	83, // 12: api.proto.endpoints.GetStatusResponse.topology:type_name -> api.proto.domain.Topology
-	84, // 13: api.proto.endpoints.GetStatusResponse.adaptive_status:type_name -> api.proto.domain.AdaptiveStatus
-	85, // 14: api.proto.endpoints.GetStatusResponse.performance_suggestions:type_name -> api.proto.domain.PerformanceSuggestion
-	86, // 15: api.proto.endpoints.AddBackendRequest.config:type_name -> api.proto.domain.BackendConfig
-	86, // 16: api.proto.endpoints.UpdateBackendRequest.config:type_name -> api.proto.domain.BackendConfig
-	72, // 17: api.proto.endpoints.SetClusterConfigRequest.parameters:type_name -> api.proto.endpoints.SetClusterConfigRequest.ParametersEntry
-	73, // 18: api.proto.endpoints.GetClusterConfigResponse.parameters:type_name -> api.proto.endpoints.GetClusterConfigResponse.ParametersEntry
-	87, // 19: api.proto.endpoints.ExplainQueryResponse.recommendations:type_name -> api.proto.domain.Recommendation
-	74, // 20: api.proto.endpoints.TuneDatabaseResponse.nodes:type_name -> api.proto.endpoints.TuneDatabaseResponse.NodeResult
-	88, // 21: api.proto.endpoints.ApplyTuningRequest.suggestion:type_name -> api.proto.domain.TuningSuggestion
-	89, // 22: api.proto.endpoints.GetMetricsHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
-	89, // 23: api.proto.endpoints.GetMetricsHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
-	82, // 24: api.proto.endpoints.GetMetricsHistoryResponse.history:type_name -> api.proto.domain.MetricSnapshot
-	89, // 25: api.proto.endpoints.GetTopQueriesHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
-	89, // 26: api.proto.endpoints.GetTopQueriesHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
-	78, // 27: api.proto.endpoints.GetTopQueriesHistoryResponse.top_queries:type_name -> api.proto.domain.TopQuery
-	89, // 28: api.proto.endpoints.GetLogsRequest.start_time:type_name -> google.protobuf.Timestamp
-	89, // 29: api.proto.endpoints.GetLogsRequest.end_time:type_name -> google.protobuf.Timestamp
-	90, // 30: api.proto.endpoints.GetLogsResponse.logs:type_name -> api.proto.domain.LogEntry
-	91, // 31: api.proto.endpoints.GetBackendPostgresInsightsResponse.top_queries:type_name -> api.proto.domain.QueryInsight
-	92, // 32: api.proto.endpoints.GetBackendPostgresInsightsResponse.active_locks:type_name -> api.proto.domain.LockInsight
-	93, // 33: api.proto.endpoints.GetBackendPostgresInsightsResponse.replication_status:type_name -> api.proto.domain.ReplicationInsight
-	88, // 34: api.proto.endpoints.GetAgentInfoResponse.tuning_suggestions:type_name -> api.proto.domain.TuningSuggestion
-	88, // 35: api.proto.endpoints.TuneDatabaseResponse.NodeResult.suggestions:type_name -> api.proto.domain.TuningSuggestion
-	36, // [36:36] is the sub-list for method output_type
-	36, // [36:36] is the sub-list for method input_type
-	36, // [36:36] is the sub-list for extension type_name
-	36, // [36:36] is the sub-list for extension extendee
-	0,  // [0:36] is the sub-list for field type_name
+	81, // 10: api.proto.endpoints.GetStatusResponse.history:type_name -> api.proto.domain.MetricSnapshot
+	82, // 11: api.proto.endpoints.GetStatusResponse.topology:type_name -> api.proto.domain.Topology
+	83, // 12: api.proto.endpoints.GetStatusResponse.adaptive_status:type_name -> api.proto.domain.AdaptiveStatus
+	84, // 13: api.proto.endpoints.GetStatusResponse.performance_suggestions:type_name -> api.proto.domain.PerformanceSuggestion
+	85, // 14: api.proto.endpoints.AddBackendRequest.config:type_name -> api.proto.domain.BackendConfig
+	85, // 15: api.proto.endpoints.UpdateBackendRequest.config:type_name -> api.proto.domain.BackendConfig
+	72, // 16: api.proto.endpoints.SetClusterConfigRequest.parameters:type_name -> api.proto.endpoints.SetClusterConfigRequest.ParametersEntry
+	73, // 17: api.proto.endpoints.GetClusterConfigResponse.parameters:type_name -> api.proto.endpoints.GetClusterConfigResponse.ParametersEntry
+	86, // 18: api.proto.endpoints.ExplainQueryResponse.recommendations:type_name -> api.proto.domain.Recommendation
+	74, // 19: api.proto.endpoints.TuneDatabaseResponse.nodes:type_name -> api.proto.endpoints.TuneDatabaseResponse.NodeResult
+	87, // 20: api.proto.endpoints.ApplyTuningRequest.suggestion:type_name -> api.proto.domain.TuningSuggestion
+	88, // 21: api.proto.endpoints.GetMetricsHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
+	88, // 22: api.proto.endpoints.GetMetricsHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
+	81, // 23: api.proto.endpoints.GetMetricsHistoryResponse.history:type_name -> api.proto.domain.MetricSnapshot
+	88, // 24: api.proto.endpoints.GetTopQueriesHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
+	88, // 25: api.proto.endpoints.GetTopQueriesHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
+	78, // 26: api.proto.endpoints.GetTopQueriesHistoryResponse.top_queries:type_name -> api.proto.domain.TopQuery
+	88, // 27: api.proto.endpoints.GetLogsRequest.start_time:type_name -> google.protobuf.Timestamp
+	88, // 28: api.proto.endpoints.GetLogsRequest.end_time:type_name -> google.protobuf.Timestamp
+	89, // 29: api.proto.endpoints.GetLogsResponse.logs:type_name -> api.proto.domain.LogEntry
+	90, // 30: api.proto.endpoints.GetBackendPostgresInsightsResponse.top_queries:type_name -> api.proto.domain.QueryInsight
+	91, // 31: api.proto.endpoints.GetBackendPostgresInsightsResponse.active_locks:type_name -> api.proto.domain.LockInsight
+	92, // 32: api.proto.endpoints.GetBackendPostgresInsightsResponse.replication_status:type_name -> api.proto.domain.ReplicationInsight
+	87, // 33: api.proto.endpoints.GetAgentInfoResponse.tuning_suggestions:type_name -> api.proto.domain.TuningSuggestion
+	87, // 34: api.proto.endpoints.TuneDatabaseResponse.NodeResult.suggestions:type_name -> api.proto.domain.TuningSuggestion
+	35, // [35:35] is the sub-list for method output_type
+	35, // [35:35] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_endpoints_management_proto_init() }

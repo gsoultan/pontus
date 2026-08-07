@@ -1,7 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import {
-  Alert,
   Badge,
   Box,
   Button,
@@ -14,18 +13,15 @@ import {
   SimpleGrid,
   Skeleton,
   Stack,
-  Switch,
   Text,
   TextInput,
   ThemeIcon,
   rem,
 } from '@mantine/core'
 import {
-  IconAlertTriangle,
   IconDeviceFloppy,
   IconRefresh,
   IconSettings,
-  IconShieldLock,
   IconUserPlus,
   IconUsers,
 } from '@tabler/icons-react'
@@ -64,8 +60,6 @@ interface SettingsFormProps {
     max_conns: number
     balancer: string
     pooling_mode: string
-    firewall_enabled: boolean
-    firewall_max_response_size: number
   }
   isUpdating: boolean
   onSubmit: (parameters: Record<string, string>) => Promise<unknown>
@@ -86,8 +80,6 @@ function SettingsForm({ initialValues, isUpdating, onSubmit, onSync }: SettingsF
         max_conns: String(value.max_conns),
         balancer: value.balancer,
         pooling_mode: value.pooling_mode,
-        firewall_enabled: value.firewall_enabled ? 'true' : 'false',
-        firewall_max_response_size: String(value.firewall_max_response_size),
       })
       form.reset(value)
     },
@@ -229,74 +221,6 @@ function SettingsForm({ initialValues, isUpdating, onSubmit, onSync }: SettingsF
           </Stack>
         </Paper>
 
-        <Paper p="md" radius="md">
-          <Stack gap="md">
-            <Group gap="sm">
-              <ThemeIcon size="lg" variant="light" color="red">
-                <IconShieldLock size={20} />
-              </ThemeIcon>
-              <Box>
-                <Text fw={700} size="md">
-                  Security Settings
-                </Text>
-                <Text size="xs" c="dimmed">
-                  Firewall and guardrail configuration
-                </Text>
-              </Box>
-            </Group>
-
-            <Divider />
-
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-              <form.Field name="firewall_enabled">
-                {(field) => (
-                  <Paper
-                    withBorder
-                    p="sm"
-                    radius="md"
-                    bg="light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8))"
-                  >
-                    <Switch
-                      label="SQL Firewall"
-                      description="Active deep packet inspection"
-                      checked={field.state.value}
-                      onChange={(event) => field.handleChange(event.currentTarget.checked)}
-                    />
-                  </Paper>
-                )}
-              </form.Field>
-
-              <form.Field name="firewall_max_response_size">
-                {(field) => (
-                  <NumberInput
-                    label="Max Response Size (MB)"
-                    description="Limit for database responses"
-                    placeholder="10"
-                    min={1}
-                    value={field.state.value}
-                    onChange={(value) => field.handleChange(Number(value) || 0)}
-                  />
-                )}
-              </form.Field>
-            </SimpleGrid>
-
-            <form.Subscribe selector={(state) => state.values.firewall_enabled}>
-              {(enabled) =>
-                enabled ? null : (
-                  <Alert
-                    color="red"
-                    variant="light"
-                    radius="md"
-                    icon={<IconAlertTriangle size={16} />}
-                  >
-                    With the firewall off, every statement reaching the proxy is forwarded to the
-                    database unchecked.
-                  </Alert>
-                )
-              }
-            </form.Subscribe>
-          </Stack>
-        </Paper>
       </Stack>
     </form>
   )
@@ -328,11 +252,6 @@ function SettingsPage() {
               max_conns: Number.parseInt(config.max_conns || '1000', 10),
               balancer: config.balancer || 'round-robin',
               pooling_mode: config.pooling_mode || 'transaction',
-              firewall_enabled: config.firewall_enabled === 'true',
-              firewall_max_response_size: Number.parseInt(
-                config.firewall_max_response_size || '10',
-                10,
-              ),
             }}
             isUpdating={isUpdating}
             onSubmit={updateConfig}

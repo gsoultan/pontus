@@ -19,7 +19,7 @@ Everything else is open. None of the open items are precedent to copy.
   that line never execute. `least_conn` / `p2c` / `peak_ewma` all rank by a constant, and
   `FilterNodes`' write path keeps the *first* healthy primary, never the cheapest.
 
-- **B1. Normalization truncation is a WAF bypass.** The firewall inspects `s.Normalized`
+- **B1. [MOOT — the WAF was removed 2026-08-07] Normalization truncation was a WAF bypass.** The firewall inspects `s.Normalized`
   while `executeRequest` sends the raw `s.Data`. Normalization no longer *truncates* on an
   unbalanced quote (fixed in C2), but the underlying split remains: any divergence between
   the inspected text and the executed bytes is a bypass by construction. The durable fix is
@@ -115,7 +115,7 @@ Each has a regression test in the package it belongs to.
   (`42P05`). Two causes: replay was not per-connection, and `TrackPreparedStatement` ran
   *before* the chain so the statement was replayed onto the very connection about to parse
   it. Connections now implement `protocol.StatementHolder`, and tracking moved after the write.
-- **B2.** Because tracking ran before the firewall, a query the WAF *blocked* was still stored
+- **B2. [MOOT — the WAF was removed 2026-08-07]** Because tracking ran before the firewall, a query the WAF *blocked* was still stored
   in `state.Vars` / `state.Stmts` and replayed verbatim onto a fresh connection with no
   firewall check. Same move fixes it.
 

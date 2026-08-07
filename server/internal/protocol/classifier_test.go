@@ -86,7 +86,7 @@ func TestNormalizeQuery_KeepsIdentifierDigits(t *testing.T) {
 	}
 }
 
-// The firewall inspects the normalized text while the backend receives the raw
+// The classifier inspects the normalized text while the backend receives the raw
 // bytes, so anything normalization drops is invisible to the WAF.
 func TestNormalizeQuery_UnbalancedQuoteKeepsTail(t *testing.T) {
 	h := NewPostgresHandler()

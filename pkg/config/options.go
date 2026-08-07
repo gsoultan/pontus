@@ -21,7 +21,6 @@ type Options struct {
 	HealthInterval time.Duration `json:"health_interval,omitzero" yaml:"health_interval"`
 	TLS            *TLS          `json:"tls,omitzero" yaml:"tls"`
 	BackendTLS     *TLS          `json:"backend_tls,omitzero" yaml:"backend_tls"`
-	Firewall       *Firewall     `json:"firewall,omitzero" yaml:"firewall"`
 	RateLimit      *RateLimit    `json:"rate_limit,omitzero" yaml:"rate_limit"`
 	Cache          *Cache        `json:"cache,omitzero" yaml:"cache"`
 	QueryTimeout   time.Duration `json:"query_timeout,omitzero" yaml:"query_timeout"`
@@ -113,9 +112,6 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.BackendTLS != nil {
 		c.BackendTLS = other.BackendTLS
-	}
-	if other.Firewall != nil {
-		c.Firewall = other.Firewall
 	}
 	if other.RateLimit != nil {
 		c.RateLimit = other.RateLimit

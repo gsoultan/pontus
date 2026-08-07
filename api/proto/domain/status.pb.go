@@ -642,66 +642,6 @@ func (x *MetricSnapshot) GetLatencyMs() float32 {
 	return 0
 }
 
-type FirewallStats struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	BlockedByWord    int64                  `protobuf:"varint,1,opt,name=blocked_by_word,json=blockedByWord,proto3" json:"blocked_by_word,omitempty"`
-	BlockedByPattern int64                  `protobuf:"varint,2,opt,name=blocked_by_pattern,json=blockedByPattern,proto3" json:"blocked_by_pattern,omitempty"`
-	BlockedBySize    int64                  `protobuf:"varint,3,opt,name=blocked_by_size,json=blockedBySize,proto3" json:"blocked_by_size,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *FirewallStats) Reset() {
-	*x = FirewallStats{}
-	mi := &file_api_proto_domain_status_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FirewallStats) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FirewallStats) ProtoMessage() {}
-
-func (x *FirewallStats) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_domain_status_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FirewallStats.ProtoReflect.Descriptor instead.
-func (*FirewallStats) Descriptor() ([]byte, []int) {
-	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *FirewallStats) GetBlockedByWord() int64 {
-	if x != nil {
-		return x.BlockedByWord
-	}
-	return 0
-}
-
-func (x *FirewallStats) GetBlockedByPattern() int64 {
-	if x != nil {
-		return x.BlockedByPattern
-	}
-	return 0
-}
-
-func (x *FirewallStats) GetBlockedBySize() int64 {
-	if x != nil {
-		return x.BlockedBySize
-	}
-	return 0
-}
-
 type CacheStats struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Hits          int64                  `protobuf:"varint,1,opt,name=hits,proto3" json:"hits,omitempty"`
@@ -714,7 +654,7 @@ type CacheStats struct {
 
 func (x *CacheStats) Reset() {
 	*x = CacheStats{}
-	mi := &file_api_proto_domain_status_proto_msgTypes[8]
+	mi := &file_api_proto_domain_status_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -726,7 +666,7 @@ func (x *CacheStats) String() string {
 func (*CacheStats) ProtoMessage() {}
 
 func (x *CacheStats) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_domain_status_proto_msgTypes[8]
+	mi := &file_api_proto_domain_status_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -739,7 +679,7 @@ func (x *CacheStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CacheStats.ProtoReflect.Descriptor instead.
 func (*CacheStats) Descriptor() ([]byte, []int) {
-	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{8}
+	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CacheStats) GetHits() int64 {
@@ -835,11 +775,7 @@ const file_api_proto_domain_status_proto_rawDesc = "" +
 	"\n" +
 	"error_rate\x18\x03 \x01(\x02R\terrorRate\x12\x1d\n" +
 	"\n" +
-	"latency_ms\x18\x04 \x01(\x02R\tlatencyMs\"\x8d\x01\n" +
-	"\rFirewallStats\x12&\n" +
-	"\x0fblocked_by_word\x18\x01 \x01(\x03R\rblockedByWord\x12,\n" +
-	"\x12blocked_by_pattern\x18\x02 \x01(\x03R\x10blockedByPattern\x12&\n" +
-	"\x0fblocked_by_size\x18\x03 \x01(\x03R\rblockedBySize\"v\n" +
+	"latency_ms\x18\x04 \x01(\x02R\tlatencyMs\"v\n" +
 	"\n" +
 	"CacheStats\x12\x12\n" +
 	"\x04hits\x18\x01 \x01(\x03R\x04hits\x12\x16\n" +
@@ -860,7 +796,7 @@ func file_api_proto_domain_status_proto_rawDescGZIP() []byte {
 	return file_api_proto_domain_status_proto_rawDescData
 }
 
-var file_api_proto_domain_status_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_api_proto_domain_status_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_api_proto_domain_status_proto_goTypes = []any{
 	(*BackendStatus)(nil),         // 0: api.proto.domain.BackendStatus
 	(*AdaptiveStatus)(nil),        // 1: api.proto.domain.AdaptiveStatus
@@ -869,19 +805,18 @@ var file_api_proto_domain_status_proto_goTypes = []any{
 	(*TopologyNode)(nil),          // 4: api.proto.domain.TopologyNode
 	(*TopologyEdge)(nil),          // 5: api.proto.domain.TopologyEdge
 	(*MetricSnapshot)(nil),        // 6: api.proto.domain.MetricSnapshot
-	(*FirewallStats)(nil),         // 7: api.proto.domain.FirewallStats
-	(*CacheStats)(nil),            // 8: api.proto.domain.CacheStats
-	(*timestamppb.Timestamp)(nil), // 9: google.protobuf.Timestamp
-	(*AgentDatabaseConfig)(nil),   // 10: api.proto.domain.AgentDatabaseConfig
-	(*DatabaseMetrics)(nil),       // 11: api.proto.domain.DatabaseMetrics
+	(*CacheStats)(nil),            // 7: api.proto.domain.CacheStats
+	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
+	(*AgentDatabaseConfig)(nil),   // 9: api.proto.domain.AgentDatabaseConfig
+	(*DatabaseMetrics)(nil),       // 10: api.proto.domain.DatabaseMetrics
 }
 var file_api_proto_domain_status_proto_depIdxs = []int32{
-	9,  // 0: api.proto.domain.BackendStatus.last_check:type_name -> google.protobuf.Timestamp
-	10, // 1: api.proto.domain.BackendStatus.agent_config:type_name -> api.proto.domain.AgentDatabaseConfig
-	11, // 2: api.proto.domain.BackendStatus.db_metrics:type_name -> api.proto.domain.DatabaseMetrics
+	8,  // 0: api.proto.domain.BackendStatus.last_check:type_name -> google.protobuf.Timestamp
+	9,  // 1: api.proto.domain.BackendStatus.agent_config:type_name -> api.proto.domain.AgentDatabaseConfig
+	10, // 2: api.proto.domain.BackendStatus.db_metrics:type_name -> api.proto.domain.DatabaseMetrics
 	4,  // 3: api.proto.domain.Topology.nodes:type_name -> api.proto.domain.TopologyNode
 	5,  // 4: api.proto.domain.Topology.edges:type_name -> api.proto.domain.TopologyEdge
-	9,  // 5: api.proto.domain.MetricSnapshot.timestamp:type_name -> google.protobuf.Timestamp
+	8,  // 5: api.proto.domain.MetricSnapshot.timestamp:type_name -> google.protobuf.Timestamp
 	6,  // [6:6] is the sub-list for method output_type
 	6,  // [6:6] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
@@ -902,7 +837,7 @@ func file_api_proto_domain_status_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_domain_status_proto_rawDesc), len(file_api_proto_domain_status_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

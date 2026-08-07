@@ -50,7 +50,7 @@ command from a request field, and must never report healthy on an error path.
 Twelve security defects are open as of the 2026-08-06 review (`mem:findings` B1–B12). The two
 that matter most, because neither is guessable from the design:
 
-1. **The WAF can be bypassed with one unbalanced quote.** The firewall inspects the *normalized*
+1. **[MOOT — the WAF was removed 2026-08-07] The WAF could be bypassed with one unbalanced quote.** The firewall inspects the *normalized*
    query while the backend receives the *raw* bytes, and normalization silently drops everything
    after an unterminated `'`. Any check that reads a different string than the one that gets
    executed is a bypass by construction.

@@ -42,11 +42,6 @@ var (
 		Help: "System load average over the last 1 minute",
 	})
 
-	FirewallViolations = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "pontus_firewall_violations_total",
-		Help: "Total number of queries blocked by the SQL firewall",
-	}, []string{"reason"})
-
 	// Database node metrics
 	ActiveBackends = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "pontus_db_active_backends",

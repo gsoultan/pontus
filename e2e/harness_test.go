@@ -317,10 +317,5 @@ rate_limit:
   enabled: true
   rps: 500
   burst: 1000
-
-firewall:
-  enabled: true
-  blocked_words:
-    - DROP
 `, proxyAddr, mgmtAddr, dataDir, backendAddr())
 }
