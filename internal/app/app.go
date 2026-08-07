@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/gsoultan/pontus/api/proto/domain"
 	"github.com/gsoultan/pontus/api/proto/service/serviceconnect"
+	"github.com/gsoultan/pontus/pkg/auth"
 	"github.com/gsoultan/pontus/pkg/config"
 	"github.com/gsoultan/pontus/pkg/observability"
 	obsStore "github.com/gsoultan/pontus/pkg/observability/store"
@@ -74,12 +76,28 @@ func (a *App) Run(ctx context.Context) error {
 	// Migrate from JSON if necessary
 	a.migrateFromJSON()
 
-	// Add default admin if no users exist
+	// Bootstrap an administrator if the store is empty.
+	//
+	// This used to create admin/admin123 — a published default credential on a
+	// service that fronts production databases. A random password is generated
+	// instead and printed once; it is never recoverable afterwards, which is
+	// the point.
 	if len(a.userStore.List()) == 0 {
-		log.Println("No users found, creating default admin user")
-		if err := a.userStore.Upsert("admin", "admin123", "admin"); err != nil {
-			log.Printf("Warning: Failed to create default admin user: %v", err)
+		password, err := generatePassword()
+		if err != nil {
+			return fmt.Errorf("generate bootstrap admin password: %w", err)
 		}
+		if err := a.userStore.Upsert("admin", password, "admin"); err != nil {
+			return fmt.Errorf("create bootstrap admin user: %w", err)
+		}
+		log.Printf("\n"+
+			"========================================================\n"+
+			"  No users found. Created administrator account:\n"+
+			"      username: admin\n"+
+			"      password: %s\n"+
+			"  This password is shown once and is not recoverable.\n"+
+			"  Store it now, then change it.\n"+
+			"========================================================", password)
 	}
 
 	// Migrate existing raw passwords if any
@@ -135,8 +153,16 @@ func (a *App) Run(ctx context.Context) error {
 	// Start Observability Sync
 	observability.StartBackgroundSync(ctx, 30*time.Second)
 
+	// Token issuer. Fail closed: without a configured key there is no safe
+	// default, and inventing one would publish it in the source tree.
+	issuer, err := auth.NewIssuer(a.cfg.JWTSecret)
+	if err != nil {
+		return fmt.Errorf("auth key is not configured: set auth_key (or jwt_secret) in config, "+
+			"or PONTUS_AUTH_KEY in the environment: %w", err)
+	}
+
 	// Initialize Management Service (Multi-project aware)
-	svc := infrastructure.NewService(ctx, a.projectStore, a.userStore, a.settingStore, a.cfg.DialTimeout, a.backendTLS, a.cfg.JWTSecret)
+	svc := infrastructure.NewService(ctx, a.projectStore, a.userStore, a.settingStore, a.cfg.DialTimeout, a.backendTLS, issuer)
 	endpoints := management.MakeEndpoints(svc)
 
 	// Start Management gRPC Server
@@ -152,7 +178,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	mgmtPath, mgmtHandler := serviceconnect.NewManagementServiceHandler(
 		handler.NewManagementHandler(endpoints),
-		connect.WithInterceptors(mgmtMiddleware.NewAuth(a.cfg.AdminToken, a.cfg.JWTSecret)),
+		connect.WithInterceptors(mgmtMiddleware.NewAuth(a.cfg.AdminToken, issuer)),
 	)
 	mux.Handle(mgmtPath, mgmtHandler)
 
@@ -165,12 +191,26 @@ func (a *App) Run(ctx context.Context) error {
 		log.Printf("Web Dashboard available at http://%s", a.cfg.MgmtAddr)
 	}
 
-	// Add CORS for web UI
-	corsHandler := cors.New(cors.Options{
-		AllowedOrigins: []string{"*"},
-		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders: []string{"Content-Type", "Connect-Protocol-Version"},
-	}).Handler(mux)
+	// CORS for the web UI.
+	//
+	// The dashboard is served from this same origin, so no cross-origin access
+	// is needed by default and none is granted. A wildcard here would have
+	// exposed the ConnectRPC handler and /metrics to any site the operator
+	// happened to visit. Operators running the dashboard elsewhere list their
+	// origins explicitly; credentials are only allowed once an origin is named.
+	corsOptions := cors.Options{
+		AllowedOrigins:   a.cfg.AllowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Content-Type", "Connect-Protocol-Version", "Authorization"},
+		AllowCredentials: len(a.cfg.AllowedOrigins) > 0,
+	}
+	for _, origin := range a.cfg.AllowedOrigins {
+		if origin == "*" {
+			return errors.New("allowed_origins must not contain \"*\": it would expose the " +
+				"management API and /metrics to any origin; list the dashboard origins explicitly")
+		}
+	}
+	corsHandler := cors.New(corsOptions).Handler(mux)
 
 	a.server = new(http.Server{
 		Handler: h2c.NewHandler(corsHandler, new(http2.Server{})),

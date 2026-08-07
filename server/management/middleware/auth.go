@@ -2,37 +2,48 @@ package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strings"
 
 	"connectrpc.com/connect"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/gsoultan/pontus/pkg/auth"
 )
+
+// readOnlyProcedures are the RPCs a non-admin role may call.
+//
+// Every new RPC is admin-only by default. Adding one here is a deliberate
+// security decision, not a formality.
+var readOnlyProcedures = []string{
+	"/GetStatus",
+	"/ListProjects",
+	"/GetMetricsHistory",
+	"/GetTopQueriesHistory",
+	"/GetLogs",
+	"/GetServerInfo",
+	"/ValidateBackend",
+}
 
 // Auth implements connect.Interceptor to provide token-based authentication.
 type Auth struct {
 	adminToken string
-	secret     []byte
+	issuer     *auth.Issuer
 }
 
-// NewAuth creates a new Auth interceptor with the given token and secret.
-func NewAuth(adminToken string, secret string) *Auth {
-	return &Auth{
-		adminToken: adminToken,
-		secret:     []byte(secret),
-	}
+// NewAuth creates a new Auth interceptor.
+//
+// issuer must be non-nil. This interceptor used to call through
+// unauthenticated whenever adminToken was empty, which left the management
+// API, every mutating RPC and /metrics open by default.
+func NewAuth(adminToken string, issuer *auth.Issuer) *Auth {
+	return &Auth{adminToken: adminToken, issuer: issuer}
 }
 
 // WrapUnary implements connect.Interceptor.
 func (a *Auth) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		// Allow Login without authentication
-		if req.Spec() != (connect.Spec{}) && strings.HasSuffix(req.Spec().Procedure, "/Login") {
-			return next(ctx, req)
-		}
-
-		if a.adminToken == "" {
+		if isLogin(req.Spec()) {
 			return next(ctx, req)
 		}
 		if err := a.validate(req.Header(), req.Spec().Procedure); err != nil {
@@ -50,12 +61,7 @@ func (a *Auth) WrapStreamingClient(next connect.StreamingClientFunc) connect.Str
 // WrapStreamingHandler implements connect.Interceptor.
 func (a *Auth) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		// Allow Login without authentication (though Login is unary)
-		if conn.Spec() != (connect.Spec{}) && strings.HasSuffix(conn.Spec().Procedure, "/Login") {
-			return next(ctx, conn)
-		}
-
-		if a.adminToken == "" {
+		if isLogin(conn.Spec()) {
 			return next(ctx, conn)
 		}
 		if err := a.validate(conn.RequestHeader(), conn.Spec().Procedure); err != nil {
@@ -65,60 +71,42 @@ func (a *Auth) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.S
 	}
 }
 
+func isLogin(spec connect.Spec) bool {
+	return spec != (connect.Spec{}) && strings.HasSuffix(spec.Procedure, "/Login")
+}
+
 func (a *Auth) validate(header http.Header, procedure string) error {
 	authHeader := header.Get("Authorization")
 	if authHeader == "" {
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("missing authorization header"))
 	}
 
-	providedToken := strings.TrimPrefix(authHeader, "Bearer ")
+	provided := strings.TrimPrefix(authHeader, "Bearer ")
 
-	// Support legacy admin token
-	if providedToken == a.adminToken && a.adminToken != "" {
+	// Legacy static admin token, compared in constant time so the comparison
+	// does not leak the token's prefix through timing.
+	if a.adminToken != "" &&
+		subtle.ConstantTimeCompare([]byte(provided), []byte(a.adminToken)) == 1 {
 		return nil
 	}
 
-	// Validate JWT
-	token, err := jwt.Parse(providedToken, func(token *jwt.Token) (any, error) {
-		return a.secret, nil
-	})
+	if a.issuer == nil {
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("authentication is not configured"))
+	}
 
-	if err != nil || !token.Valid {
+	claims, err := a.issuer.Verify(provided)
+	if err != nil {
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("invalid token"))
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("invalid token claims"))
+	if claims.Role == "admin" {
+		return nil
 	}
 
-	role, _ := claims["role"].(string)
-
-	// Enforce RBAC using allowlist for non-admins
-	if role != "admin" {
-		isPublic := false
-		publicProcedures := []string{
-			"/Login",
-			"/GetStatus",
-			"/ListProjects",
-			"/GetMetricsHistory",
-			"/GetTopQueriesHistory",
-			"/GetLogs",
-			"/GetServerInfo",
-			"/ValidateBackend",
-		}
-
-		for _, proc := range publicProcedures {
-			if strings.HasSuffix(procedure, proc) {
-				isPublic = true
-				break
-			}
-		}
-
-		if !isPublic {
-			return connect.NewError(connect.CodePermissionDenied, errors.New("admin role required for this operation"))
+	for _, allowed := range readOnlyProcedures {
+		if strings.HasSuffix(procedure, allowed) {
+			return nil
 		}
 	}
-
-	return nil
+	return connect.NewError(connect.CodePermissionDenied, errors.New("admin role required for this operation"))
 }

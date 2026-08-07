@@ -1,6 +1,7 @@
 package infrastructure
 
 import (
+	"github.com/gsoultan/pontus/pkg/auth"
 	"testing"
 	"time"
 
@@ -19,7 +20,12 @@ func TestAuth_Login(t *testing.T) {
 	ustore := store.NewSQLiteUser(db)
 	sstore := store.NewSQLiteSetting(db)
 
-	svc := NewService(t.Context(), pstore, ustore, sstore, 1*time.Second, nil, "test-secret")
+	issuer, err := auth.NewIssuer("test-secret")
+	if err != nil {
+		t.Fatalf("failed to create issuer: %v", err)
+	}
+
+	svc := NewService(t.Context(), pstore, ustore, sstore, 1*time.Second, nil, issuer)
 
 	// 1. Create a user
 	username := "testuser"

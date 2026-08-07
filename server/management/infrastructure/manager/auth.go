@@ -3,9 +3,7 @@ package manager
 import (
 	"context"
 	"errors"
-	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/gsoultan/pontus/api/proto/endpoints"
 	pwd "github.com/gsoultan/pontus/pkg/auth"
 	"github.com/gsoultan/pontus/server/management/infrastructure/registry"
@@ -13,45 +11,40 @@ import (
 )
 
 type auth struct {
-	registry  *registry.Registry
-	jwtSecret string
+	registry *registry.Registry
+	issuer   *pwd.Issuer
 }
 
 // NewAuth creates a new auth manager.
-func NewAuth(r *registry.Registry, jwtSecret string) service.Auth {
-	if jwtSecret == "" {
-		jwtSecret = "pontus-secret-key"
-	}
-	return &auth{
-		registry:  r,
-		jwtSecret: jwtSecret,
-	}
+//
+// The issuer is constructed at startup and must be non-nil; there is no
+// fallback secret. NewAuth previously defaulted to the literal
+// "pontus-secret-key" when none was configured, which meant every deployment
+// that forgot to set one shared a key published in this repository.
+func NewAuth(r *registry.Registry, issuer *pwd.Issuer) service.Auth {
+	return &auth{registry: r, issuer: issuer}
 }
 
 func (a *auth) Login(ctx context.Context, req *endpoints.LoginRequest) (*endpoints.LoginResponse, error) {
+	if a.issuer == nil {
+		return nil, errors.New("authentication is not configured")
+	}
+
 	u, ok := a.registry.UserStore().Get(req.Username)
 	if !ok || !pwd.CheckPasswordHash(req.Password, u.Token) {
+		// One message for both cases so the response cannot be used to
+		// enumerate which usernames exist.
 		return nil, errors.New("invalid username or password")
 	}
 
-	role := u.Role
-
-	// Generate JWT token
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"username": req.Username,
-		"role":     role,
-		"exp":      time.Now().Add(time.Hour * 24).Unix(),
-	})
-
-	// Use the configured secret
-	tokenString, err := token.SignedString([]byte(a.jwtSecret))
+	token, err := a.issuer.Issue(req.Username, u.Role)
 	if err != nil {
 		return nil, err
 	}
 
 	return &endpoints.LoginResponse{
-		Token:    tokenString,
-		Role:     role,
+		Token:    token,
+		Role:     u.Role,
 		Username: req.Username,
 	}, nil
 }
