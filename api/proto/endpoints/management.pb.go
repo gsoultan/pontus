@@ -3204,6 +3204,372 @@ func (x *GetLogsResponse) GetTotalCount() int32 {
 	return 0
 }
 
+// Replication streams (CDC)
+type ListReplicationStreamsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	ProxyId       string                 `protobuf:"bytes,2,opt,name=proxy_id,json=proxyId,proto3" json:"proxy_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReplicationStreamsRequest) Reset() {
+	*x = ListReplicationStreamsRequest{}
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReplicationStreamsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReplicationStreamsRequest) ProtoMessage() {}
+
+func (x *ListReplicationStreamsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReplicationStreamsRequest.ProtoReflect.Descriptor instead.
+func (*ListReplicationStreamsRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *ListReplicationStreamsRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *ListReplicationStreamsRequest) GetProxyId() string {
+	if x != nil {
+		return x.ProxyId
+	}
+	return ""
+}
+
+type ListReplicationStreamsResponse struct {
+	state   protoimpl.MessageState      `protogen:"open.v1"`
+	Streams []*domain.ReplicationStream `protobuf:"bytes,1,rep,name=streams,proto3" json:"streams,omitempty"`
+	// Budget the operator set aside for streams, and how much is in use, so the
+	// dashboard can say "3 of 4" without recomputing it from the node list.
+	Used          int32 `protobuf:"varint,2,opt,name=used,proto3" json:"used,omitempty"`
+	Budget        int32 `protobuf:"varint,3,opt,name=budget,proto3" json:"budget,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReplicationStreamsResponse) Reset() {
+	*x = ListReplicationStreamsResponse{}
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReplicationStreamsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReplicationStreamsResponse) ProtoMessage() {}
+
+func (x *ListReplicationStreamsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReplicationStreamsResponse.ProtoReflect.Descriptor instead.
+func (*ListReplicationStreamsResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *ListReplicationStreamsResponse) GetStreams() []*domain.ReplicationStream {
+	if x != nil {
+		return x.Streams
+	}
+	return nil
+}
+
+func (x *ListReplicationStreamsResponse) GetUsed() int32 {
+	if x != nil {
+		return x.Used
+	}
+	return 0
+}
+
+func (x *ListReplicationStreamsResponse) GetBudget() int32 {
+	if x != nil {
+		return x.Budget
+	}
+	return 0
+}
+
+type TerminateReplicationStreamRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	ProxyId       string                 `protobuf:"bytes,2,opt,name=proxy_id,json=proxyId,proto3" json:"proxy_id,omitempty"`
+	StreamId      string                 `protobuf:"bytes,3,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminateReplicationStreamRequest) Reset() {
+	*x = TerminateReplicationStreamRequest{}
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminateReplicationStreamRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminateReplicationStreamRequest) ProtoMessage() {}
+
+func (x *TerminateReplicationStreamRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminateReplicationStreamRequest.ProtoReflect.Descriptor instead.
+func (*TerminateReplicationStreamRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *TerminateReplicationStreamRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *TerminateReplicationStreamRequest) GetProxyId() string {
+	if x != nil {
+		return x.ProxyId
+	}
+	return ""
+}
+
+func (x *TerminateReplicationStreamRequest) GetStreamId() string {
+	if x != nil {
+		return x.StreamId
+	}
+	return ""
+}
+
+type TerminateReplicationStreamResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TerminateReplicationStreamResponse) Reset() {
+	*x = TerminateReplicationStreamResponse{}
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TerminateReplicationStreamResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TerminateReplicationStreamResponse) ProtoMessage() {}
+
+func (x *TerminateReplicationStreamResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TerminateReplicationStreamResponse.ProtoReflect.Descriptor instead.
+func (*TerminateReplicationStreamResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *TerminateReplicationStreamResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *TerminateReplicationStreamResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+// CreateReplicationSlotRequest pre-creates a logical slot so a consumer has
+// something to attach to. Physical slots are created by replica provisioning,
+// not here.
+type CreateLogicalSlotRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	ProxyId       string                 `protobuf:"bytes,2,opt,name=proxy_id,json=proxyId,proto3" json:"proxy_id,omitempty"`
+	Address       string                 `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`
+	SlotName      string                 `protobuf:"bytes,4,opt,name=slot_name,json=slotName,proto3" json:"slot_name,omitempty"`
+	Plugin        string                 `protobuf:"bytes,5,opt,name=plugin,proto3" json:"plugin,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateLogicalSlotRequest) Reset() {
+	*x = CreateLogicalSlotRequest{}
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateLogicalSlotRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateLogicalSlotRequest) ProtoMessage() {}
+
+func (x *CreateLogicalSlotRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateLogicalSlotRequest.ProtoReflect.Descriptor instead.
+func (*CreateLogicalSlotRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *CreateLogicalSlotRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *CreateLogicalSlotRequest) GetProxyId() string {
+	if x != nil {
+		return x.ProxyId
+	}
+	return ""
+}
+
+func (x *CreateLogicalSlotRequest) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *CreateLogicalSlotRequest) GetSlotName() string {
+	if x != nil {
+		return x.SlotName
+	}
+	return ""
+}
+
+func (x *CreateLogicalSlotRequest) GetPlugin() string {
+	if x != nil {
+		return x.Plugin
+	}
+	return ""
+}
+
+type CreateLogicalSlotResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	ConsumerDsn   string                 `protobuf:"bytes,3,opt,name=consumer_dsn,json=consumerDsn,proto3" json:"consumer_dsn,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateLogicalSlotResponse) Reset() {
+	*x = CreateLogicalSlotResponse{}
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateLogicalSlotResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateLogicalSlotResponse) ProtoMessage() {}
+
+func (x *CreateLogicalSlotResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateLogicalSlotResponse.ProtoReflect.Descriptor instead.
+func (*CreateLogicalSlotResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *CreateLogicalSlotResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *CreateLogicalSlotResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *CreateLogicalSlotResponse) GetConsumerDsn() string {
+	if x != nil {
+		return x.ConsumerDsn
+	}
+	return ""
+}
+
 type StreamLogsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	MinLevel      string                 `protobuf:"bytes,1,opt,name=min_level,json=minLevel,proto3" json:"min_level,omitempty"`
@@ -3213,7 +3579,7 @@ type StreamLogsRequest struct {
 
 func (x *StreamLogsRequest) Reset() {
 	*x = StreamLogsRequest{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[57]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3225,7 +3591,7 @@ func (x *StreamLogsRequest) String() string {
 func (*StreamLogsRequest) ProtoMessage() {}
 
 func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[57]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3238,7 +3604,7 @@ func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLogsRequest.ProtoReflect.Descriptor instead.
 func (*StreamLogsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{57}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *StreamLogsRequest) GetMinLevel() string {
@@ -3259,7 +3625,7 @@ type GetBackendPostgresInsightsRequest struct {
 
 func (x *GetBackendPostgresInsightsRequest) Reset() {
 	*x = GetBackendPostgresInsightsRequest{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[58]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3271,7 +3637,7 @@ func (x *GetBackendPostgresInsightsRequest) String() string {
 func (*GetBackendPostgresInsightsRequest) ProtoMessage() {}
 
 func (x *GetBackendPostgresInsightsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[58]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3284,7 +3650,7 @@ func (x *GetBackendPostgresInsightsRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use GetBackendPostgresInsightsRequest.ProtoReflect.Descriptor instead.
 func (*GetBackendPostgresInsightsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{58}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *GetBackendPostgresInsightsRequest) GetProjectId() string {
@@ -3319,7 +3685,7 @@ type GetBackendPostgresInsightsResponse struct {
 
 func (x *GetBackendPostgresInsightsResponse) Reset() {
 	*x = GetBackendPostgresInsightsResponse{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[59]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3331,7 +3697,7 @@ func (x *GetBackendPostgresInsightsResponse) String() string {
 func (*GetBackendPostgresInsightsResponse) ProtoMessage() {}
 
 func (x *GetBackendPostgresInsightsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[59]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3344,7 +3710,7 @@ func (x *GetBackendPostgresInsightsResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use GetBackendPostgresInsightsResponse.ProtoReflect.Descriptor instead.
 func (*GetBackendPostgresInsightsResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{59}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *GetBackendPostgresInsightsResponse) GetTopQueries() []*domain.QueryInsight {
@@ -3379,7 +3745,7 @@ type RestartBackendServiceRequest struct {
 
 func (x *RestartBackendServiceRequest) Reset() {
 	*x = RestartBackendServiceRequest{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[60]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3391,7 +3757,7 @@ func (x *RestartBackendServiceRequest) String() string {
 func (*RestartBackendServiceRequest) ProtoMessage() {}
 
 func (x *RestartBackendServiceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[60]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3404,7 +3770,7 @@ func (x *RestartBackendServiceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestartBackendServiceRequest.ProtoReflect.Descriptor instead.
 func (*RestartBackendServiceRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{60}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *RestartBackendServiceRequest) GetProjectId() string {
@@ -3438,7 +3804,7 @@ type RestartBackendServiceResponse struct {
 
 func (x *RestartBackendServiceResponse) Reset() {
 	*x = RestartBackendServiceResponse{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[61]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3450,7 +3816,7 @@ func (x *RestartBackendServiceResponse) String() string {
 func (*RestartBackendServiceResponse) ProtoMessage() {}
 
 func (x *RestartBackendServiceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[61]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3463,7 +3829,7 @@ func (x *RestartBackendServiceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestartBackendServiceResponse.ProtoReflect.Descriptor instead.
 func (*RestartBackendServiceResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{61}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *RestartBackendServiceResponse) GetSuccess() bool {
@@ -3491,7 +3857,7 @@ type ShutdownBackendRequest struct {
 
 func (x *ShutdownBackendRequest) Reset() {
 	*x = ShutdownBackendRequest{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[62]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3503,7 +3869,7 @@ func (x *ShutdownBackendRequest) String() string {
 func (*ShutdownBackendRequest) ProtoMessage() {}
 
 func (x *ShutdownBackendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[62]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3516,7 +3882,7 @@ func (x *ShutdownBackendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShutdownBackendRequest.ProtoReflect.Descriptor instead.
 func (*ShutdownBackendRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{62}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *ShutdownBackendRequest) GetProjectId() string {
@@ -3550,7 +3916,7 @@ type ShutdownBackendResponse struct {
 
 func (x *ShutdownBackendResponse) Reset() {
 	*x = ShutdownBackendResponse{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[63]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3562,7 +3928,7 @@ func (x *ShutdownBackendResponse) String() string {
 func (*ShutdownBackendResponse) ProtoMessage() {}
 
 func (x *ShutdownBackendResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[63]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3575,7 +3941,7 @@ func (x *ShutdownBackendResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShutdownBackendResponse.ProtoReflect.Descriptor instead.
 func (*ShutdownBackendResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{63}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *ShutdownBackendResponse) GetSuccess() bool {
@@ -3603,7 +3969,7 @@ type LoginRequest struct {
 
 func (x *LoginRequest) Reset() {
 	*x = LoginRequest{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[64]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3615,7 +3981,7 @@ func (x *LoginRequest) String() string {
 func (*LoginRequest) ProtoMessage() {}
 
 func (x *LoginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[64]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3628,7 +3994,7 @@ func (x *LoginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginRequest.ProtoReflect.Descriptor instead.
 func (*LoginRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{64}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *LoginRequest) GetUsername() string {
@@ -3656,7 +4022,7 @@ type LoginResponse struct {
 
 func (x *LoginResponse) Reset() {
 	*x = LoginResponse{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[65]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3668,7 +4034,7 @@ func (x *LoginResponse) String() string {
 func (*LoginResponse) ProtoMessage() {}
 
 func (x *LoginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[65]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3681,7 +4047,7 @@ func (x *LoginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoginResponse.ProtoReflect.Descriptor instead.
 func (*LoginResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{65}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *LoginResponse) GetToken() string {
@@ -3716,7 +4082,7 @@ type CreateUserRequest struct {
 
 func (x *CreateUserRequest) Reset() {
 	*x = CreateUserRequest{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[66]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3728,7 +4094,7 @@ func (x *CreateUserRequest) String() string {
 func (*CreateUserRequest) ProtoMessage() {}
 
 func (x *CreateUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[66]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3741,7 +4107,7 @@ func (x *CreateUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateUserRequest.ProtoReflect.Descriptor instead.
 func (*CreateUserRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{66}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *CreateUserRequest) GetUsername() string {
@@ -3775,7 +4141,7 @@ type CreateUserResponse struct {
 
 func (x *CreateUserResponse) Reset() {
 	*x = CreateUserResponse{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[67]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3787,7 +4153,7 @@ func (x *CreateUserResponse) String() string {
 func (*CreateUserResponse) ProtoMessage() {}
 
 func (x *CreateUserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[67]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3800,7 +4166,7 @@ func (x *CreateUserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateUserResponse.ProtoReflect.Descriptor instead.
 func (*CreateUserResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{67}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *CreateUserResponse) GetUsername() string {
@@ -3827,7 +4193,7 @@ type GetAgentInfoRequest struct {
 
 func (x *GetAgentInfoRequest) Reset() {
 	*x = GetAgentInfoRequest{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[68]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3839,7 +4205,7 @@ func (x *GetAgentInfoRequest) String() string {
 func (*GetAgentInfoRequest) ProtoMessage() {}
 
 func (x *GetAgentInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[68]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3852,7 +4218,7 @@ func (x *GetAgentInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAgentInfoRequest.ProtoReflect.Descriptor instead.
 func (*GetAgentInfoRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{68}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *GetAgentInfoRequest) GetAgentAddress() string {
@@ -3887,7 +4253,7 @@ type GetAgentInfoResponse struct {
 
 func (x *GetAgentInfoResponse) Reset() {
 	*x = GetAgentInfoResponse{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[69]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3899,7 +4265,7 @@ func (x *GetAgentInfoResponse) String() string {
 func (*GetAgentInfoResponse) ProtoMessage() {}
 
 func (x *GetAgentInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[69]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3912,7 +4278,7 @@ func (x *GetAgentInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAgentInfoResponse.ProtoReflect.Descriptor instead.
 func (*GetAgentInfoResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{69}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *GetAgentInfoResponse) GetOs() string {
@@ -3993,7 +4359,7 @@ type GetServerInfoRequest struct {
 
 func (x *GetServerInfoRequest) Reset() {
 	*x = GetServerInfoRequest{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[70]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4005,7 +4371,7 @@ func (x *GetServerInfoRequest) String() string {
 func (*GetServerInfoRequest) ProtoMessage() {}
 
 func (x *GetServerInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[70]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4018,7 +4384,7 @@ func (x *GetServerInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetServerInfoRequest.ProtoReflect.Descriptor instead.
 func (*GetServerInfoRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{70}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{76}
 }
 
 type GetServerInfoResponse struct {
@@ -4032,7 +4398,7 @@ type GetServerInfoResponse struct {
 
 func (x *GetServerInfoResponse) Reset() {
 	*x = GetServerInfoResponse{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[71]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4044,7 +4410,7 @@ func (x *GetServerInfoResponse) String() string {
 func (*GetServerInfoResponse) ProtoMessage() {}
 
 func (x *GetServerInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[71]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4057,7 +4423,7 @@ func (x *GetServerInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetServerInfoResponse.ProtoReflect.Descriptor instead.
 func (*GetServerInfoResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{71}
+	return file_api_proto_endpoints_management_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *GetServerInfoResponse) GetVersion() string {
@@ -4092,7 +4458,7 @@ type TuneDatabaseResponse_NodeResult struct {
 
 func (x *TuneDatabaseResponse_NodeResult) Reset() {
 	*x = TuneDatabaseResponse_NodeResult{}
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[74]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4104,7 +4470,7 @@ func (x *TuneDatabaseResponse_NodeResult) String() string {
 func (*TuneDatabaseResponse_NodeResult) ProtoMessage() {}
 
 func (x *TuneDatabaseResponse_NodeResult) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_endpoints_management_proto_msgTypes[74]
+	mi := &file_api_proto_endpoints_management_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4405,7 +4771,34 @@ const file_api_proto_endpoints_management_proto_rawDesc = "" +
 	"\x0fGetLogsResponse\x12.\n" +
 	"\x04logs\x18\x01 \x03(\v2\x1a.api.proto.domain.LogEntryR\x04logs\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
-	"totalCount\"0\n" +
+	"totalCount\"Y\n" +
+	"\x1dListReplicationStreamsRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +
+	"\bproxy_id\x18\x02 \x01(\tR\aproxyId\"\x8b\x01\n" +
+	"\x1eListReplicationStreamsResponse\x12=\n" +
+	"\astreams\x18\x01 \x03(\v2#.api.proto.domain.ReplicationStreamR\astreams\x12\x12\n" +
+	"\x04used\x18\x02 \x01(\x05R\x04used\x12\x16\n" +
+	"\x06budget\x18\x03 \x01(\x05R\x06budget\"z\n" +
+	"!TerminateReplicationStreamRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +
+	"\bproxy_id\x18\x02 \x01(\tR\aproxyId\x12\x1b\n" +
+	"\tstream_id\x18\x03 \x01(\tR\bstreamId\"X\n" +
+	"\"TerminateReplicationStreamResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xa3\x01\n" +
+	"\x18CreateLogicalSlotRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +
+	"\bproxy_id\x18\x02 \x01(\tR\aproxyId\x12\x18\n" +
+	"\aaddress\x18\x03 \x01(\tR\aaddress\x12\x1b\n" +
+	"\tslot_name\x18\x04 \x01(\tR\bslotName\x12\x16\n" +
+	"\x06plugin\x18\x05 \x01(\tR\x06plugin\"r\n" +
+	"\x19CreateLogicalSlotResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12!\n" +
+	"\fconsumer_dsn\x18\x03 \x01(\tR\vconsumerDsn\"0\n" +
 	"\x11StreamLogsRequest\x12\x1b\n" +
 	"\tmin_level\x18\x01 \x01(\tR\bminLevel\"w\n" +
 	"!GetBackendPostgresInsightsRequest\x12\x1d\n" +
@@ -4483,7 +4876,7 @@ func file_api_proto_endpoints_management_proto_rawDescGZIP() []byte {
 	return file_api_proto_endpoints_management_proto_rawDescData
 }
 
-var file_api_proto_endpoints_management_proto_msgTypes = make([]protoimpl.MessageInfo, 75)
+var file_api_proto_endpoints_management_proto_msgTypes = make([]protoimpl.MessageInfo, 81)
 var file_api_proto_endpoints_management_proto_goTypes = []any{
 	(*GetAvailableVersionsRequest)(nil),        // 0: api.proto.endpoints.GetAvailableVersionsRequest
 	(*GetAvailableVersionsResponse)(nil),       // 1: api.proto.endpoints.GetAvailableVersionsResponse
@@ -4542,84 +4935,92 @@ var file_api_proto_endpoints_management_proto_goTypes = []any{
 	(*GetTopQueriesHistoryResponse)(nil),       // 54: api.proto.endpoints.GetTopQueriesHistoryResponse
 	(*GetLogsRequest)(nil),                     // 55: api.proto.endpoints.GetLogsRequest
 	(*GetLogsResponse)(nil),                    // 56: api.proto.endpoints.GetLogsResponse
-	(*StreamLogsRequest)(nil),                  // 57: api.proto.endpoints.StreamLogsRequest
-	(*GetBackendPostgresInsightsRequest)(nil),  // 58: api.proto.endpoints.GetBackendPostgresInsightsRequest
-	(*GetBackendPostgresInsightsResponse)(nil), // 59: api.proto.endpoints.GetBackendPostgresInsightsResponse
-	(*RestartBackendServiceRequest)(nil),       // 60: api.proto.endpoints.RestartBackendServiceRequest
-	(*RestartBackendServiceResponse)(nil),      // 61: api.proto.endpoints.RestartBackendServiceResponse
-	(*ShutdownBackendRequest)(nil),             // 62: api.proto.endpoints.ShutdownBackendRequest
-	(*ShutdownBackendResponse)(nil),            // 63: api.proto.endpoints.ShutdownBackendResponse
-	(*LoginRequest)(nil),                       // 64: api.proto.endpoints.LoginRequest
-	(*LoginResponse)(nil),                      // 65: api.proto.endpoints.LoginResponse
-	(*CreateUserRequest)(nil),                  // 66: api.proto.endpoints.CreateUserRequest
-	(*CreateUserResponse)(nil),                 // 67: api.proto.endpoints.CreateUserResponse
-	(*GetAgentInfoRequest)(nil),                // 68: api.proto.endpoints.GetAgentInfoRequest
-	(*GetAgentInfoResponse)(nil),               // 69: api.proto.endpoints.GetAgentInfoResponse
-	(*GetServerInfoRequest)(nil),               // 70: api.proto.endpoints.GetServerInfoRequest
-	(*GetServerInfoResponse)(nil),              // 71: api.proto.endpoints.GetServerInfoResponse
-	nil,                                        // 72: api.proto.endpoints.SetClusterConfigRequest.ParametersEntry
-	nil,                                        // 73: api.proto.endpoints.GetClusterConfigResponse.ParametersEntry
-	(*TuneDatabaseResponse_NodeResult)(nil),    // 74: api.proto.endpoints.TuneDatabaseResponse.NodeResult
-	(*domain.Project)(nil),                     // 75: api.proto.domain.Project
-	(*domain.ProxyConfig)(nil),                 // 76: api.proto.domain.ProxyConfig
-	(*domain.BackendStatus)(nil),               // 77: api.proto.domain.BackendStatus
-	(*domain.TopQuery)(nil),                    // 78: api.proto.domain.TopQuery
-	(*domain.SystemMetrics)(nil),               // 79: api.proto.domain.SystemMetrics
-	(*domain.CacheStats)(nil),                  // 80: api.proto.domain.CacheStats
-	(*domain.MetricSnapshot)(nil),              // 81: api.proto.domain.MetricSnapshot
-	(*domain.Topology)(nil),                    // 82: api.proto.domain.Topology
-	(*domain.AdaptiveStatus)(nil),              // 83: api.proto.domain.AdaptiveStatus
-	(*domain.PerformanceSuggestion)(nil),       // 84: api.proto.domain.PerformanceSuggestion
-	(*domain.BackendConfig)(nil),               // 85: api.proto.domain.BackendConfig
-	(*domain.Recommendation)(nil),              // 86: api.proto.domain.Recommendation
-	(*domain.TuningSuggestion)(nil),            // 87: api.proto.domain.TuningSuggestion
-	(*timestamppb.Timestamp)(nil),              // 88: google.protobuf.Timestamp
-	(*domain.LogEntry)(nil),                    // 89: api.proto.domain.LogEntry
-	(*domain.QueryInsight)(nil),                // 90: api.proto.domain.QueryInsight
-	(*domain.LockInsight)(nil),                 // 91: api.proto.domain.LockInsight
-	(*domain.ReplicationInsight)(nil),          // 92: api.proto.domain.ReplicationInsight
+	(*ListReplicationStreamsRequest)(nil),      // 57: api.proto.endpoints.ListReplicationStreamsRequest
+	(*ListReplicationStreamsResponse)(nil),     // 58: api.proto.endpoints.ListReplicationStreamsResponse
+	(*TerminateReplicationStreamRequest)(nil),  // 59: api.proto.endpoints.TerminateReplicationStreamRequest
+	(*TerminateReplicationStreamResponse)(nil), // 60: api.proto.endpoints.TerminateReplicationStreamResponse
+	(*CreateLogicalSlotRequest)(nil),           // 61: api.proto.endpoints.CreateLogicalSlotRequest
+	(*CreateLogicalSlotResponse)(nil),          // 62: api.proto.endpoints.CreateLogicalSlotResponse
+	(*StreamLogsRequest)(nil),                  // 63: api.proto.endpoints.StreamLogsRequest
+	(*GetBackendPostgresInsightsRequest)(nil),  // 64: api.proto.endpoints.GetBackendPostgresInsightsRequest
+	(*GetBackendPostgresInsightsResponse)(nil), // 65: api.proto.endpoints.GetBackendPostgresInsightsResponse
+	(*RestartBackendServiceRequest)(nil),       // 66: api.proto.endpoints.RestartBackendServiceRequest
+	(*RestartBackendServiceResponse)(nil),      // 67: api.proto.endpoints.RestartBackendServiceResponse
+	(*ShutdownBackendRequest)(nil),             // 68: api.proto.endpoints.ShutdownBackendRequest
+	(*ShutdownBackendResponse)(nil),            // 69: api.proto.endpoints.ShutdownBackendResponse
+	(*LoginRequest)(nil),                       // 70: api.proto.endpoints.LoginRequest
+	(*LoginResponse)(nil),                      // 71: api.proto.endpoints.LoginResponse
+	(*CreateUserRequest)(nil),                  // 72: api.proto.endpoints.CreateUserRequest
+	(*CreateUserResponse)(nil),                 // 73: api.proto.endpoints.CreateUserResponse
+	(*GetAgentInfoRequest)(nil),                // 74: api.proto.endpoints.GetAgentInfoRequest
+	(*GetAgentInfoResponse)(nil),               // 75: api.proto.endpoints.GetAgentInfoResponse
+	(*GetServerInfoRequest)(nil),               // 76: api.proto.endpoints.GetServerInfoRequest
+	(*GetServerInfoResponse)(nil),              // 77: api.proto.endpoints.GetServerInfoResponse
+	nil,                                        // 78: api.proto.endpoints.SetClusterConfigRequest.ParametersEntry
+	nil,                                        // 79: api.proto.endpoints.GetClusterConfigResponse.ParametersEntry
+	(*TuneDatabaseResponse_NodeResult)(nil),    // 80: api.proto.endpoints.TuneDatabaseResponse.NodeResult
+	(*domain.Project)(nil),                     // 81: api.proto.domain.Project
+	(*domain.ProxyConfig)(nil),                 // 82: api.proto.domain.ProxyConfig
+	(*domain.BackendStatus)(nil),               // 83: api.proto.domain.BackendStatus
+	(*domain.TopQuery)(nil),                    // 84: api.proto.domain.TopQuery
+	(*domain.SystemMetrics)(nil),               // 85: api.proto.domain.SystemMetrics
+	(*domain.CacheStats)(nil),                  // 86: api.proto.domain.CacheStats
+	(*domain.MetricSnapshot)(nil),              // 87: api.proto.domain.MetricSnapshot
+	(*domain.Topology)(nil),                    // 88: api.proto.domain.Topology
+	(*domain.AdaptiveStatus)(nil),              // 89: api.proto.domain.AdaptiveStatus
+	(*domain.PerformanceSuggestion)(nil),       // 90: api.proto.domain.PerformanceSuggestion
+	(*domain.BackendConfig)(nil),               // 91: api.proto.domain.BackendConfig
+	(*domain.Recommendation)(nil),              // 92: api.proto.domain.Recommendation
+	(*domain.TuningSuggestion)(nil),            // 93: api.proto.domain.TuningSuggestion
+	(*timestamppb.Timestamp)(nil),              // 94: google.protobuf.Timestamp
+	(*domain.LogEntry)(nil),                    // 95: api.proto.domain.LogEntry
+	(*domain.ReplicationStream)(nil),           // 96: api.proto.domain.ReplicationStream
+	(*domain.QueryInsight)(nil),                // 97: api.proto.domain.QueryInsight
+	(*domain.LockInsight)(nil),                 // 98: api.proto.domain.LockInsight
+	(*domain.ReplicationInsight)(nil),          // 99: api.proto.domain.ReplicationInsight
 }
 var file_api_proto_endpoints_management_proto_depIdxs = []int32{
-	75, // 0: api.proto.endpoints.ListProjectsResponse.projects:type_name -> api.proto.domain.Project
-	75, // 1: api.proto.endpoints.CreateProjectRequest.project:type_name -> api.proto.domain.Project
-	75, // 2: api.proto.endpoints.CreateProjectResponse.project:type_name -> api.proto.domain.Project
-	76, // 3: api.proto.endpoints.AddProxyRequest.proxy:type_name -> api.proto.domain.ProxyConfig
-	76, // 4: api.proto.endpoints.AddProxyResponse.proxy:type_name -> api.proto.domain.ProxyConfig
-	76, // 5: api.proto.endpoints.UpdateProxyRequest.proxy:type_name -> api.proto.domain.ProxyConfig
-	77, // 6: api.proto.endpoints.GetStatusResponse.backends:type_name -> api.proto.domain.BackendStatus
-	78, // 7: api.proto.endpoints.GetStatusResponse.top_queries:type_name -> api.proto.domain.TopQuery
-	79, // 8: api.proto.endpoints.GetStatusResponse.system_metrics:type_name -> api.proto.domain.SystemMetrics
-	80, // 9: api.proto.endpoints.GetStatusResponse.cache_stats:type_name -> api.proto.domain.CacheStats
-	81, // 10: api.proto.endpoints.GetStatusResponse.history:type_name -> api.proto.domain.MetricSnapshot
-	82, // 11: api.proto.endpoints.GetStatusResponse.topology:type_name -> api.proto.domain.Topology
-	83, // 12: api.proto.endpoints.GetStatusResponse.adaptive_status:type_name -> api.proto.domain.AdaptiveStatus
-	84, // 13: api.proto.endpoints.GetStatusResponse.performance_suggestions:type_name -> api.proto.domain.PerformanceSuggestion
-	85, // 14: api.proto.endpoints.AddBackendRequest.config:type_name -> api.proto.domain.BackendConfig
-	85, // 15: api.proto.endpoints.UpdateBackendRequest.config:type_name -> api.proto.domain.BackendConfig
-	72, // 16: api.proto.endpoints.SetClusterConfigRequest.parameters:type_name -> api.proto.endpoints.SetClusterConfigRequest.ParametersEntry
-	73, // 17: api.proto.endpoints.GetClusterConfigResponse.parameters:type_name -> api.proto.endpoints.GetClusterConfigResponse.ParametersEntry
-	86, // 18: api.proto.endpoints.ExplainQueryResponse.recommendations:type_name -> api.proto.domain.Recommendation
-	74, // 19: api.proto.endpoints.TuneDatabaseResponse.nodes:type_name -> api.proto.endpoints.TuneDatabaseResponse.NodeResult
-	87, // 20: api.proto.endpoints.ApplyTuningRequest.suggestion:type_name -> api.proto.domain.TuningSuggestion
-	88, // 21: api.proto.endpoints.GetMetricsHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
-	88, // 22: api.proto.endpoints.GetMetricsHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
-	81, // 23: api.proto.endpoints.GetMetricsHistoryResponse.history:type_name -> api.proto.domain.MetricSnapshot
-	88, // 24: api.proto.endpoints.GetTopQueriesHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
-	88, // 25: api.proto.endpoints.GetTopQueriesHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
-	78, // 26: api.proto.endpoints.GetTopQueriesHistoryResponse.top_queries:type_name -> api.proto.domain.TopQuery
-	88, // 27: api.proto.endpoints.GetLogsRequest.start_time:type_name -> google.protobuf.Timestamp
-	88, // 28: api.proto.endpoints.GetLogsRequest.end_time:type_name -> google.protobuf.Timestamp
-	89, // 29: api.proto.endpoints.GetLogsResponse.logs:type_name -> api.proto.domain.LogEntry
-	90, // 30: api.proto.endpoints.GetBackendPostgresInsightsResponse.top_queries:type_name -> api.proto.domain.QueryInsight
-	91, // 31: api.proto.endpoints.GetBackendPostgresInsightsResponse.active_locks:type_name -> api.proto.domain.LockInsight
-	92, // 32: api.proto.endpoints.GetBackendPostgresInsightsResponse.replication_status:type_name -> api.proto.domain.ReplicationInsight
-	87, // 33: api.proto.endpoints.GetAgentInfoResponse.tuning_suggestions:type_name -> api.proto.domain.TuningSuggestion
-	87, // 34: api.proto.endpoints.TuneDatabaseResponse.NodeResult.suggestions:type_name -> api.proto.domain.TuningSuggestion
-	35, // [35:35] is the sub-list for method output_type
-	35, // [35:35] is the sub-list for method input_type
-	35, // [35:35] is the sub-list for extension type_name
-	35, // [35:35] is the sub-list for extension extendee
-	0,  // [0:35] is the sub-list for field type_name
+	81, // 0: api.proto.endpoints.ListProjectsResponse.projects:type_name -> api.proto.domain.Project
+	81, // 1: api.proto.endpoints.CreateProjectRequest.project:type_name -> api.proto.domain.Project
+	81, // 2: api.proto.endpoints.CreateProjectResponse.project:type_name -> api.proto.domain.Project
+	82, // 3: api.proto.endpoints.AddProxyRequest.proxy:type_name -> api.proto.domain.ProxyConfig
+	82, // 4: api.proto.endpoints.AddProxyResponse.proxy:type_name -> api.proto.domain.ProxyConfig
+	82, // 5: api.proto.endpoints.UpdateProxyRequest.proxy:type_name -> api.proto.domain.ProxyConfig
+	83, // 6: api.proto.endpoints.GetStatusResponse.backends:type_name -> api.proto.domain.BackendStatus
+	84, // 7: api.proto.endpoints.GetStatusResponse.top_queries:type_name -> api.proto.domain.TopQuery
+	85, // 8: api.proto.endpoints.GetStatusResponse.system_metrics:type_name -> api.proto.domain.SystemMetrics
+	86, // 9: api.proto.endpoints.GetStatusResponse.cache_stats:type_name -> api.proto.domain.CacheStats
+	87, // 10: api.proto.endpoints.GetStatusResponse.history:type_name -> api.proto.domain.MetricSnapshot
+	88, // 11: api.proto.endpoints.GetStatusResponse.topology:type_name -> api.proto.domain.Topology
+	89, // 12: api.proto.endpoints.GetStatusResponse.adaptive_status:type_name -> api.proto.domain.AdaptiveStatus
+	90, // 13: api.proto.endpoints.GetStatusResponse.performance_suggestions:type_name -> api.proto.domain.PerformanceSuggestion
+	91, // 14: api.proto.endpoints.AddBackendRequest.config:type_name -> api.proto.domain.BackendConfig
+	91, // 15: api.proto.endpoints.UpdateBackendRequest.config:type_name -> api.proto.domain.BackendConfig
+	78, // 16: api.proto.endpoints.SetClusterConfigRequest.parameters:type_name -> api.proto.endpoints.SetClusterConfigRequest.ParametersEntry
+	79, // 17: api.proto.endpoints.GetClusterConfigResponse.parameters:type_name -> api.proto.endpoints.GetClusterConfigResponse.ParametersEntry
+	92, // 18: api.proto.endpoints.ExplainQueryResponse.recommendations:type_name -> api.proto.domain.Recommendation
+	80, // 19: api.proto.endpoints.TuneDatabaseResponse.nodes:type_name -> api.proto.endpoints.TuneDatabaseResponse.NodeResult
+	93, // 20: api.proto.endpoints.ApplyTuningRequest.suggestion:type_name -> api.proto.domain.TuningSuggestion
+	94, // 21: api.proto.endpoints.GetMetricsHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
+	94, // 22: api.proto.endpoints.GetMetricsHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
+	87, // 23: api.proto.endpoints.GetMetricsHistoryResponse.history:type_name -> api.proto.domain.MetricSnapshot
+	94, // 24: api.proto.endpoints.GetTopQueriesHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
+	94, // 25: api.proto.endpoints.GetTopQueriesHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
+	84, // 26: api.proto.endpoints.GetTopQueriesHistoryResponse.top_queries:type_name -> api.proto.domain.TopQuery
+	94, // 27: api.proto.endpoints.GetLogsRequest.start_time:type_name -> google.protobuf.Timestamp
+	94, // 28: api.proto.endpoints.GetLogsRequest.end_time:type_name -> google.protobuf.Timestamp
+	95, // 29: api.proto.endpoints.GetLogsResponse.logs:type_name -> api.proto.domain.LogEntry
+	96, // 30: api.proto.endpoints.ListReplicationStreamsResponse.streams:type_name -> api.proto.domain.ReplicationStream
+	97, // 31: api.proto.endpoints.GetBackendPostgresInsightsResponse.top_queries:type_name -> api.proto.domain.QueryInsight
+	98, // 32: api.proto.endpoints.GetBackendPostgresInsightsResponse.active_locks:type_name -> api.proto.domain.LockInsight
+	99, // 33: api.proto.endpoints.GetBackendPostgresInsightsResponse.replication_status:type_name -> api.proto.domain.ReplicationInsight
+	93, // 34: api.proto.endpoints.GetAgentInfoResponse.tuning_suggestions:type_name -> api.proto.domain.TuningSuggestion
+	93, // 35: api.proto.endpoints.TuneDatabaseResponse.NodeResult.suggestions:type_name -> api.proto.domain.TuningSuggestion
+	36, // [36:36] is the sub-list for method output_type
+	36, // [36:36] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_endpoints_management_proto_init() }
@@ -4633,7 +5034,7 @@ func file_api_proto_endpoints_management_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_endpoints_management_proto_rawDesc), len(file_api_proto_endpoints_management_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   75,
+			NumMessages:   81,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

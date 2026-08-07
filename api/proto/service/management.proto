@@ -45,6 +45,17 @@ service ManagementService {
   // ValidateBackend checks if a backend is accessible.
   rpc ValidateBackend(.api.proto.endpoints.ValidateBackendRequest) returns (.api.proto.endpoints.ValidateBackendResponse);
 
+  // ListReplicationStreams returns the CDC/replication consumers attached to
+  // this proxy. Read-only.
+  rpc ListReplicationStreams(.api.proto.endpoints.ListReplicationStreamsRequest) returns (.api.proto.endpoints.ListReplicationStreamsResponse);
+
+  // TerminateReplicationStream disconnects one consumer. Admin only: the
+  // consumer must resync from its own checkpoint afterwards.
+  rpc TerminateReplicationStream(.api.proto.endpoints.TerminateReplicationStreamRequest) returns (.api.proto.endpoints.TerminateReplicationStreamResponse);
+
+  // CreateLogicalSlot pre-creates a logical replication slot on a node.
+  rpc CreateLogicalSlot(.api.proto.endpoints.CreateLogicalSlotRequest) returns (.api.proto.endpoints.CreateLogicalSlotResponse);
+
   // StreamLogs returns a real-time stream of logs.
   rpc StreamLogs(.api.proto.endpoints.StreamLogsRequest) returns (stream .api.proto.domain.LogEntry);
 

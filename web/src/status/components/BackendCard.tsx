@@ -79,6 +79,11 @@ export function BackendCard({
   const latency = Number(backend.latencyMs);
   const isReplica = backend.role !== "primary";
   const poolUsage = utilization(Number(backend.activeConns), Number(backend.currentMaxConns));
+  // active_conns includes streams; sessions are the remainder.
+  const streamConns = Number(backend.streamConns ?? 0);
+  const sessionConns = Math.max(0, Number(backend.activeConns) - streamConns);
+  const sessionUsage = utilization(sessionConns, Number(backend.currentMaxConns));
+  const streamUsage = utilization(streamConns, Number(backend.currentMaxConns));
   const lag = lagLabel(Number(backend.replicationLagMs));
   const dbUsage = backend.dbMetrics
     ? utilization(Number(backend.dbMetrics.activeBackends), Number(backend.dbMetrics.maxBackends))
@@ -285,12 +290,34 @@ export function BackendCard({
               {poolUsage === null ? "—" : `${Math.round(poolUsage)}%`}
             </Text>
           </Group>
-          <Progress value={poolUsage ?? 0} color="pontusBlue" size="sm" radius="xl" />
-          <Text size="xs" c="dimmed" mt={4} fw={500}>
-            {poolUsage === null
-              ? "No pool capacity reported"
-              : `${backend.activeConns.toString()} / ${backend.currentMaxConns} sessions`}
-          </Text>
+          {/* Sessions and streams are shown apart because they behave apart: a
+              session returns to the pool after its transaction, a stream holds
+              its slot for hours. One bar labelled "connections" would hide how
+              much of this capacity is never coming back. */}
+          <Progress.Root size="sm" radius="xl">
+            <Progress.Section value={sessionUsage ?? 0} color="pontusBlue" />
+            <Progress.Section value={streamUsage ?? 0} color="grape" />
+          </Progress.Root>
+          <Group gap={10} mt={4} wrap="wrap">
+            <Text size="xs" c="dimmed" fw={500}>
+              {poolUsage === null
+                ? "No pool capacity reported"
+                : `${sessionConns} sessions`}
+            </Text>
+            {streamConns > 0 && (
+              <Group gap={4} wrap="nowrap">
+                <Box w={6} h={6} bg="grape.5" style={{ borderRadius: '50%' }} />
+                <Text size="xs" c="grape" fw={600}>
+                  {streamConns} stream{streamConns === 1 ? '' : 's'} held
+                </Text>
+              </Group>
+            )}
+            {poolUsage !== null && (
+              <Text size="xs" c="dimmed" fw={500}>
+                {Math.max(0, Number(backend.currentMaxConns) - Number(backend.activeConns))} free
+              </Text>
+            )}
+          </Group>
         </Box>
 
         {backend.dbMetrics && (

@@ -61,22 +61,27 @@ func (m *Observability) GetStatus(ctx context.Context, req *endpoints.GetStatusR
 		stats := node.Stats()
 
 		status := &domain.BackendStatus{
-			Address:            node.Address(),
-			Zone:               node.Zone(),
-			Healthy:            node.IsHealthy(),
-			ActiveConns:        conns,
-			LastCheck:          timestamppb.Now(),
-			Role:               string(node.Role()),
-			LatencyMs:          node.Latency().Milliseconds(),
-			ReplicationLagMs:   node.ReplicationLag().Milliseconds(),
-			IsDraining:         node.IsDraining(),
-			Weight:             int32(node.Weight()),
-			MaxConns:           stats.MaxConns,
-			IdleConns:          stats.IdleConns,
-			WaitQueueSize:      stats.WaitQueueSize,
-			TotalRequests:      stats.TotalRequests,
-			TotalErrors:        stats.TotalErrors,
-			CurrentMaxConns:    stats.MaxConns,
+			Address:          node.Address(),
+			Zone:             node.Zone(),
+			Healthy:          node.IsHealthy(),
+			ActiveConns:      conns,
+			LastCheck:        timestamppb.Now(),
+			Role:             string(node.Role()),
+			LatencyMs:        node.Latency().Milliseconds(),
+			ReplicationLagMs: node.ReplicationLag().Milliseconds(),
+			IsDraining:       node.IsDraining(),
+			Weight:           int32(node.Weight()),
+			MaxConns:         stats.MaxConns,
+			IdleConns:        stats.IdleConns,
+			WaitQueueSize:    stats.WaitQueueSize,
+			TotalRequests:    stats.TotalRequests,
+			TotalErrors:      stats.TotalErrors,
+			CurrentMaxConns:  stats.MaxConns,
+			// Streams are counted apart from active_conns: they hold a permit
+			// for hours and never return to the idle set, so folding them in
+			// would overstate the headroom the pool actually has.
+			StreamConns:        int32(streamsFor(ps, node.Address())),
+			MaxStreamConns:     int32(streamBudget(ps)),
 			RttMs:              node.RTT().Milliseconds(),
 			DbMetrics:          node.DatabaseMetrics(),
 			InstalledVersion:   node.InstalledVersion(),
@@ -544,4 +549,20 @@ func (m *Observability) GetPostgresInsights(ctx context.Context, req *endpoints.
 		ActiveLocks:       resp.ActiveLocks,
 		ReplicationStatus: resp.ReplicationStatus,
 	}, nil
+}
+
+// streamsFor reports how many replication consumers are attached to one node.
+func streamsFor(ps *state.Proxy, address string) int {
+	if ps == nil || ps.Streams == nil {
+		return 0
+	}
+	return ps.Streams.CountFor(address)
+}
+
+// streamBudget reports the proxy-wide ceiling on replication consumers.
+func streamBudget(ps *state.Proxy) int {
+	if ps == nil || ps.Streams == nil {
+		return 0
+	}
+	return ps.Streams.Budget()
 }

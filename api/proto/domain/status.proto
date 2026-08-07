@@ -32,6 +32,38 @@ message BackendStatus {
   DatabaseMetrics db_metrics = 21;
   string installed_version = 22;
   string recommended_version = 23;
+  // Replication streams held on this node. Counted separately from
+  // active_conns because a stream occupies a pool permit for hours and never
+  // returns to the idle set — reporting both as "connections" hides the fact
+  // that this part of the capacity is not coming back.
+  int32 stream_conns = 24;
+  int32 max_stream_conns = 25;
+}
+
+// ReplicationStream is one CDC or physical replication consumer.
+//
+// A stream is pinned to the node holding its slot: it is not balanced and it
+// cannot move during failover. The UI deliberately calls these "streams" and
+// never "connections" so the difference is visible without explanation.
+message ReplicationStream {
+  string id = 1;
+  // slot_name is empty for a consumer that has not yet attached to a slot.
+  string slot_name = 2;
+  string client_addr = 3;
+  string backend_addr = 4;
+  string database = 5;
+  string user = 6;
+  // "logical" or "physical".
+  string kind = 7;
+  // Output plugin for logical streams: pgoutput, wal2json, …
+  string plugin = 8;
+  google.protobuf.Timestamp started_at = 9;
+  // How far behind the stream is, in bytes of WAL and in wall-clock time.
+  int64 lag_bytes = 10;
+  int64 lag_ms = 11;
+  // Last LSN confirmed by the consumer, as text (e.g. "0/1A2B3C4").
+  string confirmed_lsn = 12;
+  bool active = 13;
 }
 
 message AdaptiveStatus {

@@ -1,5 +1,6 @@
 import { Text } from '@mantine/core'
 import { ConfirmDangerModal } from '../../common/components/ConfirmDangerModal'
+import { useReplicationStreams } from '../../streams/hooks/useReplicationStreams'
 import { usePromoteBackend } from '../hooks/usePromoteBackend'
 
 interface PromoteBackendModalProps {
@@ -21,6 +22,11 @@ export function PromoteBackendModal({
   currentPrimary,
 }: PromoteBackendModalProps) {
   const { promoteBackend, isPromoting } = usePromoteBackend()
+  // Streams die on promotion, and the operator has to learn that here rather
+  // than from a support ticket. Replication slots are not copied to replicas,
+  // so the promoted node has no slot for an attached consumer.
+  const { data: streamData } = useReplicationStreams()
+  const activeStreams = streamData?.streams?.length ?? 0
 
   const handleConfirm = async () => {
     try {
@@ -60,6 +66,11 @@ export function PromoteBackendModal({
           : 'The existing primary stops accepting writes.',
         'In-flight write transactions on the old primary will fail.',
         'Replicas still following the old primary need to be re-pointed.',
+        ...(activeStreams > 0
+          ? [
+              `${activeStreams} replication stream${activeStreams === 1 ? '' : 's'} will be terminated — replication slots do not exist on the promoted node, so each consumer must resync from its own checkpoint.`,
+            ]
+          : []),
         'This cannot be undone from the dashboard.',
       ]}
     />

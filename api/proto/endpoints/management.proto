@@ -330,6 +330,48 @@ message GetLogsResponse {
   int32 total_count = 2;
 }
 
+// Replication streams (CDC)
+message ListReplicationStreamsRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+}
+
+message ListReplicationStreamsResponse {
+  repeated .api.proto.domain.ReplicationStream streams = 1;
+  // Budget the operator set aside for streams, and how much is in use, so the
+  // dashboard can say "3 of 4" without recomputing it from the node list.
+  int32 used = 2;
+  int32 budget = 3;
+}
+
+message TerminateReplicationStreamRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string stream_id = 3;
+}
+
+message TerminateReplicationStreamResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// CreateReplicationSlotRequest pre-creates a logical slot so a consumer has
+// something to attach to. Physical slots are created by replica provisioning,
+// not here.
+message CreateLogicalSlotRequest {
+  string project_id = 1;
+  string proxy_id = 2;
+  string address = 3;
+  string slot_name = 4;
+  string plugin = 5;
+}
+
+message CreateLogicalSlotResponse {
+  bool success = 1;
+  string message = 2;
+  string consumer_dsn = 3;
+}
+
 message StreamLogsRequest {
   string min_level = 1;
 }

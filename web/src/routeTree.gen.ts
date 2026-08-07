@@ -20,6 +20,7 @@ import { Route as MetricsRouteImport } from './routes/metrics'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as QueriesRouteImport } from './routes/queries'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as StreamsRouteImport } from './routes/streams'
 import { Route as TuningRouteImport } from './routes/tuning'
 import { Route as ProjectsProjectIdProxiesNewRouteImport } from './routes/projects.$projectId.proxies.new'
 import { Route as ProjectsProjectIdProxiesProxyIdEditRouteImport } from './routes/projects.$projectId.proxies.$proxyId.edit'
@@ -71,6 +72,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any).lazy(() => import('./routes/settings.lazy').then((d) => d.Route))
+const StreamsRoute = StreamsRouteImport.update({
+  id: '/streams',
+  path: '/streams',
+  getParentRoute: () => rootRouteImport,
+} as any).lazy(() => import('./routes/streams.lazy').then((d) => d.Route))
 const TuningRoute = TuningRouteImport.update({
   id: '/tuning',
   path: '/tuning',
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/projects': typeof ProjectsRouteWithChildren
   '/queries': typeof QueriesRoute
   '/settings': typeof SettingsRoute
+  '/streams': typeof StreamsRoute
   '/tuning': typeof TuningRoute
   '/projects/': typeof ProjectsIndexLazyRoute
   '/projects/$projectId/proxies/new': typeof ProjectsProjectIdProxiesNewRoute
@@ -128,6 +135,7 @@ export interface FileRoutesByTo {
   '/metrics': typeof MetricsRoute
   '/queries': typeof QueriesRoute
   '/settings': typeof SettingsRoute
+  '/streams': typeof StreamsRoute
   '/tuning': typeof TuningRoute
   '/projects': typeof ProjectsIndexLazyRoute
   '/projects/$projectId/proxies/new': typeof ProjectsProjectIdProxiesNewRoute
@@ -144,6 +152,7 @@ export interface FileRoutesById {
   '/projects': typeof ProjectsRouteWithChildren
   '/queries': typeof QueriesRoute
   '/settings': typeof SettingsRoute
+  '/streams': typeof StreamsRoute
   '/tuning': typeof TuningRoute
   '/projects/': typeof ProjectsIndexLazyRoute
   '/projects/$projectId/proxies/new': typeof ProjectsProjectIdProxiesNewRoute
@@ -161,6 +170,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/queries'
     | '/settings'
+    | '/streams'
     | '/tuning'
     | '/projects/'
     | '/projects/$projectId/proxies/new'
@@ -175,6 +185,7 @@ export interface FileRouteTypes {
     | '/metrics'
     | '/queries'
     | '/settings'
+    | '/streams'
     | '/tuning'
     | '/projects'
     | '/projects/$projectId/proxies/new'
@@ -190,6 +201,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/queries'
     | '/settings'
+    | '/streams'
     | '/tuning'
     | '/projects/'
     | '/projects/$projectId/proxies/new'
@@ -206,6 +218,7 @@ export interface RootRouteChildren {
   ProjectsRoute: typeof ProjectsRouteWithChildren
   QueriesRoute: typeof QueriesRoute
   SettingsRoute: typeof SettingsRoute
+  StreamsRoute: typeof StreamsRoute
   TuningRoute: typeof TuningRoute
 }
 
@@ -274,6 +287,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/streams': {
+      id: '/streams'
+      path: '/streams'
+      fullPath: '/streams'
+      preLoaderRoute: typeof StreamsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tuning': {
       id: '/tuning'
       path: '/tuning'
@@ -332,6 +352,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsRoute: ProjectsRouteWithChildren,
   QueriesRoute: QueriesRoute,
   SettingsRoute: SettingsRoute,
+  StreamsRoute: StreamsRoute,
   TuningRoute: TuningRoute,
 }
 export const routeTree = rootRouteImport

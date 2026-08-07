@@ -21,43 +21,46 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ManagementService_ListProjects_FullMethodName          = "/api.proto.service.ManagementService/ListProjects"
-	ManagementService_CreateProject_FullMethodName         = "/api.proto.service.ManagementService/CreateProject"
-	ManagementService_DeleteProject_FullMethodName         = "/api.proto.service.ManagementService/DeleteProject"
-	ManagementService_AddProxy_FullMethodName              = "/api.proto.service.ManagementService/AddProxy"
-	ManagementService_RemoveProxy_FullMethodName           = "/api.proto.service.ManagementService/RemoveProxy"
-	ManagementService_UpdateProxy_FullMethodName           = "/api.proto.service.ManagementService/UpdateProxy"
-	ManagementService_GetStatus_FullMethodName             = "/api.proto.service.ManagementService/GetStatus"
-	ManagementService_StreamStatus_FullMethodName          = "/api.proto.service.ManagementService/StreamStatus"
-	ManagementService_AddBackend_FullMethodName            = "/api.proto.service.ManagementService/AddBackend"
-	ManagementService_RemoveBackend_FullMethodName         = "/api.proto.service.ManagementService/RemoveBackend"
-	ManagementService_UpdateBackend_FullMethodName         = "/api.proto.service.ManagementService/UpdateBackend"
-	ManagementService_ProvisionReplica_FullMethodName      = "/api.proto.service.ManagementService/ProvisionReplica"
-	ManagementService_ValidateBackend_FullMethodName       = "/api.proto.service.ManagementService/ValidateBackend"
-	ManagementService_StreamLogs_FullMethodName            = "/api.proto.service.ManagementService/StreamLogs"
-	ManagementService_InitializeNode_FullMethodName        = "/api.proto.service.ManagementService/InitializeNode"
-	ManagementService_InstallNode_FullMethodName           = "/api.proto.service.ManagementService/InstallNode"
-	ManagementService_BackupBackend_FullMethodName         = "/api.proto.service.ManagementService/BackupBackend"
-	ManagementService_RestoreBackend_FullMethodName        = "/api.proto.service.ManagementService/RestoreBackend"
-	ManagementService_PromoteBackend_FullMethodName        = "/api.proto.service.ManagementService/PromoteBackend"
-	ManagementService_GetMetricsHistory_FullMethodName     = "/api.proto.service.ManagementService/GetMetricsHistory"
-	ManagementService_GetTopQueriesHistory_FullMethodName  = "/api.proto.service.ManagementService/GetTopQueriesHistory"
-	ManagementService_SetClusterConfig_FullMethodName      = "/api.proto.service.ManagementService/SetClusterConfig"
-	ManagementService_GetClusterConfig_FullMethodName      = "/api.proto.service.ManagementService/GetClusterConfig"
-	ManagementService_DiscoverCluster_FullMethodName       = "/api.proto.service.ManagementService/DiscoverCluster"
-	ManagementService_VacuumBackend_FullMethodName         = "/api.proto.service.ManagementService/VacuumBackend"
-	ManagementService_ExplainQuery_FullMethodName          = "/api.proto.service.ManagementService/ExplainQuery"
-	ManagementService_GetLogs_FullMethodName               = "/api.proto.service.ManagementService/GetLogs"
-	ManagementService_TuneDatabase_FullMethodName          = "/api.proto.service.ManagementService/TuneDatabase"
-	ManagementService_ApplyTuning_FullMethodName           = "/api.proto.service.ManagementService/ApplyTuning"
-	ManagementService_GetAgentInfo_FullMethodName          = "/api.proto.service.ManagementService/GetAgentInfo"
-	ManagementService_GetAvailableVersions_FullMethodName  = "/api.proto.service.ManagementService/GetAvailableVersions"
-	ManagementService_Login_FullMethodName                 = "/api.proto.service.ManagementService/Login"
-	ManagementService_CreateUser_FullMethodName            = "/api.proto.service.ManagementService/CreateUser"
-	ManagementService_GetServerInfo_FullMethodName         = "/api.proto.service.ManagementService/GetServerInfo"
-	ManagementService_GetPostgresInsights_FullMethodName   = "/api.proto.service.ManagementService/GetPostgresInsights"
-	ManagementService_RestartBackendService_FullMethodName = "/api.proto.service.ManagementService/RestartBackendService"
-	ManagementService_ShutdownBackend_FullMethodName       = "/api.proto.service.ManagementService/ShutdownBackend"
+	ManagementService_ListProjects_FullMethodName               = "/api.proto.service.ManagementService/ListProjects"
+	ManagementService_CreateProject_FullMethodName              = "/api.proto.service.ManagementService/CreateProject"
+	ManagementService_DeleteProject_FullMethodName              = "/api.proto.service.ManagementService/DeleteProject"
+	ManagementService_AddProxy_FullMethodName                   = "/api.proto.service.ManagementService/AddProxy"
+	ManagementService_RemoveProxy_FullMethodName                = "/api.proto.service.ManagementService/RemoveProxy"
+	ManagementService_UpdateProxy_FullMethodName                = "/api.proto.service.ManagementService/UpdateProxy"
+	ManagementService_GetStatus_FullMethodName                  = "/api.proto.service.ManagementService/GetStatus"
+	ManagementService_StreamStatus_FullMethodName               = "/api.proto.service.ManagementService/StreamStatus"
+	ManagementService_AddBackend_FullMethodName                 = "/api.proto.service.ManagementService/AddBackend"
+	ManagementService_RemoveBackend_FullMethodName              = "/api.proto.service.ManagementService/RemoveBackend"
+	ManagementService_UpdateBackend_FullMethodName              = "/api.proto.service.ManagementService/UpdateBackend"
+	ManagementService_ProvisionReplica_FullMethodName           = "/api.proto.service.ManagementService/ProvisionReplica"
+	ManagementService_ValidateBackend_FullMethodName            = "/api.proto.service.ManagementService/ValidateBackend"
+	ManagementService_ListReplicationStreams_FullMethodName     = "/api.proto.service.ManagementService/ListReplicationStreams"
+	ManagementService_TerminateReplicationStream_FullMethodName = "/api.proto.service.ManagementService/TerminateReplicationStream"
+	ManagementService_CreateLogicalSlot_FullMethodName          = "/api.proto.service.ManagementService/CreateLogicalSlot"
+	ManagementService_StreamLogs_FullMethodName                 = "/api.proto.service.ManagementService/StreamLogs"
+	ManagementService_InitializeNode_FullMethodName             = "/api.proto.service.ManagementService/InitializeNode"
+	ManagementService_InstallNode_FullMethodName                = "/api.proto.service.ManagementService/InstallNode"
+	ManagementService_BackupBackend_FullMethodName              = "/api.proto.service.ManagementService/BackupBackend"
+	ManagementService_RestoreBackend_FullMethodName             = "/api.proto.service.ManagementService/RestoreBackend"
+	ManagementService_PromoteBackend_FullMethodName             = "/api.proto.service.ManagementService/PromoteBackend"
+	ManagementService_GetMetricsHistory_FullMethodName          = "/api.proto.service.ManagementService/GetMetricsHistory"
+	ManagementService_GetTopQueriesHistory_FullMethodName       = "/api.proto.service.ManagementService/GetTopQueriesHistory"
+	ManagementService_SetClusterConfig_FullMethodName           = "/api.proto.service.ManagementService/SetClusterConfig"
+	ManagementService_GetClusterConfig_FullMethodName           = "/api.proto.service.ManagementService/GetClusterConfig"
+	ManagementService_DiscoverCluster_FullMethodName            = "/api.proto.service.ManagementService/DiscoverCluster"
+	ManagementService_VacuumBackend_FullMethodName              = "/api.proto.service.ManagementService/VacuumBackend"
+	ManagementService_ExplainQuery_FullMethodName               = "/api.proto.service.ManagementService/ExplainQuery"
+	ManagementService_GetLogs_FullMethodName                    = "/api.proto.service.ManagementService/GetLogs"
+	ManagementService_TuneDatabase_FullMethodName               = "/api.proto.service.ManagementService/TuneDatabase"
+	ManagementService_ApplyTuning_FullMethodName                = "/api.proto.service.ManagementService/ApplyTuning"
+	ManagementService_GetAgentInfo_FullMethodName               = "/api.proto.service.ManagementService/GetAgentInfo"
+	ManagementService_GetAvailableVersions_FullMethodName       = "/api.proto.service.ManagementService/GetAvailableVersions"
+	ManagementService_Login_FullMethodName                      = "/api.proto.service.ManagementService/Login"
+	ManagementService_CreateUser_FullMethodName                 = "/api.proto.service.ManagementService/CreateUser"
+	ManagementService_GetServerInfo_FullMethodName              = "/api.proto.service.ManagementService/GetServerInfo"
+	ManagementService_GetPostgresInsights_FullMethodName        = "/api.proto.service.ManagementService/GetPostgresInsights"
+	ManagementService_RestartBackendService_FullMethodName      = "/api.proto.service.ManagementService/RestartBackendService"
+	ManagementService_ShutdownBackend_FullMethodName            = "/api.proto.service.ManagementService/ShutdownBackend"
 )
 
 // ManagementServiceClient is the client API for ManagementService service.
@@ -93,6 +96,14 @@ type ManagementServiceClient interface {
 	ProvisionReplica(ctx context.Context, in *endpoints.ProvisionReplicaRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[endpoints.ProvisionProgress], error)
 	// ValidateBackend checks if a backend is accessible.
 	ValidateBackend(ctx context.Context, in *endpoints.ValidateBackendRequest, opts ...grpc.CallOption) (*endpoints.ValidateBackendResponse, error)
+	// ListReplicationStreams returns the CDC/replication consumers attached to
+	// this proxy. Read-only.
+	ListReplicationStreams(ctx context.Context, in *endpoints.ListReplicationStreamsRequest, opts ...grpc.CallOption) (*endpoints.ListReplicationStreamsResponse, error)
+	// TerminateReplicationStream disconnects one consumer. Admin only: the
+	// consumer must resync from its own checkpoint afterwards.
+	TerminateReplicationStream(ctx context.Context, in *endpoints.TerminateReplicationStreamRequest, opts ...grpc.CallOption) (*endpoints.TerminateReplicationStreamResponse, error)
+	// CreateLogicalSlot pre-creates a logical replication slot on a node.
+	CreateLogicalSlot(ctx context.Context, in *endpoints.CreateLogicalSlotRequest, opts ...grpc.CallOption) (*endpoints.CreateLogicalSlotResponse, error)
 	// StreamLogs returns a real-time stream of logs.
 	StreamLogs(ctx context.Context, in *endpoints.StreamLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[domain.LogEntry], error)
 	// InitializeNode initializes a database on a clean host via Agent.
@@ -293,6 +304,36 @@ func (c *managementServiceClient) ValidateBackend(ctx context.Context, in *endpo
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(endpoints.ValidateBackendResponse)
 	err := c.cc.Invoke(ctx, ManagementService_ValidateBackend_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managementServiceClient) ListReplicationStreams(ctx context.Context, in *endpoints.ListReplicationStreamsRequest, opts ...grpc.CallOption) (*endpoints.ListReplicationStreamsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(endpoints.ListReplicationStreamsResponse)
+	err := c.cc.Invoke(ctx, ManagementService_ListReplicationStreams_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managementServiceClient) TerminateReplicationStream(ctx context.Context, in *endpoints.TerminateReplicationStreamRequest, opts ...grpc.CallOption) (*endpoints.TerminateReplicationStreamResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(endpoints.TerminateReplicationStreamResponse)
+	err := c.cc.Invoke(ctx, ManagementService_TerminateReplicationStream_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *managementServiceClient) CreateLogicalSlot(ctx context.Context, in *endpoints.CreateLogicalSlotRequest, opts ...grpc.CallOption) (*endpoints.CreateLogicalSlotResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(endpoints.CreateLogicalSlotResponse)
+	err := c.cc.Invoke(ctx, ManagementService_CreateLogicalSlot_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -626,6 +667,14 @@ type ManagementServiceServer interface {
 	ProvisionReplica(*endpoints.ProvisionReplicaRequest, grpc.ServerStreamingServer[endpoints.ProvisionProgress]) error
 	// ValidateBackend checks if a backend is accessible.
 	ValidateBackend(context.Context, *endpoints.ValidateBackendRequest) (*endpoints.ValidateBackendResponse, error)
+	// ListReplicationStreams returns the CDC/replication consumers attached to
+	// this proxy. Read-only.
+	ListReplicationStreams(context.Context, *endpoints.ListReplicationStreamsRequest) (*endpoints.ListReplicationStreamsResponse, error)
+	// TerminateReplicationStream disconnects one consumer. Admin only: the
+	// consumer must resync from its own checkpoint afterwards.
+	TerminateReplicationStream(context.Context, *endpoints.TerminateReplicationStreamRequest) (*endpoints.TerminateReplicationStreamResponse, error)
+	// CreateLogicalSlot pre-creates a logical replication slot on a node.
+	CreateLogicalSlot(context.Context, *endpoints.CreateLogicalSlotRequest) (*endpoints.CreateLogicalSlotResponse, error)
 	// StreamLogs returns a real-time stream of logs.
 	StreamLogs(*endpoints.StreamLogsRequest, grpc.ServerStreamingServer[domain.LogEntry]) error
 	// InitializeNode initializes a database on a clean host via Agent.
@@ -722,6 +771,15 @@ func (UnimplementedManagementServiceServer) ProvisionReplica(*endpoints.Provisio
 }
 func (UnimplementedManagementServiceServer) ValidateBackend(context.Context, *endpoints.ValidateBackendRequest) (*endpoints.ValidateBackendResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ValidateBackend not implemented")
+}
+func (UnimplementedManagementServiceServer) ListReplicationStreams(context.Context, *endpoints.ListReplicationStreamsRequest) (*endpoints.ListReplicationStreamsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListReplicationStreams not implemented")
+}
+func (UnimplementedManagementServiceServer) TerminateReplicationStream(context.Context, *endpoints.TerminateReplicationStreamRequest) (*endpoints.TerminateReplicationStreamResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TerminateReplicationStream not implemented")
+}
+func (UnimplementedManagementServiceServer) CreateLogicalSlot(context.Context, *endpoints.CreateLogicalSlotRequest) (*endpoints.CreateLogicalSlotResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateLogicalSlot not implemented")
 }
 func (UnimplementedManagementServiceServer) StreamLogs(*endpoints.StreamLogsRequest, grpc.ServerStreamingServer[domain.LogEntry]) error {
 	return status.Error(codes.Unimplemented, "method StreamLogs not implemented")
@@ -1032,6 +1090,60 @@ func _ManagementService_ValidateBackend_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ManagementServiceServer).ValidateBackend(ctx, req.(*endpoints.ValidateBackendRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ManagementService_ListReplicationStreams_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(endpoints.ListReplicationStreamsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagementServiceServer).ListReplicationStreams(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ManagementService_ListReplicationStreams_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagementServiceServer).ListReplicationStreams(ctx, req.(*endpoints.ListReplicationStreamsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ManagementService_TerminateReplicationStream_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(endpoints.TerminateReplicationStreamRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagementServiceServer).TerminateReplicationStream(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ManagementService_TerminateReplicationStream_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagementServiceServer).TerminateReplicationStream(ctx, req.(*endpoints.TerminateReplicationStreamRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ManagementService_CreateLogicalSlot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(endpoints.CreateLogicalSlotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ManagementServiceServer).CreateLogicalSlot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ManagementService_CreateLogicalSlot_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ManagementServiceServer).CreateLogicalSlot(ctx, req.(*endpoints.CreateLogicalSlotRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1476,6 +1588,18 @@ var ManagementService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ValidateBackend",
 			Handler:    _ManagementService_ValidateBackend_Handler,
+		},
+		{
+			MethodName: "ListReplicationStreams",
+			Handler:    _ManagementService_ListReplicationStreams_Handler,
+		},
+		{
+			MethodName: "TerminateReplicationStream",
+			Handler:    _ManagementService_TerminateReplicationStream_Handler,
+		},
+		{
+			MethodName: "CreateLogicalSlot",
+			Handler:    _ManagementService_CreateLogicalSlot_Handler,
 		},
 		{
 			MethodName: "PromoteBackend",

@@ -8,7 +8,7 @@ import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { BackendConfig, Project, ProxyConfig } from "../domain/project_pb";
 import { file_api_proto_domain_project } from "../domain/project_pb";
-import type { AdaptiveStatus, BackendStatus, CacheStats, MetricSnapshot, PerformanceSuggestion, Topology } from "../domain/status_pb";
+import type { AdaptiveStatus, BackendStatus, CacheStats, MetricSnapshot, PerformanceSuggestion, ReplicationStream, Topology } from "../domain/status_pb";
 import { file_api_proto_domain_status } from "../domain/status_pb";
 import type { SystemMetrics } from "../domain/metrics_pb";
 import { file_api_proto_domain_metrics } from "../domain/metrics_pb";
@@ -22,7 +22,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/proto/endpoints/management.proto.
  */
 export const file_api_proto_endpoints_management: GenFile = /*@__PURE__*/
-  fileDesc("CiRhcGkvcHJvdG8vZW5kcG9pbnRzL21hbmFnZW1lbnQucHJvdG8SE2FwaS5wcm90by5lbmRwb2ludHMiHQobR2V0QXZhaWxhYmxlVmVyc2lvbnNSZXF1ZXN0IjAKHEdldEF2YWlsYWJsZVZlcnNpb25zUmVzcG9uc2USEAoIdmVyc2lvbnMYASADKAkiFQoTTGlzdFByb2plY3RzUmVxdWVzdCJDChRMaXN0UHJvamVjdHNSZXNwb25zZRIrCghwcm9qZWN0cxgBIAMoCzIZLmFwaS5wcm90by5kb21haW4uUHJvamVjdCJCChRDcmVhdGVQcm9qZWN0UmVxdWVzdBIqCgdwcm9qZWN0GAEgASgLMhkuYXBpLnByb3RvLmRvbWFpbi5Qcm9qZWN0IkMKFUNyZWF0ZVByb2plY3RSZXNwb25zZRIqCgdwcm9qZWN0GAEgASgLMhkuYXBpLnByb3RvLmRvbWFpbi5Qcm9qZWN0IiIKFERlbGV0ZVByb2plY3RSZXF1ZXN0EgoKAmlkGAEgASgJIhcKFURlbGV0ZVByb2plY3RSZXNwb25zZSJTCg9BZGRQcm94eVJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIsCgVwcm94eRgCIAEoCzIdLmFwaS5wcm90by5kb21haW4uUHJveHlDb25maWciQAoQQWRkUHJveHlSZXNwb25zZRIsCgVwcm94eRgBIAEoCzIdLmFwaS5wcm90by5kb21haW4uUHJveHlDb25maWciOgoSUmVtb3ZlUHJveHlSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkiFQoTUmVtb3ZlUHJveHlSZXNwb25zZSJWChJVcGRhdGVQcm94eVJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIsCgVwcm94eRgCIAEoCzIdLmFwaS5wcm90by5kb21haW4uUHJveHlDb25maWciFQoTVXBkYXRlUHJveHlSZXNwb25zZSI4ChBHZXRTdGF0dXNSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkiUAoTU3RyZWFtU3RhdHVzUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhAKCHByb3h5X2lkGAIgASgJEhMKC2ludGVydmFsX21zGAMgASgFIqgFChFHZXRTdGF0dXNSZXNwb25zZRIxCghiYWNrZW5kcxgBIAMoCzIfLmFwaS5wcm90by5kb21haW4uQmFja2VuZFN0YXR1cxITCgt0b3RhbF9jb25ucxgCIAEoAxIQCghwcm90b2NvbBgDIAEoCRIVCg1iYWxhbmNlcl90eXBlGAQgASgJEi8KC3RvcF9xdWVyaWVzGAUgAygLMhouYXBpLnByb3RvLmRvbWFpbi5Ub3BRdWVyeRIWCg51cHRpbWVfc2Vjb25kcxgGIAEoAxIbChNyZXF1ZXN0c19wZXJfc2Vjb25kGAcgASgCEhYKDnRvdGFsX3JlcXVlc3RzGAggASgDEhQKDHRvdGFsX2Vycm9ycxgJIAEoAxI3Cg5zeXN0ZW1fbWV0cmljcxgKIAEoCzIfLmFwaS5wcm90by5kb21haW4uU3lzdGVtTWV0cmljcxITCgtpbl9mYWlsb3ZlchgLIAEoCBIRCglsZWFkZXJfaWQYDCABKAkSMQoLY2FjaGVfc3RhdHMYDSABKAsyHC5hcGkucHJvdG8uZG9tYWluLkNhY2hlU3RhdHMSMQoHaGlzdG9yeRgPIAMoCzIgLmFwaS5wcm90by5kb21haW4uTWV0cmljU25hcHNob3QSLAoIdG9wb2xvZ3kYECABKAsyGi5hcGkucHJvdG8uZG9tYWluLlRvcG9sb2d5EjkKD2FkYXB0aXZlX3N0YXR1cxgRIAEoCzIgLmFwaS5wcm90by5kb21haW4uQWRhcHRpdmVTdGF0dXMSSAoXcGVyZm9ybWFuY2Vfc3VnZ2VzdGlvbnMYEiADKAsyJy5hcGkucHJvdG8uZG9tYWluLlBlcmZvcm1hbmNlU3VnZ2VzdGlvbkoECA4QD1IOZmlyZXdhbGxfc3RhdHMiagoRQWRkQmFja2VuZFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIvCgZjb25maWcYAyABKAsyHy5hcGkucHJvdG8uZG9tYWluLkJhY2tlbmRDb25maWciFAoSQWRkQmFja2VuZFJlc3BvbnNlIk0KFFJlbW92ZUJhY2tlbmRSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkSDwoHYWRkcmVzcxgDIAEoCSIXChVSZW1vdmVCYWNrZW5kUmVzcG9uc2UifgoUVXBkYXRlQmFja2VuZFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIPCgdhZGRyZXNzGAMgASgJEi8KBmNvbmZpZxgEIAEoCzIfLmFwaS5wcm90by5kb21haW4uQmFja2VuZENvbmZpZyIXChVVcGRhdGVCYWNrZW5kUmVzcG9uc2UiawoVSW5pdGlhbGl6ZU5vZGVSZXF1ZXN0EhQKDGhvc3RfYWRkcmVzcxgBIAEoCRIPCgd2ZXJzaW9uGAIgASgJEhYKDmRhdGFfZGlyZWN0b3J5GAMgASgJEhMKC2FnZW50X3Rva2VuGAQgASgJIkwKFkluaXRpYWxpemVOb2RlUHJvZ3Jlc3MSDQoFc3RhZ2UYASABKAkSEgoKcGVyY2VudGFnZRgCIAEoBRIPCgdtZXNzYWdlGAMgASgJImIKFEJhY2t1cEJhY2tlbmRSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkSDwoHYWRkcmVzcxgDIAEoCRITCgtiYWNrdXBfcGF0aBgEIAEoCSJLChVCYWNrdXBCYWNrZW5kUHJvZ3Jlc3MSDQoFc3RhZ2UYASABKAkSEgoKcGVyY2VudGFnZRgCIAEoBRIPCgdtZXNzYWdlGAMgASgJImMKFVJlc3RvcmVCYWNrZW5kUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhAKCHByb3h5X2lkGAIgASgJEg8KB2FkZHJlc3MYAyABKAkSEwoLYmFja3VwX3BhdGgYBCABKAkiTAoWUmVzdG9yZUJhY2tlbmRQcm9ncmVzcxINCgVzdGFnZRgBIAEoCRISCgpwZXJjZW50YWdlGAIgASgFEg8KB21lc3NhZ2UYAyABKAkiagoSSW5zdGFsbE5vZGVSZXF1ZXN0EhQKDGhvc3RfYWRkcmVzcxgBIAEoCRIPCgd2ZXJzaW9uGAIgASgJEhgKEHRhcmdldF9kaXJlY3RvcnkYAyABKAkSEwoLYWdlbnRfdG9rZW4YBCABKAkiSQoTSW5zdGFsbE5vZGVQcm9ncmVzcxINCgVzdGFnZRgBIAEoCRISCgpwZXJjZW50YWdlGAIgASgFEg8KB21lc3NhZ2UYAyABKAkiTgoVUHJvbW90ZUJhY2tlbmRSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkSDwoHYWRkcmVzcxgDIAEoCSI6ChZQcm9tb3RlQmFja2VuZFJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgSDwoHbWVzc2FnZRgCIAEoCSKeAQoXU2V0Q2x1c3RlckNvbmZpZ1JlcXVlc3QSUAoKcGFyYW1ldGVycxgBIAMoCzI8LmFwaS5wcm90by5lbmRwb2ludHMuU2V0Q2x1c3RlckNvbmZpZ1JlcXVlc3QuUGFyYW1ldGVyc0VudHJ5GjEKD1BhcmFtZXRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIlgKGFNldENsdXN0ZXJDb25maWdSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIEhUKDXVwZGF0ZWRfbm9kZXMYAiADKAkSFAoMZmFpbGVkX25vZGVzGAMgAygJIhkKF0dldENsdXN0ZXJDb25maWdSZXF1ZXN0IqABChhHZXRDbHVzdGVyQ29uZmlnUmVzcG9uc2USUQoKcGFyYW1ldGVycxgBIAMoCzI9LmFwaS5wcm90by5lbmRwb2ludHMuR2V0Q2x1c3RlckNvbmZpZ1Jlc3BvbnNlLlBhcmFtZXRlcnNFbnRyeRoxCg9QYXJhbWV0ZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJXChZEaXNjb3ZlckNsdXN0ZXJSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkSFwoPcHJpbWFyeV9hZGRyZXNzGAMgASgJIkgKF0Rpc2NvdmVyQ2x1c3RlclJlc3BvbnNlEhgKEGRpc2NvdmVyZWRfbm9kZXMYASADKAkSEwoLYWRkZWRfbm9kZXMYAiADKAkibQoUVmFjdXVtQmFja2VuZFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIPCgdhZGRyZXNzGAMgASgJEhAKCGRhdGFiYXNlGAQgASgJEgwKBGZ1bGwYBSABKAgiSwoVVmFjdXVtQmFja2VuZFByb2dyZXNzEg0KBXN0YWdlGAEgASgJEhIKCnBlcmNlbnRhZ2UYAiABKAUSDwoHbWVzc2FnZRgDIAEoCSL3AQoXUHJvdmlzaW9uUmVwbGljYVJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIWCg5zb3VyY2VfYWRkcmVzcxgDIAEoCRIWCg50YXJnZXRfYWRkcmVzcxgEIAEoCRIYChByZXBsaWNhdGlvbl91c2VyGAUgASgJEhwKFHJlcGxpY2F0aW9uX3Bhc3N3b3JkGAYgASgJEhoKEnNvdXJjZV9hZ2VudF90b2tlbhgHIAEoCRIaChJ0YXJnZXRfYWdlbnRfdG9rZW4YCCABKAkSFgoOZGF0YV9kaXJlY3RvcnkYCSABKAkiRwoRUHJvdmlzaW9uUHJvZ3Jlc3MSDQoFc3RhZ2UYASABKAkSEgoKcGVyY2VudGFnZRgCIAEoBRIPCgdtZXNzYWdlGAMgASgJIikKFlZhbGlkYXRlQmFja2VuZFJlcXVlc3QSDwoHYWRkcmVzcxgBIAEoCSJPChdWYWxpZGF0ZUJhY2tlbmRSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIEg8KB21lc3NhZ2UYAiABKAkSEgoKbGF0ZW5jeV9tcxgDIAEoAyI4ChNFeHBsYWluUXVlcnlSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSDQoFcXVlcnkYAiABKAkiXwoURXhwbGFpblF1ZXJ5UmVzcG9uc2USDAoEcGxhbhgBIAEoCRI5Cg9yZWNvbW1lbmRhdGlvbnMYAiADKAsyIC5hcGkucHJvdG8uZG9tYWluLlJlY29tbWVuZGF0aW9uIkwKE1R1bmVEYXRhYmFzZVJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIPCgdhZGRyZXNzGAMgASgJIsoBChRUdW5lRGF0YWJhc2VSZXNwb25zZRJDCgVub2RlcxgBIAMoCzI0LmFwaS5wcm90by5lbmRwb2ludHMuVHVuZURhdGFiYXNlUmVzcG9uc2UuTm9kZVJlc3VsdBptCgpOb2RlUmVzdWx0Eg8KB2FkZHJlc3MYASABKAkSNwoLc3VnZ2VzdGlvbnMYAiADKAsyIi5hcGkucHJvdG8uZG9tYWluLlR1bmluZ1N1Z2dlc3Rpb24SFQoNc3lzdGVtX2NoZWNrcxgDIAMoCSKDAQoSQXBwbHlUdW5pbmdSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkSDwoHYWRkcmVzcxgDIAEoCRI2CgpzdWdnZXN0aW9uGAQgASgLMiIuYXBpLnByb3RvLmRvbWFpbi5UdW5pbmdTdWdnZXN0aW9uIjcKE0FwcGx5VHVuaW5nUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCBIPCgdtZXNzYWdlGAIgASgJIngKGEdldE1ldHJpY3NIaXN0b3J5UmVxdWVzdBIuCgpzdGFydF90aW1lGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRfdGltZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiTgoZR2V0TWV0cmljc0hpc3RvcnlSZXNwb25zZRIxCgdoaXN0b3J5GAEgAygLMiAuYXBpLnByb3RvLmRvbWFpbi5NZXRyaWNTbmFwc2hvdCKKAQobR2V0VG9wUXVlcmllc0hpc3RvcnlSZXF1ZXN0Ei4KCnN0YXJ0X3RpbWUYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZF90aW1lGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBINCgVsaW1pdBgDIAEoBSJPChxHZXRUb3BRdWVyaWVzSGlzdG9yeVJlc3BvbnNlEi8KC3RvcF9xdWVyaWVzGAEgAygLMhouYXBpLnByb3RvLmRvbWFpbi5Ub3BRdWVyeSKsAQoOR2V0TG9nc1JlcXVlc3QSLgoKc3RhcnRfdGltZRgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIZW5kX3RpbWUYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg0KBWxldmVsGAMgASgJEg4KBnNlYXJjaBgEIAEoCRINCgVsaW1pdBgFIAEoBRIOCgZvZmZzZXQYBiABKAUiUAoPR2V0TG9nc1Jlc3BvbnNlEigKBGxvZ3MYASADKAsyGi5hcGkucHJvdG8uZG9tYWluLkxvZ0VudHJ5EhMKC3RvdGFsX2NvdW50GAIgASgFIiYKEVN0cmVhbUxvZ3NSZXF1ZXN0EhEKCW1pbl9sZXZlbBgBIAEoCSJaCiFHZXRCYWNrZW5kUG9zdGdyZXNJbnNpZ2h0c1JlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIPCgdhZGRyZXNzGAMgASgJItABCiJHZXRCYWNrZW5kUG9zdGdyZXNJbnNpZ2h0c1Jlc3BvbnNlEjMKC3RvcF9xdWVyaWVzGAEgAygLMh4uYXBpLnByb3RvLmRvbWFpbi5RdWVyeUluc2lnaHQSMwoMYWN0aXZlX2xvY2tzGAIgAygLMh0uYXBpLnByb3RvLmRvbWFpbi5Mb2NrSW5zaWdodBJAChJyZXBsaWNhdGlvbl9zdGF0dXMYAyADKAsyJC5hcGkucHJvdG8uZG9tYWluLlJlcGxpY2F0aW9uSW5zaWdodCJVChxSZXN0YXJ0QmFja2VuZFNlcnZpY2VSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkSDwoHYWRkcmVzcxgDIAEoCSJHCh1SZXN0YXJ0QmFja2VuZFNlcnZpY2VSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIEhUKDWVycm9yX21lc3NhZ2UYAiABKAkiTwoWU2h1dGRvd25CYWNrZW5kUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhAKCHByb3h5X2lkGAIgASgJEg8KB2FkZHJlc3MYAyABKAkiQQoXU2h1dGRvd25CYWNrZW5kUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCBIVCg1lcnJvcl9tZXNzYWdlGAIgASgJIjIKDExvZ2luUmVxdWVzdBIQCgh1c2VybmFtZRgBIAEoCRIQCghwYXNzd29yZBgCIAEoCSI+Cg1Mb2dpblJlc3BvbnNlEg0KBXRva2VuGAEgASgJEgwKBHJvbGUYAiABKAkSEAoIdXNlcm5hbWUYAyABKAkiRQoRQ3JlYXRlVXNlclJlcXVlc3QSEAoIdXNlcm5hbWUYASABKAkSEAoIcGFzc3dvcmQYAiABKAkSDAoEcm9sZRgDIAEoCSI0ChJDcmVhdGVVc2VyUmVzcG9uc2USEAoIdXNlcm5hbWUYASABKAkSDAoEcm9sZRgCIAEoCSJBChNHZXRBZ2VudEluZm9SZXF1ZXN0EhUKDWFnZW50X2FkZHJlc3MYASABKAkSEwoLYWdlbnRfdG9rZW4YAiABKAkirQIKFEdldEFnZW50SW5mb1Jlc3BvbnNlEgoKAm9zGAEgASgJEhAKCGhvc3RuYW1lGAIgASgJEhgKEGRldGVjdGVkX3ZlcnNpb24YAyABKAkSGgoSYXZhaWxhYmxlX3ZlcnNpb25zGAQgAygJEhUKDWFnZW50X3ZlcnNpb24YBSABKAkSGwoTcmVjb21tZW5kZWRfdmVyc2lvbhgGIAEoCRIYChBwb3N0Z3Jlc19ydW5uaW5nGAcgASgIEhgKEHBvc3RncmVzX2FkZHJlc3MYCCABKAkSGQoRcG9zdGdyZXNfZGF0YV9kaXIYCSABKAkSPgoSdHVuaW5nX3N1Z2dlc3Rpb25zGAogAygLMiIuYXBpLnByb3RvLmRvbWFpbi5UdW5pbmdTdWdnZXN0aW9uIhYKFEdldFNlcnZlckluZm9SZXF1ZXN0IkwKFUdldFNlcnZlckluZm9SZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEg4KBmNvbW1pdBgCIAEoCRISCgpidWlsZF90aW1lGAMgASgJQjBaLmdpdGh1Yi5jb20vZ3NvdWx0YW4vcG9udHVzL2FwaS9wcm90by9lbmRwb2ludHNiBnByb3RvMw", [file_google_protobuf_timestamp, file_api_proto_domain_project, file_api_proto_domain_status, file_api_proto_domain_metrics, file_api_proto_domain_query, file_api_proto_domain_log]);
+  fileDesc("CiRhcGkvcHJvdG8vZW5kcG9pbnRzL21hbmFnZW1lbnQucHJvdG8SE2FwaS5wcm90by5lbmRwb2ludHMiHQobR2V0QXZhaWxhYmxlVmVyc2lvbnNSZXF1ZXN0IjAKHEdldEF2YWlsYWJsZVZlcnNpb25zUmVzcG9uc2USEAoIdmVyc2lvbnMYASADKAkiFQoTTGlzdFByb2plY3RzUmVxdWVzdCJDChRMaXN0UHJvamVjdHNSZXNwb25zZRIrCghwcm9qZWN0cxgBIAMoCzIZLmFwaS5wcm90by5kb21haW4uUHJvamVjdCJCChRDcmVhdGVQcm9qZWN0UmVxdWVzdBIqCgdwcm9qZWN0GAEgASgLMhkuYXBpLnByb3RvLmRvbWFpbi5Qcm9qZWN0IkMKFUNyZWF0ZVByb2plY3RSZXNwb25zZRIqCgdwcm9qZWN0GAEgASgLMhkuYXBpLnByb3RvLmRvbWFpbi5Qcm9qZWN0IiIKFERlbGV0ZVByb2plY3RSZXF1ZXN0EgoKAmlkGAEgASgJIhcKFURlbGV0ZVByb2plY3RSZXNwb25zZSJTCg9BZGRQcm94eVJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIsCgVwcm94eRgCIAEoCzIdLmFwaS5wcm90by5kb21haW4uUHJveHlDb25maWciQAoQQWRkUHJveHlSZXNwb25zZRIsCgVwcm94eRgBIAEoCzIdLmFwaS5wcm90by5kb21haW4uUHJveHlDb25maWciOgoSUmVtb3ZlUHJveHlSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkiFQoTUmVtb3ZlUHJveHlSZXNwb25zZSJWChJVcGRhdGVQcm94eVJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIsCgVwcm94eRgCIAEoCzIdLmFwaS5wcm90by5kb21haW4uUHJveHlDb25maWciFQoTVXBkYXRlUHJveHlSZXNwb25zZSI4ChBHZXRTdGF0dXNSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkiUAoTU3RyZWFtU3RhdHVzUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhAKCHByb3h5X2lkGAIgASgJEhMKC2ludGVydmFsX21zGAMgASgFIqgFChFHZXRTdGF0dXNSZXNwb25zZRIxCghiYWNrZW5kcxgBIAMoCzIfLmFwaS5wcm90by5kb21haW4uQmFja2VuZFN0YXR1cxITCgt0b3RhbF9jb25ucxgCIAEoAxIQCghwcm90b2NvbBgDIAEoCRIVCg1iYWxhbmNlcl90eXBlGAQgASgJEi8KC3RvcF9xdWVyaWVzGAUgAygLMhouYXBpLnByb3RvLmRvbWFpbi5Ub3BRdWVyeRIWCg51cHRpbWVfc2Vjb25kcxgGIAEoAxIbChNyZXF1ZXN0c19wZXJfc2Vjb25kGAcgASgCEhYKDnRvdGFsX3JlcXVlc3RzGAggASgDEhQKDHRvdGFsX2Vycm9ycxgJIAEoAxI3Cg5zeXN0ZW1fbWV0cmljcxgKIAEoCzIfLmFwaS5wcm90by5kb21haW4uU3lzdGVtTWV0cmljcxITCgtpbl9mYWlsb3ZlchgLIAEoCBIRCglsZWFkZXJfaWQYDCABKAkSMQoLY2FjaGVfc3RhdHMYDSABKAsyHC5hcGkucHJvdG8uZG9tYWluLkNhY2hlU3RhdHMSMQoHaGlzdG9yeRgPIAMoCzIgLmFwaS5wcm90by5kb21haW4uTWV0cmljU25hcHNob3QSLAoIdG9wb2xvZ3kYECABKAsyGi5hcGkucHJvdG8uZG9tYWluLlRvcG9sb2d5EjkKD2FkYXB0aXZlX3N0YXR1cxgRIAEoCzIgLmFwaS5wcm90by5kb21haW4uQWRhcHRpdmVTdGF0dXMSSAoXcGVyZm9ybWFuY2Vfc3VnZ2VzdGlvbnMYEiADKAsyJy5hcGkucHJvdG8uZG9tYWluLlBlcmZvcm1hbmNlU3VnZ2VzdGlvbkoECA4QD1IOZmlyZXdhbGxfc3RhdHMiagoRQWRkQmFja2VuZFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIvCgZjb25maWcYAyABKAsyHy5hcGkucHJvdG8uZG9tYWluLkJhY2tlbmRDb25maWciFAoSQWRkQmFja2VuZFJlc3BvbnNlIk0KFFJlbW92ZUJhY2tlbmRSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkSDwoHYWRkcmVzcxgDIAEoCSIXChVSZW1vdmVCYWNrZW5kUmVzcG9uc2UifgoUVXBkYXRlQmFja2VuZFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIPCgdhZGRyZXNzGAMgASgJEi8KBmNvbmZpZxgEIAEoCzIfLmFwaS5wcm90by5kb21haW4uQmFja2VuZENvbmZpZyIXChVVcGRhdGVCYWNrZW5kUmVzcG9uc2UiawoVSW5pdGlhbGl6ZU5vZGVSZXF1ZXN0EhQKDGhvc3RfYWRkcmVzcxgBIAEoCRIPCgd2ZXJzaW9uGAIgASgJEhYKDmRhdGFfZGlyZWN0b3J5GAMgASgJEhMKC2FnZW50X3Rva2VuGAQgASgJIkwKFkluaXRpYWxpemVOb2RlUHJvZ3Jlc3MSDQoFc3RhZ2UYASABKAkSEgoKcGVyY2VudGFnZRgCIAEoBRIPCgdtZXNzYWdlGAMgASgJImIKFEJhY2t1cEJhY2tlbmRSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkSDwoHYWRkcmVzcxgDIAEoCRITCgtiYWNrdXBfcGF0aBgEIAEoCSJLChVCYWNrdXBCYWNrZW5kUHJvZ3Jlc3MSDQoFc3RhZ2UYASABKAkSEgoKcGVyY2VudGFnZRgCIAEoBRIPCgdtZXNzYWdlGAMgASgJImMKFVJlc3RvcmVCYWNrZW5kUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhAKCHByb3h5X2lkGAIgASgJEg8KB2FkZHJlc3MYAyABKAkSEwoLYmFja3VwX3BhdGgYBCABKAkiTAoWUmVzdG9yZUJhY2tlbmRQcm9ncmVzcxINCgVzdGFnZRgBIAEoCRISCgpwZXJjZW50YWdlGAIgASgFEg8KB21lc3NhZ2UYAyABKAkiagoSSW5zdGFsbE5vZGVSZXF1ZXN0EhQKDGhvc3RfYWRkcmVzcxgBIAEoCRIPCgd2ZXJzaW9uGAIgASgJEhgKEHRhcmdldF9kaXJlY3RvcnkYAyABKAkSEwoLYWdlbnRfdG9rZW4YBCABKAkiSQoTSW5zdGFsbE5vZGVQcm9ncmVzcxINCgVzdGFnZRgBIAEoCRISCgpwZXJjZW50YWdlGAIgASgFEg8KB21lc3NhZ2UYAyABKAkiTgoVUHJvbW90ZUJhY2tlbmRSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkSDwoHYWRkcmVzcxgDIAEoCSI6ChZQcm9tb3RlQmFja2VuZFJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgSDwoHbWVzc2FnZRgCIAEoCSKeAQoXU2V0Q2x1c3RlckNvbmZpZ1JlcXVlc3QSUAoKcGFyYW1ldGVycxgBIAMoCzI8LmFwaS5wcm90by5lbmRwb2ludHMuU2V0Q2x1c3RlckNvbmZpZ1JlcXVlc3QuUGFyYW1ldGVyc0VudHJ5GjEKD1BhcmFtZXRlcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIlgKGFNldENsdXN0ZXJDb25maWdSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIEhUKDXVwZGF0ZWRfbm9kZXMYAiADKAkSFAoMZmFpbGVkX25vZGVzGAMgAygJIhkKF0dldENsdXN0ZXJDb25maWdSZXF1ZXN0IqABChhHZXRDbHVzdGVyQ29uZmlnUmVzcG9uc2USUQoKcGFyYW1ldGVycxgBIAMoCzI9LmFwaS5wcm90by5lbmRwb2ludHMuR2V0Q2x1c3RlckNvbmZpZ1Jlc3BvbnNlLlBhcmFtZXRlcnNFbnRyeRoxCg9QYXJhbWV0ZXJzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASJXChZEaXNjb3ZlckNsdXN0ZXJSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkSFwoPcHJpbWFyeV9hZGRyZXNzGAMgASgJIkgKF0Rpc2NvdmVyQ2x1c3RlclJlc3BvbnNlEhgKEGRpc2NvdmVyZWRfbm9kZXMYASADKAkSEwoLYWRkZWRfbm9kZXMYAiADKAkibQoUVmFjdXVtQmFja2VuZFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIPCgdhZGRyZXNzGAMgASgJEhAKCGRhdGFiYXNlGAQgASgJEgwKBGZ1bGwYBSABKAgiSwoVVmFjdXVtQmFja2VuZFByb2dyZXNzEg0KBXN0YWdlGAEgASgJEhIKCnBlcmNlbnRhZ2UYAiABKAUSDwoHbWVzc2FnZRgDIAEoCSL3AQoXUHJvdmlzaW9uUmVwbGljYVJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIWCg5zb3VyY2VfYWRkcmVzcxgDIAEoCRIWCg50YXJnZXRfYWRkcmVzcxgEIAEoCRIYChByZXBsaWNhdGlvbl91c2VyGAUgASgJEhwKFHJlcGxpY2F0aW9uX3Bhc3N3b3JkGAYgASgJEhoKEnNvdXJjZV9hZ2VudF90b2tlbhgHIAEoCRIaChJ0YXJnZXRfYWdlbnRfdG9rZW4YCCABKAkSFgoOZGF0YV9kaXJlY3RvcnkYCSABKAkiRwoRUHJvdmlzaW9uUHJvZ3Jlc3MSDQoFc3RhZ2UYASABKAkSEgoKcGVyY2VudGFnZRgCIAEoBRIPCgdtZXNzYWdlGAMgASgJIikKFlZhbGlkYXRlQmFja2VuZFJlcXVlc3QSDwoHYWRkcmVzcxgBIAEoCSJPChdWYWxpZGF0ZUJhY2tlbmRSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIEg8KB21lc3NhZ2UYAiABKAkSEgoKbGF0ZW5jeV9tcxgDIAEoAyI4ChNFeHBsYWluUXVlcnlSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSDQoFcXVlcnkYAiABKAkiXwoURXhwbGFpblF1ZXJ5UmVzcG9uc2USDAoEcGxhbhgBIAEoCRI5Cg9yZWNvbW1lbmRhdGlvbnMYAiADKAsyIC5hcGkucHJvdG8uZG9tYWluLlJlY29tbWVuZGF0aW9uIkwKE1R1bmVEYXRhYmFzZVJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIPCgdhZGRyZXNzGAMgASgJIsoBChRUdW5lRGF0YWJhc2VSZXNwb25zZRJDCgVub2RlcxgBIAMoCzI0LmFwaS5wcm90by5lbmRwb2ludHMuVHVuZURhdGFiYXNlUmVzcG9uc2UuTm9kZVJlc3VsdBptCgpOb2RlUmVzdWx0Eg8KB2FkZHJlc3MYASABKAkSNwoLc3VnZ2VzdGlvbnMYAiADKAsyIi5hcGkucHJvdG8uZG9tYWluLlR1bmluZ1N1Z2dlc3Rpb24SFQoNc3lzdGVtX2NoZWNrcxgDIAMoCSKDAQoSQXBwbHlUdW5pbmdSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkSDwoHYWRkcmVzcxgDIAEoCRI2CgpzdWdnZXN0aW9uGAQgASgLMiIuYXBpLnByb3RvLmRvbWFpbi5UdW5pbmdTdWdnZXN0aW9uIjcKE0FwcGx5VHVuaW5nUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCBIPCgdtZXNzYWdlGAIgASgJIngKGEdldE1ldHJpY3NIaXN0b3J5UmVxdWVzdBIuCgpzdGFydF90aW1lGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRfdGltZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiTgoZR2V0TWV0cmljc0hpc3RvcnlSZXNwb25zZRIxCgdoaXN0b3J5GAEgAygLMiAuYXBpLnByb3RvLmRvbWFpbi5NZXRyaWNTbmFwc2hvdCKKAQobR2V0VG9wUXVlcmllc0hpc3RvcnlSZXF1ZXN0Ei4KCnN0YXJ0X3RpbWUYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZF90aW1lGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBINCgVsaW1pdBgDIAEoBSJPChxHZXRUb3BRdWVyaWVzSGlzdG9yeVJlc3BvbnNlEi8KC3RvcF9xdWVyaWVzGAEgAygLMhouYXBpLnByb3RvLmRvbWFpbi5Ub3BRdWVyeSKsAQoOR2V0TG9nc1JlcXVlc3QSLgoKc3RhcnRfdGltZRgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIZW5kX3RpbWUYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg0KBWxldmVsGAMgASgJEg4KBnNlYXJjaBgEIAEoCRINCgVsaW1pdBgFIAEoBRIOCgZvZmZzZXQYBiABKAUiUAoPR2V0TG9nc1Jlc3BvbnNlEigKBGxvZ3MYASADKAsyGi5hcGkucHJvdG8uZG9tYWluLkxvZ0VudHJ5EhMKC3RvdGFsX2NvdW50GAIgASgFIkUKHUxpc3RSZXBsaWNhdGlvblN0cmVhbXNSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkidAoeTGlzdFJlcGxpY2F0aW9uU3RyZWFtc1Jlc3BvbnNlEjQKB3N0cmVhbXMYASADKAsyIy5hcGkucHJvdG8uZG9tYWluLlJlcGxpY2F0aW9uU3RyZWFtEgwKBHVzZWQYAiABKAUSDgoGYnVkZ2V0GAMgASgFIlwKIVRlcm1pbmF0ZVJlcGxpY2F0aW9uU3RyZWFtUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhAKCHByb3h5X2lkGAIgASgJEhEKCXN0cmVhbV9pZBgDIAEoCSJGCiJUZXJtaW5hdGVSZXBsaWNhdGlvblN0cmVhbVJlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgSDwoHbWVzc2FnZRgCIAEoCSJ0ChhDcmVhdGVMb2dpY2FsU2xvdFJlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIPCgdhZGRyZXNzGAMgASgJEhEKCXNsb3RfbmFtZRgEIAEoCRIOCgZwbHVnaW4YBSABKAkiUwoZQ3JlYXRlTG9naWNhbFNsb3RSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIEg8KB21lc3NhZ2UYAiABKAkSFAoMY29uc3VtZXJfZHNuGAMgASgJIiYKEVN0cmVhbUxvZ3NSZXF1ZXN0EhEKCW1pbl9sZXZlbBgBIAEoCSJaCiFHZXRCYWNrZW5kUG9zdGdyZXNJbnNpZ2h0c1JlcXVlc3QSEgoKcHJvamVjdF9pZBgBIAEoCRIQCghwcm94eV9pZBgCIAEoCRIPCgdhZGRyZXNzGAMgASgJItABCiJHZXRCYWNrZW5kUG9zdGdyZXNJbnNpZ2h0c1Jlc3BvbnNlEjMKC3RvcF9xdWVyaWVzGAEgAygLMh4uYXBpLnByb3RvLmRvbWFpbi5RdWVyeUluc2lnaHQSMwoMYWN0aXZlX2xvY2tzGAIgAygLMh0uYXBpLnByb3RvLmRvbWFpbi5Mb2NrSW5zaWdodBJAChJyZXBsaWNhdGlvbl9zdGF0dXMYAyADKAsyJC5hcGkucHJvdG8uZG9tYWluLlJlcGxpY2F0aW9uSW5zaWdodCJVChxSZXN0YXJ0QmFja2VuZFNlcnZpY2VSZXF1ZXN0EhIKCnByb2plY3RfaWQYASABKAkSEAoIcHJveHlfaWQYAiABKAkSDwoHYWRkcmVzcxgDIAEoCSJHCh1SZXN0YXJ0QmFja2VuZFNlcnZpY2VSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIEhUKDWVycm9yX21lc3NhZ2UYAiABKAkiTwoWU2h1dGRvd25CYWNrZW5kUmVxdWVzdBISCgpwcm9qZWN0X2lkGAEgASgJEhAKCHByb3h5X2lkGAIgASgJEg8KB2FkZHJlc3MYAyABKAkiQQoXU2h1dGRvd25CYWNrZW5kUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCBIVCg1lcnJvcl9tZXNzYWdlGAIgASgJIjIKDExvZ2luUmVxdWVzdBIQCgh1c2VybmFtZRgBIAEoCRIQCghwYXNzd29yZBgCIAEoCSI+Cg1Mb2dpblJlc3BvbnNlEg0KBXRva2VuGAEgASgJEgwKBHJvbGUYAiABKAkSEAoIdXNlcm5hbWUYAyABKAkiRQoRQ3JlYXRlVXNlclJlcXVlc3QSEAoIdXNlcm5hbWUYASABKAkSEAoIcGFzc3dvcmQYAiABKAkSDAoEcm9sZRgDIAEoCSI0ChJDcmVhdGVVc2VyUmVzcG9uc2USEAoIdXNlcm5hbWUYASABKAkSDAoEcm9sZRgCIAEoCSJBChNHZXRBZ2VudEluZm9SZXF1ZXN0EhUKDWFnZW50X2FkZHJlc3MYASABKAkSEwoLYWdlbnRfdG9rZW4YAiABKAkirQIKFEdldEFnZW50SW5mb1Jlc3BvbnNlEgoKAm9zGAEgASgJEhAKCGhvc3RuYW1lGAIgASgJEhgKEGRldGVjdGVkX3ZlcnNpb24YAyABKAkSGgoSYXZhaWxhYmxlX3ZlcnNpb25zGAQgAygJEhUKDWFnZW50X3ZlcnNpb24YBSABKAkSGwoTcmVjb21tZW5kZWRfdmVyc2lvbhgGIAEoCRIYChBwb3N0Z3Jlc19ydW5uaW5nGAcgASgIEhgKEHBvc3RncmVzX2FkZHJlc3MYCCABKAkSGQoRcG9zdGdyZXNfZGF0YV9kaXIYCSABKAkSPgoSdHVuaW5nX3N1Z2dlc3Rpb25zGAogAygLMiIuYXBpLnByb3RvLmRvbWFpbi5UdW5pbmdTdWdnZXN0aW9uIhYKFEdldFNlcnZlckluZm9SZXF1ZXN0IkwKFUdldFNlcnZlckluZm9SZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEg4KBmNvbW1pdBgCIAEoCRISCgpidWlsZF90aW1lGAMgASgJQjBaLmdpdGh1Yi5jb20vZ3NvdWx0YW4vcG9udHVzL2FwaS9wcm90by9lbmRwb2ludHNiBnByb3RvMw", [file_google_protobuf_timestamp, file_api_proto_domain_project, file_api_proto_domain_status, file_api_proto_domain_metrics, file_api_proto_domain_query, file_api_proto_domain_log]);
 
 /**
  * @generated from message api.proto.endpoints.GetAvailableVersionsRequest
@@ -1462,6 +1462,177 @@ export const GetLogsResponseSchema: GenMessage<GetLogsResponse> = /*@__PURE__*/
   messageDesc(file_api_proto_endpoints_management, 56);
 
 /**
+ * Replication streams (CDC)
+ *
+ * @generated from message api.proto.endpoints.ListReplicationStreamsRequest
+ */
+export type ListReplicationStreamsRequest = Message<"api.proto.endpoints.ListReplicationStreamsRequest"> & {
+  /**
+   * @generated from field: string project_id = 1;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: string proxy_id = 2;
+   */
+  proxyId: string;
+};
+
+/**
+ * Describes the message api.proto.endpoints.ListReplicationStreamsRequest.
+ * Use `create(ListReplicationStreamsRequestSchema)` to create a new message.
+ */
+export const ListReplicationStreamsRequestSchema: GenMessage<ListReplicationStreamsRequest> = /*@__PURE__*/
+  messageDesc(file_api_proto_endpoints_management, 57);
+
+/**
+ * @generated from message api.proto.endpoints.ListReplicationStreamsResponse
+ */
+export type ListReplicationStreamsResponse = Message<"api.proto.endpoints.ListReplicationStreamsResponse"> & {
+  /**
+   * @generated from field: repeated api.proto.domain.ReplicationStream streams = 1;
+   */
+  streams: ReplicationStream[];
+
+  /**
+   * Budget the operator set aside for streams, and how much is in use, so the
+   * dashboard can say "3 of 4" without recomputing it from the node list.
+   *
+   * @generated from field: int32 used = 2;
+   */
+  used: number;
+
+  /**
+   * @generated from field: int32 budget = 3;
+   */
+  budget: number;
+};
+
+/**
+ * Describes the message api.proto.endpoints.ListReplicationStreamsResponse.
+ * Use `create(ListReplicationStreamsResponseSchema)` to create a new message.
+ */
+export const ListReplicationStreamsResponseSchema: GenMessage<ListReplicationStreamsResponse> = /*@__PURE__*/
+  messageDesc(file_api_proto_endpoints_management, 58);
+
+/**
+ * @generated from message api.proto.endpoints.TerminateReplicationStreamRequest
+ */
+export type TerminateReplicationStreamRequest = Message<"api.proto.endpoints.TerminateReplicationStreamRequest"> & {
+  /**
+   * @generated from field: string project_id = 1;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: string proxy_id = 2;
+   */
+  proxyId: string;
+
+  /**
+   * @generated from field: string stream_id = 3;
+   */
+  streamId: string;
+};
+
+/**
+ * Describes the message api.proto.endpoints.TerminateReplicationStreamRequest.
+ * Use `create(TerminateReplicationStreamRequestSchema)` to create a new message.
+ */
+export const TerminateReplicationStreamRequestSchema: GenMessage<TerminateReplicationStreamRequest> = /*@__PURE__*/
+  messageDesc(file_api_proto_endpoints_management, 59);
+
+/**
+ * @generated from message api.proto.endpoints.TerminateReplicationStreamResponse
+ */
+export type TerminateReplicationStreamResponse = Message<"api.proto.endpoints.TerminateReplicationStreamResponse"> & {
+  /**
+   * @generated from field: bool success = 1;
+   */
+  success: boolean;
+
+  /**
+   * @generated from field: string message = 2;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message api.proto.endpoints.TerminateReplicationStreamResponse.
+ * Use `create(TerminateReplicationStreamResponseSchema)` to create a new message.
+ */
+export const TerminateReplicationStreamResponseSchema: GenMessage<TerminateReplicationStreamResponse> = /*@__PURE__*/
+  messageDesc(file_api_proto_endpoints_management, 60);
+
+/**
+ * CreateReplicationSlotRequest pre-creates a logical slot so a consumer has
+ * something to attach to. Physical slots are created by replica provisioning,
+ * not here.
+ *
+ * @generated from message api.proto.endpoints.CreateLogicalSlotRequest
+ */
+export type CreateLogicalSlotRequest = Message<"api.proto.endpoints.CreateLogicalSlotRequest"> & {
+  /**
+   * @generated from field: string project_id = 1;
+   */
+  projectId: string;
+
+  /**
+   * @generated from field: string proxy_id = 2;
+   */
+  proxyId: string;
+
+  /**
+   * @generated from field: string address = 3;
+   */
+  address: string;
+
+  /**
+   * @generated from field: string slot_name = 4;
+   */
+  slotName: string;
+
+  /**
+   * @generated from field: string plugin = 5;
+   */
+  plugin: string;
+};
+
+/**
+ * Describes the message api.proto.endpoints.CreateLogicalSlotRequest.
+ * Use `create(CreateLogicalSlotRequestSchema)` to create a new message.
+ */
+export const CreateLogicalSlotRequestSchema: GenMessage<CreateLogicalSlotRequest> = /*@__PURE__*/
+  messageDesc(file_api_proto_endpoints_management, 61);
+
+/**
+ * @generated from message api.proto.endpoints.CreateLogicalSlotResponse
+ */
+export type CreateLogicalSlotResponse = Message<"api.proto.endpoints.CreateLogicalSlotResponse"> & {
+  /**
+   * @generated from field: bool success = 1;
+   */
+  success: boolean;
+
+  /**
+   * @generated from field: string message = 2;
+   */
+  message: string;
+
+  /**
+   * @generated from field: string consumer_dsn = 3;
+   */
+  consumerDsn: string;
+};
+
+/**
+ * Describes the message api.proto.endpoints.CreateLogicalSlotResponse.
+ * Use `create(CreateLogicalSlotResponseSchema)` to create a new message.
+ */
+export const CreateLogicalSlotResponseSchema: GenMessage<CreateLogicalSlotResponse> = /*@__PURE__*/
+  messageDesc(file_api_proto_endpoints_management, 62);
+
+/**
  * @generated from message api.proto.endpoints.StreamLogsRequest
  */
 export type StreamLogsRequest = Message<"api.proto.endpoints.StreamLogsRequest"> & {
@@ -1476,7 +1647,7 @@ export type StreamLogsRequest = Message<"api.proto.endpoints.StreamLogsRequest">
  * Use `create(StreamLogsRequestSchema)` to create a new message.
  */
 export const StreamLogsRequestSchema: GenMessage<StreamLogsRequest> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 57);
+  messageDesc(file_api_proto_endpoints_management, 63);
 
 /**
  * @generated from message api.proto.endpoints.GetBackendPostgresInsightsRequest
@@ -1503,7 +1674,7 @@ export type GetBackendPostgresInsightsRequest = Message<"api.proto.endpoints.Get
  * Use `create(GetBackendPostgresInsightsRequestSchema)` to create a new message.
  */
 export const GetBackendPostgresInsightsRequestSchema: GenMessage<GetBackendPostgresInsightsRequest> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 58);
+  messageDesc(file_api_proto_endpoints_management, 64);
 
 /**
  * @generated from message api.proto.endpoints.GetBackendPostgresInsightsResponse
@@ -1530,7 +1701,7 @@ export type GetBackendPostgresInsightsResponse = Message<"api.proto.endpoints.Ge
  * Use `create(GetBackendPostgresInsightsResponseSchema)` to create a new message.
  */
 export const GetBackendPostgresInsightsResponseSchema: GenMessage<GetBackendPostgresInsightsResponse> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 59);
+  messageDesc(file_api_proto_endpoints_management, 65);
 
 /**
  * @generated from message api.proto.endpoints.RestartBackendServiceRequest
@@ -1557,7 +1728,7 @@ export type RestartBackendServiceRequest = Message<"api.proto.endpoints.RestartB
  * Use `create(RestartBackendServiceRequestSchema)` to create a new message.
  */
 export const RestartBackendServiceRequestSchema: GenMessage<RestartBackendServiceRequest> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 60);
+  messageDesc(file_api_proto_endpoints_management, 66);
 
 /**
  * @generated from message api.proto.endpoints.RestartBackendServiceResponse
@@ -1579,7 +1750,7 @@ export type RestartBackendServiceResponse = Message<"api.proto.endpoints.Restart
  * Use `create(RestartBackendServiceResponseSchema)` to create a new message.
  */
 export const RestartBackendServiceResponseSchema: GenMessage<RestartBackendServiceResponse> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 61);
+  messageDesc(file_api_proto_endpoints_management, 67);
 
 /**
  * @generated from message api.proto.endpoints.ShutdownBackendRequest
@@ -1606,7 +1777,7 @@ export type ShutdownBackendRequest = Message<"api.proto.endpoints.ShutdownBacken
  * Use `create(ShutdownBackendRequestSchema)` to create a new message.
  */
 export const ShutdownBackendRequestSchema: GenMessage<ShutdownBackendRequest> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 62);
+  messageDesc(file_api_proto_endpoints_management, 68);
 
 /**
  * @generated from message api.proto.endpoints.ShutdownBackendResponse
@@ -1628,7 +1799,7 @@ export type ShutdownBackendResponse = Message<"api.proto.endpoints.ShutdownBacke
  * Use `create(ShutdownBackendResponseSchema)` to create a new message.
  */
 export const ShutdownBackendResponseSchema: GenMessage<ShutdownBackendResponse> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 63);
+  messageDesc(file_api_proto_endpoints_management, 69);
 
 /**
  * Auth and System Info
@@ -1652,7 +1823,7 @@ export type LoginRequest = Message<"api.proto.endpoints.LoginRequest"> & {
  * Use `create(LoginRequestSchema)` to create a new message.
  */
 export const LoginRequestSchema: GenMessage<LoginRequest> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 64);
+  messageDesc(file_api_proto_endpoints_management, 70);
 
 /**
  * @generated from message api.proto.endpoints.LoginResponse
@@ -1679,7 +1850,7 @@ export type LoginResponse = Message<"api.proto.endpoints.LoginResponse"> & {
  * Use `create(LoginResponseSchema)` to create a new message.
  */
 export const LoginResponseSchema: GenMessage<LoginResponse> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 65);
+  messageDesc(file_api_proto_endpoints_management, 71);
 
 /**
  * @generated from message api.proto.endpoints.CreateUserRequest
@@ -1706,7 +1877,7 @@ export type CreateUserRequest = Message<"api.proto.endpoints.CreateUserRequest">
  * Use `create(CreateUserRequestSchema)` to create a new message.
  */
 export const CreateUserRequestSchema: GenMessage<CreateUserRequest> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 66);
+  messageDesc(file_api_proto_endpoints_management, 72);
 
 /**
  * @generated from message api.proto.endpoints.CreateUserResponse
@@ -1728,7 +1899,7 @@ export type CreateUserResponse = Message<"api.proto.endpoints.CreateUserResponse
  * Use `create(CreateUserResponseSchema)` to create a new message.
  */
 export const CreateUserResponseSchema: GenMessage<CreateUserResponse> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 67);
+  messageDesc(file_api_proto_endpoints_management, 73);
 
 /**
  * @generated from message api.proto.endpoints.GetAgentInfoRequest
@@ -1750,7 +1921,7 @@ export type GetAgentInfoRequest = Message<"api.proto.endpoints.GetAgentInfoReque
  * Use `create(GetAgentInfoRequestSchema)` to create a new message.
  */
 export const GetAgentInfoRequestSchema: GenMessage<GetAgentInfoRequest> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 68);
+  messageDesc(file_api_proto_endpoints_management, 74);
 
 /**
  * @generated from message api.proto.endpoints.GetAgentInfoResponse
@@ -1812,7 +1983,7 @@ export type GetAgentInfoResponse = Message<"api.proto.endpoints.GetAgentInfoResp
  * Use `create(GetAgentInfoResponseSchema)` to create a new message.
  */
 export const GetAgentInfoResponseSchema: GenMessage<GetAgentInfoResponse> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 69);
+  messageDesc(file_api_proto_endpoints_management, 75);
 
 /**
  * @generated from message api.proto.endpoints.GetServerInfoRequest
@@ -1825,7 +1996,7 @@ export type GetServerInfoRequest = Message<"api.proto.endpoints.GetServerInfoReq
  * Use `create(GetServerInfoRequestSchema)` to create a new message.
  */
 export const GetServerInfoRequestSchema: GenMessage<GetServerInfoRequest> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 70);
+  messageDesc(file_api_proto_endpoints_management, 76);
 
 /**
  * @generated from message api.proto.endpoints.GetServerInfoResponse
@@ -1852,5 +2023,5 @@ export type GetServerInfoResponse = Message<"api.proto.endpoints.GetServerInfoRe
  * Use `create(GetServerInfoResponseSchema)` to create a new message.
  */
 export const GetServerInfoResponseSchema: GenMessage<GetServerInfoResponse> = /*@__PURE__*/
-  messageDesc(file_api_proto_endpoints_management, 71);
+  messageDesc(file_api_proto_endpoints_management, 77);
 

@@ -11,83 +11,89 @@ import (
 
 // Endpoints holds all Go kit endpoints for the management service.
 type Endpoints struct {
-	ListProjectsEndpoint          endpoint.Endpoint
-	CreateProjectEndpoint         endpoint.Endpoint
-	DeleteProjectEndpoint         endpoint.Endpoint
-	GetStatusEndpoint             endpoint.Endpoint
-	AddBackendEndpoint            endpoint.Endpoint
-	RemoveBackendEndpoint         endpoint.Endpoint
-	UpdateBackendEndpoint         endpoint.Endpoint
-	ValidateBackendEndpoint       endpoint.Endpoint
-	AddProxyEndpoint              endpoint.Endpoint
-	RemoveProxyEndpoint           endpoint.Endpoint
-	UpdateProxyEndpoint           endpoint.Endpoint
-	ProvisionReplicaEndpoint      endpoint.Endpoint
-	InitializeNodeEndpoint        endpoint.Endpoint
-	InstallNodeEndpoint           endpoint.Endpoint
-	BackupBackendEndpoint         endpoint.Endpoint
-	RestoreBackendEndpoint        endpoint.Endpoint
-	PromoteBackendEndpoint        endpoint.Endpoint
-	StreamLogsEndpoint            endpoint.Endpoint
-	ExplainQueryEndpoint          endpoint.Endpoint
-	SetClusterConfigEndpoint      endpoint.Endpoint
-	GetClusterConfigEndpoint      endpoint.Endpoint
-	DiscoverClusterEndpoint       endpoint.Endpoint
-	VacuumBackendEndpoint         endpoint.Endpoint
-	GetLogsEndpoint               endpoint.Endpoint
-	GetMetricsHistoryEndpoint     endpoint.Endpoint
-	GetTopQueriesHistoryEndpoint  endpoint.Endpoint
-	TuneDatabaseEndpoint          endpoint.Endpoint
-	ApplyTuningEndpoint           endpoint.Endpoint
-	GetAgentInfoEndpoint          endpoint.Endpoint
-	GetAvailableVersionsEndpoint  endpoint.Endpoint
-	LoginEndpoint                 endpoint.Endpoint
-	CreateUserEndpoint            endpoint.Endpoint
-	GetServerInfoEndpoint         endpoint.Endpoint
-	GetPostgresInsightsEndpoint   endpoint.Endpoint
-	RestartBackendServiceEndpoint endpoint.Endpoint
-	ShutdownBackendEndpoint       endpoint.Endpoint
+	ListProjectsEndpoint               endpoint.Endpoint
+	CreateProjectEndpoint              endpoint.Endpoint
+	DeleteProjectEndpoint              endpoint.Endpoint
+	GetStatusEndpoint                  endpoint.Endpoint
+	AddBackendEndpoint                 endpoint.Endpoint
+	RemoveBackendEndpoint              endpoint.Endpoint
+	UpdateBackendEndpoint              endpoint.Endpoint
+	ValidateBackendEndpoint            endpoint.Endpoint
+	AddProxyEndpoint                   endpoint.Endpoint
+	RemoveProxyEndpoint                endpoint.Endpoint
+	UpdateProxyEndpoint                endpoint.Endpoint
+	ProvisionReplicaEndpoint           endpoint.Endpoint
+	InitializeNodeEndpoint             endpoint.Endpoint
+	InstallNodeEndpoint                endpoint.Endpoint
+	BackupBackendEndpoint              endpoint.Endpoint
+	RestoreBackendEndpoint             endpoint.Endpoint
+	PromoteBackendEndpoint             endpoint.Endpoint
+	ListReplicationStreamsEndpoint     endpoint.Endpoint
+	TerminateReplicationStreamEndpoint endpoint.Endpoint
+	CreateLogicalSlotEndpoint          endpoint.Endpoint
+	StreamLogsEndpoint                 endpoint.Endpoint
+	ExplainQueryEndpoint               endpoint.Endpoint
+	SetClusterConfigEndpoint           endpoint.Endpoint
+	GetClusterConfigEndpoint           endpoint.Endpoint
+	DiscoverClusterEndpoint            endpoint.Endpoint
+	VacuumBackendEndpoint              endpoint.Endpoint
+	GetLogsEndpoint                    endpoint.Endpoint
+	GetMetricsHistoryEndpoint          endpoint.Endpoint
+	GetTopQueriesHistoryEndpoint       endpoint.Endpoint
+	TuneDatabaseEndpoint               endpoint.Endpoint
+	ApplyTuningEndpoint                endpoint.Endpoint
+	GetAgentInfoEndpoint               endpoint.Endpoint
+	GetAvailableVersionsEndpoint       endpoint.Endpoint
+	LoginEndpoint                      endpoint.Endpoint
+	CreateUserEndpoint                 endpoint.Endpoint
+	GetServerInfoEndpoint              endpoint.Endpoint
+	GetPostgresInsightsEndpoint        endpoint.Endpoint
+	RestartBackendServiceEndpoint      endpoint.Endpoint
+	ShutdownBackendEndpoint            endpoint.Endpoint
 }
 
 // MakeEndpoints returns an Endpoints struct where each field is an endpoint.
 func MakeEndpoints(s service.Service) Endpoints {
 	return Endpoints{
-		ListProjectsEndpoint:          makeListProjectsEndpoint(s),
-		CreateProjectEndpoint:         makeCreateProjectEndpoint(s),
-		DeleteProjectEndpoint:         makeDeleteProjectEndpoint(s),
-		GetStatusEndpoint:             makeGetStatusEndpoint(s),
-		AddBackendEndpoint:            makeAddBackendEndpoint(s),
-		RemoveBackendEndpoint:         makeRemoveBackendEndpoint(s),
-		UpdateBackendEndpoint:         makeUpdateBackendEndpoint(s),
-		ValidateBackendEndpoint:       makeValidateBackendEndpoint(s),
-		AddProxyEndpoint:              makeAddProxyEndpoint(s),
-		RemoveProxyEndpoint:           makeRemoveProxyEndpoint(s),
-		UpdateProxyEndpoint:           makeUpdateProxyEndpoint(s),
-		ProvisionReplicaEndpoint:      makeProvisionReplicaEndpoint(s),
-		InitializeNodeEndpoint:        makeInitializeNodeEndpoint(s),
-		InstallNodeEndpoint:           makeInstallNodeEndpoint(s),
-		BackupBackendEndpoint:         makeBackupBackendEndpoint(s),
-		RestoreBackendEndpoint:        makeRestoreBackendEndpoint(s),
-		PromoteBackendEndpoint:        makePromoteBackendEndpoint(s),
-		StreamLogsEndpoint:            makeStreamLogsEndpoint(s),
-		ExplainQueryEndpoint:          makeExplainQueryEndpoint(s),
-		SetClusterConfigEndpoint:      makeSetClusterConfigEndpoint(s),
-		GetClusterConfigEndpoint:      makeGetClusterConfigEndpoint(s),
-		DiscoverClusterEndpoint:       makeDiscoverClusterEndpoint(s),
-		VacuumBackendEndpoint:         makeVacuumBackendEndpoint(s),
-		GetLogsEndpoint:               makeGetLogsEndpoint(s),
-		GetMetricsHistoryEndpoint:     makeGetMetricsHistoryEndpoint(s),
-		GetTopQueriesHistoryEndpoint:  makeGetTopQueriesHistoryEndpoint(s),
-		TuneDatabaseEndpoint:          makeTuneDatabaseEndpoint(s),
-		ApplyTuningEndpoint:           makeApplyTuningEndpoint(s),
-		GetAgentInfoEndpoint:          makeGetAgentInfoEndpoint(s),
-		GetAvailableVersionsEndpoint:  makeGetAvailableVersionsEndpoint(s),
-		LoginEndpoint:                 makeLoginEndpoint(s),
-		CreateUserEndpoint:            makeCreateUserEndpoint(s),
-		GetServerInfoEndpoint:         makeGetServerInfoEndpoint(s),
-		GetPostgresInsightsEndpoint:   makeGetPostgresInsightsEndpoint(s),
-		RestartBackendServiceEndpoint: makeRestartBackendServiceEndpoint(s),
-		ShutdownBackendEndpoint:       makeShutdownBackendEndpoint(s),
+		ListProjectsEndpoint:               makeListProjectsEndpoint(s),
+		CreateProjectEndpoint:              makeCreateProjectEndpoint(s),
+		DeleteProjectEndpoint:              makeDeleteProjectEndpoint(s),
+		GetStatusEndpoint:                  makeGetStatusEndpoint(s),
+		AddBackendEndpoint:                 makeAddBackendEndpoint(s),
+		RemoveBackendEndpoint:              makeRemoveBackendEndpoint(s),
+		UpdateBackendEndpoint:              makeUpdateBackendEndpoint(s),
+		ValidateBackendEndpoint:            makeValidateBackendEndpoint(s),
+		AddProxyEndpoint:                   makeAddProxyEndpoint(s),
+		RemoveProxyEndpoint:                makeRemoveProxyEndpoint(s),
+		UpdateProxyEndpoint:                makeUpdateProxyEndpoint(s),
+		ProvisionReplicaEndpoint:           makeProvisionReplicaEndpoint(s),
+		InitializeNodeEndpoint:             makeInitializeNodeEndpoint(s),
+		InstallNodeEndpoint:                makeInstallNodeEndpoint(s),
+		BackupBackendEndpoint:              makeBackupBackendEndpoint(s),
+		RestoreBackendEndpoint:             makeRestoreBackendEndpoint(s),
+		PromoteBackendEndpoint:             makePromoteBackendEndpoint(s),
+		ListReplicationStreamsEndpoint:     makeListReplicationStreamsEndpoint(s),
+		TerminateReplicationStreamEndpoint: makeTerminateReplicationStreamEndpoint(s),
+		CreateLogicalSlotEndpoint:          makeCreateLogicalSlotEndpoint(s),
+		StreamLogsEndpoint:                 makeStreamLogsEndpoint(s),
+		ExplainQueryEndpoint:               makeExplainQueryEndpoint(s),
+		SetClusterConfigEndpoint:           makeSetClusterConfigEndpoint(s),
+		GetClusterConfigEndpoint:           makeGetClusterConfigEndpoint(s),
+		DiscoverClusterEndpoint:            makeDiscoverClusterEndpoint(s),
+		VacuumBackendEndpoint:              makeVacuumBackendEndpoint(s),
+		GetLogsEndpoint:                    makeGetLogsEndpoint(s),
+		GetMetricsHistoryEndpoint:          makeGetMetricsHistoryEndpoint(s),
+		GetTopQueriesHistoryEndpoint:       makeGetTopQueriesHistoryEndpoint(s),
+		TuneDatabaseEndpoint:               makeTuneDatabaseEndpoint(s),
+		ApplyTuningEndpoint:                makeApplyTuningEndpoint(s),
+		GetAgentInfoEndpoint:               makeGetAgentInfoEndpoint(s),
+		GetAvailableVersionsEndpoint:       makeGetAvailableVersionsEndpoint(s),
+		LoginEndpoint:                      makeLoginEndpoint(s),
+		CreateUserEndpoint:                 makeCreateUserEndpoint(s),
+		GetServerInfoEndpoint:              makeGetServerInfoEndpoint(s),
+		GetPostgresInsightsEndpoint:        makeGetPostgresInsightsEndpoint(s),
+		RestartBackendServiceEndpoint:      makeRestartBackendServiceEndpoint(s),
+		ShutdownBackendEndpoint:            makeShutdownBackendEndpoint(s),
 	}
 }
 
@@ -374,5 +380,23 @@ func makeShutdownBackendEndpoint(s service.Service) endpoint.Endpoint {
 	return func(ctx context.Context, request any) (any, error) {
 		req := request.(*endpoints.ShutdownBackendRequest)
 		return s.ShutdownBackend(ctx, req)
+	}
+}
+
+func makeListReplicationStreamsEndpoint(s service.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request any) (any, error) {
+		return s.ListStreams(ctx, request.(*endpoints.ListReplicationStreamsRequest))
+	}
+}
+
+func makeTerminateReplicationStreamEndpoint(s service.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request any) (any, error) {
+		return s.TerminateStream(ctx, request.(*endpoints.TerminateReplicationStreamRequest))
+	}
+}
+
+func makeCreateLogicalSlotEndpoint(s service.Service) endpoint.Endpoint {
+	return func(ctx context.Context, request any) (any, error) {
+		return s.CreateLogicalSlot(ctx, request.(*endpoints.CreateLogicalSlotRequest))
 	}
 }

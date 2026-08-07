@@ -7,6 +7,7 @@ type Service interface {
 	Backend
 	Observability
 	Cluster
+	Replication
 	Auth
 	Info
 }

@@ -26,7 +26,7 @@ var File_api_proto_service_management_proto protoreflect.FileDescriptor
 
 const file_api_proto_service_management_proto_rawDesc = "" +
 	"\n" +
-	"\"api/proto/service/management.proto\x12\x11api.proto.service\x1a$api/proto/endpoints/management.proto\x1a\x1aapi/proto/domain/log.proto2\xb2\x1e\n" +
+	"\"api/proto/service/management.proto\x12\x11api.proto.service\x1a$api/proto/endpoints/management.proto\x1a\x1aapi/proto/domain/log.proto2\xba!\n" +
 	"\x11ManagementService\x12c\n" +
 	"\fListProjects\x12(.api.proto.endpoints.ListProjectsRequest\x1a).api.proto.endpoints.ListProjectsResponse\x12f\n" +
 	"\rCreateProject\x12).api.proto.endpoints.CreateProjectRequest\x1a*.api.proto.endpoints.CreateProjectResponse\x12f\n" +
@@ -41,7 +41,10 @@ const file_api_proto_service_management_proto_rawDesc = "" +
 	"\rRemoveBackend\x12).api.proto.endpoints.RemoveBackendRequest\x1a*.api.proto.endpoints.RemoveBackendResponse\x12f\n" +
 	"\rUpdateBackend\x12).api.proto.endpoints.UpdateBackendRequest\x1a*.api.proto.endpoints.UpdateBackendResponse\x12j\n" +
 	"\x10ProvisionReplica\x12,.api.proto.endpoints.ProvisionReplicaRequest\x1a&.api.proto.endpoints.ProvisionProgress0\x01\x12l\n" +
-	"\x0fValidateBackend\x12+.api.proto.endpoints.ValidateBackendRequest\x1a,.api.proto.endpoints.ValidateBackendResponse\x12R\n" +
+	"\x0fValidateBackend\x12+.api.proto.endpoints.ValidateBackendRequest\x1a,.api.proto.endpoints.ValidateBackendResponse\x12\x81\x01\n" +
+	"\x16ListReplicationStreams\x122.api.proto.endpoints.ListReplicationStreamsRequest\x1a3.api.proto.endpoints.ListReplicationStreamsResponse\x12\x8d\x01\n" +
+	"\x1aTerminateReplicationStream\x126.api.proto.endpoints.TerminateReplicationStreamRequest\x1a7.api.proto.endpoints.TerminateReplicationStreamResponse\x12r\n" +
+	"\x11CreateLogicalSlot\x12-.api.proto.endpoints.CreateLogicalSlotRequest\x1a..api.proto.endpoints.CreateLogicalSlotResponse\x12R\n" +
 	"\n" +
 	"StreamLogs\x12&.api.proto.endpoints.StreamLogsRequest\x1a\x1a.api.proto.domain.LogEntry0\x01\x12k\n" +
 	"\x0eInitializeNode\x12*.api.proto.endpoints.InitializeNodeRequest\x1a+.api.proto.endpoints.InitializeNodeProgress0\x01\x12b\n" +
@@ -83,66 +86,72 @@ var file_api_proto_service_management_proto_goTypes = []any{
 	(*endpoints.UpdateBackendRequest)(nil),               // 10: api.proto.endpoints.UpdateBackendRequest
 	(*endpoints.ProvisionReplicaRequest)(nil),            // 11: api.proto.endpoints.ProvisionReplicaRequest
 	(*endpoints.ValidateBackendRequest)(nil),             // 12: api.proto.endpoints.ValidateBackendRequest
-	(*endpoints.StreamLogsRequest)(nil),                  // 13: api.proto.endpoints.StreamLogsRequest
-	(*endpoints.InitializeNodeRequest)(nil),              // 14: api.proto.endpoints.InitializeNodeRequest
-	(*endpoints.InstallNodeRequest)(nil),                 // 15: api.proto.endpoints.InstallNodeRequest
-	(*endpoints.BackupBackendRequest)(nil),               // 16: api.proto.endpoints.BackupBackendRequest
-	(*endpoints.RestoreBackendRequest)(nil),              // 17: api.proto.endpoints.RestoreBackendRequest
-	(*endpoints.PromoteBackendRequest)(nil),              // 18: api.proto.endpoints.PromoteBackendRequest
-	(*endpoints.GetMetricsHistoryRequest)(nil),           // 19: api.proto.endpoints.GetMetricsHistoryRequest
-	(*endpoints.GetTopQueriesHistoryRequest)(nil),        // 20: api.proto.endpoints.GetTopQueriesHistoryRequest
-	(*endpoints.SetClusterConfigRequest)(nil),            // 21: api.proto.endpoints.SetClusterConfigRequest
-	(*endpoints.GetClusterConfigRequest)(nil),            // 22: api.proto.endpoints.GetClusterConfigRequest
-	(*endpoints.DiscoverClusterRequest)(nil),             // 23: api.proto.endpoints.DiscoverClusterRequest
-	(*endpoints.VacuumBackendRequest)(nil),               // 24: api.proto.endpoints.VacuumBackendRequest
-	(*endpoints.ExplainQueryRequest)(nil),                // 25: api.proto.endpoints.ExplainQueryRequest
-	(*endpoints.GetLogsRequest)(nil),                     // 26: api.proto.endpoints.GetLogsRequest
-	(*endpoints.TuneDatabaseRequest)(nil),                // 27: api.proto.endpoints.TuneDatabaseRequest
-	(*endpoints.ApplyTuningRequest)(nil),                 // 28: api.proto.endpoints.ApplyTuningRequest
-	(*endpoints.GetAgentInfoRequest)(nil),                // 29: api.proto.endpoints.GetAgentInfoRequest
-	(*endpoints.GetAvailableVersionsRequest)(nil),        // 30: api.proto.endpoints.GetAvailableVersionsRequest
-	(*endpoints.LoginRequest)(nil),                       // 31: api.proto.endpoints.LoginRequest
-	(*endpoints.CreateUserRequest)(nil),                  // 32: api.proto.endpoints.CreateUserRequest
-	(*endpoints.GetServerInfoRequest)(nil),               // 33: api.proto.endpoints.GetServerInfoRequest
-	(*endpoints.GetBackendPostgresInsightsRequest)(nil),  // 34: api.proto.endpoints.GetBackendPostgresInsightsRequest
-	(*endpoints.RestartBackendServiceRequest)(nil),       // 35: api.proto.endpoints.RestartBackendServiceRequest
-	(*endpoints.ShutdownBackendRequest)(nil),             // 36: api.proto.endpoints.ShutdownBackendRequest
-	(*endpoints.ListProjectsResponse)(nil),               // 37: api.proto.endpoints.ListProjectsResponse
-	(*endpoints.CreateProjectResponse)(nil),              // 38: api.proto.endpoints.CreateProjectResponse
-	(*endpoints.DeleteProjectResponse)(nil),              // 39: api.proto.endpoints.DeleteProjectResponse
-	(*endpoints.AddProxyResponse)(nil),                   // 40: api.proto.endpoints.AddProxyResponse
-	(*endpoints.RemoveProxyResponse)(nil),                // 41: api.proto.endpoints.RemoveProxyResponse
-	(*endpoints.UpdateProxyResponse)(nil),                // 42: api.proto.endpoints.UpdateProxyResponse
-	(*endpoints.GetStatusResponse)(nil),                  // 43: api.proto.endpoints.GetStatusResponse
-	(*endpoints.AddBackendResponse)(nil),                 // 44: api.proto.endpoints.AddBackendResponse
-	(*endpoints.RemoveBackendResponse)(nil),              // 45: api.proto.endpoints.RemoveBackendResponse
-	(*endpoints.UpdateBackendResponse)(nil),              // 46: api.proto.endpoints.UpdateBackendResponse
-	(*endpoints.ProvisionProgress)(nil),                  // 47: api.proto.endpoints.ProvisionProgress
-	(*endpoints.ValidateBackendResponse)(nil),            // 48: api.proto.endpoints.ValidateBackendResponse
-	(*domain.LogEntry)(nil),                              // 49: api.proto.domain.LogEntry
-	(*endpoints.InitializeNodeProgress)(nil),             // 50: api.proto.endpoints.InitializeNodeProgress
-	(*endpoints.InstallNodeProgress)(nil),                // 51: api.proto.endpoints.InstallNodeProgress
-	(*endpoints.BackupBackendProgress)(nil),              // 52: api.proto.endpoints.BackupBackendProgress
-	(*endpoints.RestoreBackendProgress)(nil),             // 53: api.proto.endpoints.RestoreBackendProgress
-	(*endpoints.PromoteBackendResponse)(nil),             // 54: api.proto.endpoints.PromoteBackendResponse
-	(*endpoints.GetMetricsHistoryResponse)(nil),          // 55: api.proto.endpoints.GetMetricsHistoryResponse
-	(*endpoints.GetTopQueriesHistoryResponse)(nil),       // 56: api.proto.endpoints.GetTopQueriesHistoryResponse
-	(*endpoints.SetClusterConfigResponse)(nil),           // 57: api.proto.endpoints.SetClusterConfigResponse
-	(*endpoints.GetClusterConfigResponse)(nil),           // 58: api.proto.endpoints.GetClusterConfigResponse
-	(*endpoints.DiscoverClusterResponse)(nil),            // 59: api.proto.endpoints.DiscoverClusterResponse
-	(*endpoints.VacuumBackendProgress)(nil),              // 60: api.proto.endpoints.VacuumBackendProgress
-	(*endpoints.ExplainQueryResponse)(nil),               // 61: api.proto.endpoints.ExplainQueryResponse
-	(*endpoints.GetLogsResponse)(nil),                    // 62: api.proto.endpoints.GetLogsResponse
-	(*endpoints.TuneDatabaseResponse)(nil),               // 63: api.proto.endpoints.TuneDatabaseResponse
-	(*endpoints.ApplyTuningResponse)(nil),                // 64: api.proto.endpoints.ApplyTuningResponse
-	(*endpoints.GetAgentInfoResponse)(nil),               // 65: api.proto.endpoints.GetAgentInfoResponse
-	(*endpoints.GetAvailableVersionsResponse)(nil),       // 66: api.proto.endpoints.GetAvailableVersionsResponse
-	(*endpoints.LoginResponse)(nil),                      // 67: api.proto.endpoints.LoginResponse
-	(*endpoints.CreateUserResponse)(nil),                 // 68: api.proto.endpoints.CreateUserResponse
-	(*endpoints.GetServerInfoResponse)(nil),              // 69: api.proto.endpoints.GetServerInfoResponse
-	(*endpoints.GetBackendPostgresInsightsResponse)(nil), // 70: api.proto.endpoints.GetBackendPostgresInsightsResponse
-	(*endpoints.RestartBackendServiceResponse)(nil),      // 71: api.proto.endpoints.RestartBackendServiceResponse
-	(*endpoints.ShutdownBackendResponse)(nil),            // 72: api.proto.endpoints.ShutdownBackendResponse
+	(*endpoints.ListReplicationStreamsRequest)(nil),      // 13: api.proto.endpoints.ListReplicationStreamsRequest
+	(*endpoints.TerminateReplicationStreamRequest)(nil),  // 14: api.proto.endpoints.TerminateReplicationStreamRequest
+	(*endpoints.CreateLogicalSlotRequest)(nil),           // 15: api.proto.endpoints.CreateLogicalSlotRequest
+	(*endpoints.StreamLogsRequest)(nil),                  // 16: api.proto.endpoints.StreamLogsRequest
+	(*endpoints.InitializeNodeRequest)(nil),              // 17: api.proto.endpoints.InitializeNodeRequest
+	(*endpoints.InstallNodeRequest)(nil),                 // 18: api.proto.endpoints.InstallNodeRequest
+	(*endpoints.BackupBackendRequest)(nil),               // 19: api.proto.endpoints.BackupBackendRequest
+	(*endpoints.RestoreBackendRequest)(nil),              // 20: api.proto.endpoints.RestoreBackendRequest
+	(*endpoints.PromoteBackendRequest)(nil),              // 21: api.proto.endpoints.PromoteBackendRequest
+	(*endpoints.GetMetricsHistoryRequest)(nil),           // 22: api.proto.endpoints.GetMetricsHistoryRequest
+	(*endpoints.GetTopQueriesHistoryRequest)(nil),        // 23: api.proto.endpoints.GetTopQueriesHistoryRequest
+	(*endpoints.SetClusterConfigRequest)(nil),            // 24: api.proto.endpoints.SetClusterConfigRequest
+	(*endpoints.GetClusterConfigRequest)(nil),            // 25: api.proto.endpoints.GetClusterConfigRequest
+	(*endpoints.DiscoverClusterRequest)(nil),             // 26: api.proto.endpoints.DiscoverClusterRequest
+	(*endpoints.VacuumBackendRequest)(nil),               // 27: api.proto.endpoints.VacuumBackendRequest
+	(*endpoints.ExplainQueryRequest)(nil),                // 28: api.proto.endpoints.ExplainQueryRequest
+	(*endpoints.GetLogsRequest)(nil),                     // 29: api.proto.endpoints.GetLogsRequest
+	(*endpoints.TuneDatabaseRequest)(nil),                // 30: api.proto.endpoints.TuneDatabaseRequest
+	(*endpoints.ApplyTuningRequest)(nil),                 // 31: api.proto.endpoints.ApplyTuningRequest
+	(*endpoints.GetAgentInfoRequest)(nil),                // 32: api.proto.endpoints.GetAgentInfoRequest
+	(*endpoints.GetAvailableVersionsRequest)(nil),        // 33: api.proto.endpoints.GetAvailableVersionsRequest
+	(*endpoints.LoginRequest)(nil),                       // 34: api.proto.endpoints.LoginRequest
+	(*endpoints.CreateUserRequest)(nil),                  // 35: api.proto.endpoints.CreateUserRequest
+	(*endpoints.GetServerInfoRequest)(nil),               // 36: api.proto.endpoints.GetServerInfoRequest
+	(*endpoints.GetBackendPostgresInsightsRequest)(nil),  // 37: api.proto.endpoints.GetBackendPostgresInsightsRequest
+	(*endpoints.RestartBackendServiceRequest)(nil),       // 38: api.proto.endpoints.RestartBackendServiceRequest
+	(*endpoints.ShutdownBackendRequest)(nil),             // 39: api.proto.endpoints.ShutdownBackendRequest
+	(*endpoints.ListProjectsResponse)(nil),               // 40: api.proto.endpoints.ListProjectsResponse
+	(*endpoints.CreateProjectResponse)(nil),              // 41: api.proto.endpoints.CreateProjectResponse
+	(*endpoints.DeleteProjectResponse)(nil),              // 42: api.proto.endpoints.DeleteProjectResponse
+	(*endpoints.AddProxyResponse)(nil),                   // 43: api.proto.endpoints.AddProxyResponse
+	(*endpoints.RemoveProxyResponse)(nil),                // 44: api.proto.endpoints.RemoveProxyResponse
+	(*endpoints.UpdateProxyResponse)(nil),                // 45: api.proto.endpoints.UpdateProxyResponse
+	(*endpoints.GetStatusResponse)(nil),                  // 46: api.proto.endpoints.GetStatusResponse
+	(*endpoints.AddBackendResponse)(nil),                 // 47: api.proto.endpoints.AddBackendResponse
+	(*endpoints.RemoveBackendResponse)(nil),              // 48: api.proto.endpoints.RemoveBackendResponse
+	(*endpoints.UpdateBackendResponse)(nil),              // 49: api.proto.endpoints.UpdateBackendResponse
+	(*endpoints.ProvisionProgress)(nil),                  // 50: api.proto.endpoints.ProvisionProgress
+	(*endpoints.ValidateBackendResponse)(nil),            // 51: api.proto.endpoints.ValidateBackendResponse
+	(*endpoints.ListReplicationStreamsResponse)(nil),     // 52: api.proto.endpoints.ListReplicationStreamsResponse
+	(*endpoints.TerminateReplicationStreamResponse)(nil), // 53: api.proto.endpoints.TerminateReplicationStreamResponse
+	(*endpoints.CreateLogicalSlotResponse)(nil),          // 54: api.proto.endpoints.CreateLogicalSlotResponse
+	(*domain.LogEntry)(nil),                              // 55: api.proto.domain.LogEntry
+	(*endpoints.InitializeNodeProgress)(nil),             // 56: api.proto.endpoints.InitializeNodeProgress
+	(*endpoints.InstallNodeProgress)(nil),                // 57: api.proto.endpoints.InstallNodeProgress
+	(*endpoints.BackupBackendProgress)(nil),              // 58: api.proto.endpoints.BackupBackendProgress
+	(*endpoints.RestoreBackendProgress)(nil),             // 59: api.proto.endpoints.RestoreBackendProgress
+	(*endpoints.PromoteBackendResponse)(nil),             // 60: api.proto.endpoints.PromoteBackendResponse
+	(*endpoints.GetMetricsHistoryResponse)(nil),          // 61: api.proto.endpoints.GetMetricsHistoryResponse
+	(*endpoints.GetTopQueriesHistoryResponse)(nil),       // 62: api.proto.endpoints.GetTopQueriesHistoryResponse
+	(*endpoints.SetClusterConfigResponse)(nil),           // 63: api.proto.endpoints.SetClusterConfigResponse
+	(*endpoints.GetClusterConfigResponse)(nil),           // 64: api.proto.endpoints.GetClusterConfigResponse
+	(*endpoints.DiscoverClusterResponse)(nil),            // 65: api.proto.endpoints.DiscoverClusterResponse
+	(*endpoints.VacuumBackendProgress)(nil),              // 66: api.proto.endpoints.VacuumBackendProgress
+	(*endpoints.ExplainQueryResponse)(nil),               // 67: api.proto.endpoints.ExplainQueryResponse
+	(*endpoints.GetLogsResponse)(nil),                    // 68: api.proto.endpoints.GetLogsResponse
+	(*endpoints.TuneDatabaseResponse)(nil),               // 69: api.proto.endpoints.TuneDatabaseResponse
+	(*endpoints.ApplyTuningResponse)(nil),                // 70: api.proto.endpoints.ApplyTuningResponse
+	(*endpoints.GetAgentInfoResponse)(nil),               // 71: api.proto.endpoints.GetAgentInfoResponse
+	(*endpoints.GetAvailableVersionsResponse)(nil),       // 72: api.proto.endpoints.GetAvailableVersionsResponse
+	(*endpoints.LoginResponse)(nil),                      // 73: api.proto.endpoints.LoginResponse
+	(*endpoints.CreateUserResponse)(nil),                 // 74: api.proto.endpoints.CreateUserResponse
+	(*endpoints.GetServerInfoResponse)(nil),              // 75: api.proto.endpoints.GetServerInfoResponse
+	(*endpoints.GetBackendPostgresInsightsResponse)(nil), // 76: api.proto.endpoints.GetBackendPostgresInsightsResponse
+	(*endpoints.RestartBackendServiceResponse)(nil),      // 77: api.proto.endpoints.RestartBackendServiceResponse
+	(*endpoints.ShutdownBackendResponse)(nil),            // 78: api.proto.endpoints.ShutdownBackendResponse
 }
 var file_api_proto_service_management_proto_depIdxs = []int32{
 	0,  // 0: api.proto.service.ManagementService.ListProjects:input_type -> api.proto.endpoints.ListProjectsRequest
@@ -158,69 +167,75 @@ var file_api_proto_service_management_proto_depIdxs = []int32{
 	10, // 10: api.proto.service.ManagementService.UpdateBackend:input_type -> api.proto.endpoints.UpdateBackendRequest
 	11, // 11: api.proto.service.ManagementService.ProvisionReplica:input_type -> api.proto.endpoints.ProvisionReplicaRequest
 	12, // 12: api.proto.service.ManagementService.ValidateBackend:input_type -> api.proto.endpoints.ValidateBackendRequest
-	13, // 13: api.proto.service.ManagementService.StreamLogs:input_type -> api.proto.endpoints.StreamLogsRequest
-	14, // 14: api.proto.service.ManagementService.InitializeNode:input_type -> api.proto.endpoints.InitializeNodeRequest
-	15, // 15: api.proto.service.ManagementService.InstallNode:input_type -> api.proto.endpoints.InstallNodeRequest
-	16, // 16: api.proto.service.ManagementService.BackupBackend:input_type -> api.proto.endpoints.BackupBackendRequest
-	17, // 17: api.proto.service.ManagementService.RestoreBackend:input_type -> api.proto.endpoints.RestoreBackendRequest
-	18, // 18: api.proto.service.ManagementService.PromoteBackend:input_type -> api.proto.endpoints.PromoteBackendRequest
-	19, // 19: api.proto.service.ManagementService.GetMetricsHistory:input_type -> api.proto.endpoints.GetMetricsHistoryRequest
-	20, // 20: api.proto.service.ManagementService.GetTopQueriesHistory:input_type -> api.proto.endpoints.GetTopQueriesHistoryRequest
-	21, // 21: api.proto.service.ManagementService.SetClusterConfig:input_type -> api.proto.endpoints.SetClusterConfigRequest
-	22, // 22: api.proto.service.ManagementService.GetClusterConfig:input_type -> api.proto.endpoints.GetClusterConfigRequest
-	23, // 23: api.proto.service.ManagementService.DiscoverCluster:input_type -> api.proto.endpoints.DiscoverClusterRequest
-	24, // 24: api.proto.service.ManagementService.VacuumBackend:input_type -> api.proto.endpoints.VacuumBackendRequest
-	25, // 25: api.proto.service.ManagementService.ExplainQuery:input_type -> api.proto.endpoints.ExplainQueryRequest
-	26, // 26: api.proto.service.ManagementService.GetLogs:input_type -> api.proto.endpoints.GetLogsRequest
-	27, // 27: api.proto.service.ManagementService.TuneDatabase:input_type -> api.proto.endpoints.TuneDatabaseRequest
-	28, // 28: api.proto.service.ManagementService.ApplyTuning:input_type -> api.proto.endpoints.ApplyTuningRequest
-	29, // 29: api.proto.service.ManagementService.GetAgentInfo:input_type -> api.proto.endpoints.GetAgentInfoRequest
-	30, // 30: api.proto.service.ManagementService.GetAvailableVersions:input_type -> api.proto.endpoints.GetAvailableVersionsRequest
-	31, // 31: api.proto.service.ManagementService.Login:input_type -> api.proto.endpoints.LoginRequest
-	32, // 32: api.proto.service.ManagementService.CreateUser:input_type -> api.proto.endpoints.CreateUserRequest
-	33, // 33: api.proto.service.ManagementService.GetServerInfo:input_type -> api.proto.endpoints.GetServerInfoRequest
-	34, // 34: api.proto.service.ManagementService.GetPostgresInsights:input_type -> api.proto.endpoints.GetBackendPostgresInsightsRequest
-	35, // 35: api.proto.service.ManagementService.RestartBackendService:input_type -> api.proto.endpoints.RestartBackendServiceRequest
-	36, // 36: api.proto.service.ManagementService.ShutdownBackend:input_type -> api.proto.endpoints.ShutdownBackendRequest
-	37, // 37: api.proto.service.ManagementService.ListProjects:output_type -> api.proto.endpoints.ListProjectsResponse
-	38, // 38: api.proto.service.ManagementService.CreateProject:output_type -> api.proto.endpoints.CreateProjectResponse
-	39, // 39: api.proto.service.ManagementService.DeleteProject:output_type -> api.proto.endpoints.DeleteProjectResponse
-	40, // 40: api.proto.service.ManagementService.AddProxy:output_type -> api.proto.endpoints.AddProxyResponse
-	41, // 41: api.proto.service.ManagementService.RemoveProxy:output_type -> api.proto.endpoints.RemoveProxyResponse
-	42, // 42: api.proto.service.ManagementService.UpdateProxy:output_type -> api.proto.endpoints.UpdateProxyResponse
-	43, // 43: api.proto.service.ManagementService.GetStatus:output_type -> api.proto.endpoints.GetStatusResponse
-	43, // 44: api.proto.service.ManagementService.StreamStatus:output_type -> api.proto.endpoints.GetStatusResponse
-	44, // 45: api.proto.service.ManagementService.AddBackend:output_type -> api.proto.endpoints.AddBackendResponse
-	45, // 46: api.proto.service.ManagementService.RemoveBackend:output_type -> api.proto.endpoints.RemoveBackendResponse
-	46, // 47: api.proto.service.ManagementService.UpdateBackend:output_type -> api.proto.endpoints.UpdateBackendResponse
-	47, // 48: api.proto.service.ManagementService.ProvisionReplica:output_type -> api.proto.endpoints.ProvisionProgress
-	48, // 49: api.proto.service.ManagementService.ValidateBackend:output_type -> api.proto.endpoints.ValidateBackendResponse
-	49, // 50: api.proto.service.ManagementService.StreamLogs:output_type -> api.proto.domain.LogEntry
-	50, // 51: api.proto.service.ManagementService.InitializeNode:output_type -> api.proto.endpoints.InitializeNodeProgress
-	51, // 52: api.proto.service.ManagementService.InstallNode:output_type -> api.proto.endpoints.InstallNodeProgress
-	52, // 53: api.proto.service.ManagementService.BackupBackend:output_type -> api.proto.endpoints.BackupBackendProgress
-	53, // 54: api.proto.service.ManagementService.RestoreBackend:output_type -> api.proto.endpoints.RestoreBackendProgress
-	54, // 55: api.proto.service.ManagementService.PromoteBackend:output_type -> api.proto.endpoints.PromoteBackendResponse
-	55, // 56: api.proto.service.ManagementService.GetMetricsHistory:output_type -> api.proto.endpoints.GetMetricsHistoryResponse
-	56, // 57: api.proto.service.ManagementService.GetTopQueriesHistory:output_type -> api.proto.endpoints.GetTopQueriesHistoryResponse
-	57, // 58: api.proto.service.ManagementService.SetClusterConfig:output_type -> api.proto.endpoints.SetClusterConfigResponse
-	58, // 59: api.proto.service.ManagementService.GetClusterConfig:output_type -> api.proto.endpoints.GetClusterConfigResponse
-	59, // 60: api.proto.service.ManagementService.DiscoverCluster:output_type -> api.proto.endpoints.DiscoverClusterResponse
-	60, // 61: api.proto.service.ManagementService.VacuumBackend:output_type -> api.proto.endpoints.VacuumBackendProgress
-	61, // 62: api.proto.service.ManagementService.ExplainQuery:output_type -> api.proto.endpoints.ExplainQueryResponse
-	62, // 63: api.proto.service.ManagementService.GetLogs:output_type -> api.proto.endpoints.GetLogsResponse
-	63, // 64: api.proto.service.ManagementService.TuneDatabase:output_type -> api.proto.endpoints.TuneDatabaseResponse
-	64, // 65: api.proto.service.ManagementService.ApplyTuning:output_type -> api.proto.endpoints.ApplyTuningResponse
-	65, // 66: api.proto.service.ManagementService.GetAgentInfo:output_type -> api.proto.endpoints.GetAgentInfoResponse
-	66, // 67: api.proto.service.ManagementService.GetAvailableVersions:output_type -> api.proto.endpoints.GetAvailableVersionsResponse
-	67, // 68: api.proto.service.ManagementService.Login:output_type -> api.proto.endpoints.LoginResponse
-	68, // 69: api.proto.service.ManagementService.CreateUser:output_type -> api.proto.endpoints.CreateUserResponse
-	69, // 70: api.proto.service.ManagementService.GetServerInfo:output_type -> api.proto.endpoints.GetServerInfoResponse
-	70, // 71: api.proto.service.ManagementService.GetPostgresInsights:output_type -> api.proto.endpoints.GetBackendPostgresInsightsResponse
-	71, // 72: api.proto.service.ManagementService.RestartBackendService:output_type -> api.proto.endpoints.RestartBackendServiceResponse
-	72, // 73: api.proto.service.ManagementService.ShutdownBackend:output_type -> api.proto.endpoints.ShutdownBackendResponse
-	37, // [37:74] is the sub-list for method output_type
-	0,  // [0:37] is the sub-list for method input_type
+	13, // 13: api.proto.service.ManagementService.ListReplicationStreams:input_type -> api.proto.endpoints.ListReplicationStreamsRequest
+	14, // 14: api.proto.service.ManagementService.TerminateReplicationStream:input_type -> api.proto.endpoints.TerminateReplicationStreamRequest
+	15, // 15: api.proto.service.ManagementService.CreateLogicalSlot:input_type -> api.proto.endpoints.CreateLogicalSlotRequest
+	16, // 16: api.proto.service.ManagementService.StreamLogs:input_type -> api.proto.endpoints.StreamLogsRequest
+	17, // 17: api.proto.service.ManagementService.InitializeNode:input_type -> api.proto.endpoints.InitializeNodeRequest
+	18, // 18: api.proto.service.ManagementService.InstallNode:input_type -> api.proto.endpoints.InstallNodeRequest
+	19, // 19: api.proto.service.ManagementService.BackupBackend:input_type -> api.proto.endpoints.BackupBackendRequest
+	20, // 20: api.proto.service.ManagementService.RestoreBackend:input_type -> api.proto.endpoints.RestoreBackendRequest
+	21, // 21: api.proto.service.ManagementService.PromoteBackend:input_type -> api.proto.endpoints.PromoteBackendRequest
+	22, // 22: api.proto.service.ManagementService.GetMetricsHistory:input_type -> api.proto.endpoints.GetMetricsHistoryRequest
+	23, // 23: api.proto.service.ManagementService.GetTopQueriesHistory:input_type -> api.proto.endpoints.GetTopQueriesHistoryRequest
+	24, // 24: api.proto.service.ManagementService.SetClusterConfig:input_type -> api.proto.endpoints.SetClusterConfigRequest
+	25, // 25: api.proto.service.ManagementService.GetClusterConfig:input_type -> api.proto.endpoints.GetClusterConfigRequest
+	26, // 26: api.proto.service.ManagementService.DiscoverCluster:input_type -> api.proto.endpoints.DiscoverClusterRequest
+	27, // 27: api.proto.service.ManagementService.VacuumBackend:input_type -> api.proto.endpoints.VacuumBackendRequest
+	28, // 28: api.proto.service.ManagementService.ExplainQuery:input_type -> api.proto.endpoints.ExplainQueryRequest
+	29, // 29: api.proto.service.ManagementService.GetLogs:input_type -> api.proto.endpoints.GetLogsRequest
+	30, // 30: api.proto.service.ManagementService.TuneDatabase:input_type -> api.proto.endpoints.TuneDatabaseRequest
+	31, // 31: api.proto.service.ManagementService.ApplyTuning:input_type -> api.proto.endpoints.ApplyTuningRequest
+	32, // 32: api.proto.service.ManagementService.GetAgentInfo:input_type -> api.proto.endpoints.GetAgentInfoRequest
+	33, // 33: api.proto.service.ManagementService.GetAvailableVersions:input_type -> api.proto.endpoints.GetAvailableVersionsRequest
+	34, // 34: api.proto.service.ManagementService.Login:input_type -> api.proto.endpoints.LoginRequest
+	35, // 35: api.proto.service.ManagementService.CreateUser:input_type -> api.proto.endpoints.CreateUserRequest
+	36, // 36: api.proto.service.ManagementService.GetServerInfo:input_type -> api.proto.endpoints.GetServerInfoRequest
+	37, // 37: api.proto.service.ManagementService.GetPostgresInsights:input_type -> api.proto.endpoints.GetBackendPostgresInsightsRequest
+	38, // 38: api.proto.service.ManagementService.RestartBackendService:input_type -> api.proto.endpoints.RestartBackendServiceRequest
+	39, // 39: api.proto.service.ManagementService.ShutdownBackend:input_type -> api.proto.endpoints.ShutdownBackendRequest
+	40, // 40: api.proto.service.ManagementService.ListProjects:output_type -> api.proto.endpoints.ListProjectsResponse
+	41, // 41: api.proto.service.ManagementService.CreateProject:output_type -> api.proto.endpoints.CreateProjectResponse
+	42, // 42: api.proto.service.ManagementService.DeleteProject:output_type -> api.proto.endpoints.DeleteProjectResponse
+	43, // 43: api.proto.service.ManagementService.AddProxy:output_type -> api.proto.endpoints.AddProxyResponse
+	44, // 44: api.proto.service.ManagementService.RemoveProxy:output_type -> api.proto.endpoints.RemoveProxyResponse
+	45, // 45: api.proto.service.ManagementService.UpdateProxy:output_type -> api.proto.endpoints.UpdateProxyResponse
+	46, // 46: api.proto.service.ManagementService.GetStatus:output_type -> api.proto.endpoints.GetStatusResponse
+	46, // 47: api.proto.service.ManagementService.StreamStatus:output_type -> api.proto.endpoints.GetStatusResponse
+	47, // 48: api.proto.service.ManagementService.AddBackend:output_type -> api.proto.endpoints.AddBackendResponse
+	48, // 49: api.proto.service.ManagementService.RemoveBackend:output_type -> api.proto.endpoints.RemoveBackendResponse
+	49, // 50: api.proto.service.ManagementService.UpdateBackend:output_type -> api.proto.endpoints.UpdateBackendResponse
+	50, // 51: api.proto.service.ManagementService.ProvisionReplica:output_type -> api.proto.endpoints.ProvisionProgress
+	51, // 52: api.proto.service.ManagementService.ValidateBackend:output_type -> api.proto.endpoints.ValidateBackendResponse
+	52, // 53: api.proto.service.ManagementService.ListReplicationStreams:output_type -> api.proto.endpoints.ListReplicationStreamsResponse
+	53, // 54: api.proto.service.ManagementService.TerminateReplicationStream:output_type -> api.proto.endpoints.TerminateReplicationStreamResponse
+	54, // 55: api.proto.service.ManagementService.CreateLogicalSlot:output_type -> api.proto.endpoints.CreateLogicalSlotResponse
+	55, // 56: api.proto.service.ManagementService.StreamLogs:output_type -> api.proto.domain.LogEntry
+	56, // 57: api.proto.service.ManagementService.InitializeNode:output_type -> api.proto.endpoints.InitializeNodeProgress
+	57, // 58: api.proto.service.ManagementService.InstallNode:output_type -> api.proto.endpoints.InstallNodeProgress
+	58, // 59: api.proto.service.ManagementService.BackupBackend:output_type -> api.proto.endpoints.BackupBackendProgress
+	59, // 60: api.proto.service.ManagementService.RestoreBackend:output_type -> api.proto.endpoints.RestoreBackendProgress
+	60, // 61: api.proto.service.ManagementService.PromoteBackend:output_type -> api.proto.endpoints.PromoteBackendResponse
+	61, // 62: api.proto.service.ManagementService.GetMetricsHistory:output_type -> api.proto.endpoints.GetMetricsHistoryResponse
+	62, // 63: api.proto.service.ManagementService.GetTopQueriesHistory:output_type -> api.proto.endpoints.GetTopQueriesHistoryResponse
+	63, // 64: api.proto.service.ManagementService.SetClusterConfig:output_type -> api.proto.endpoints.SetClusterConfigResponse
+	64, // 65: api.proto.service.ManagementService.GetClusterConfig:output_type -> api.proto.endpoints.GetClusterConfigResponse
+	65, // 66: api.proto.service.ManagementService.DiscoverCluster:output_type -> api.proto.endpoints.DiscoverClusterResponse
+	66, // 67: api.proto.service.ManagementService.VacuumBackend:output_type -> api.proto.endpoints.VacuumBackendProgress
+	67, // 68: api.proto.service.ManagementService.ExplainQuery:output_type -> api.proto.endpoints.ExplainQueryResponse
+	68, // 69: api.proto.service.ManagementService.GetLogs:output_type -> api.proto.endpoints.GetLogsResponse
+	69, // 70: api.proto.service.ManagementService.TuneDatabase:output_type -> api.proto.endpoints.TuneDatabaseResponse
+	70, // 71: api.proto.service.ManagementService.ApplyTuning:output_type -> api.proto.endpoints.ApplyTuningResponse
+	71, // 72: api.proto.service.ManagementService.GetAgentInfo:output_type -> api.proto.endpoints.GetAgentInfoResponse
+	72, // 73: api.proto.service.ManagementService.GetAvailableVersions:output_type -> api.proto.endpoints.GetAvailableVersionsResponse
+	73, // 74: api.proto.service.ManagementService.Login:output_type -> api.proto.endpoints.LoginResponse
+	74, // 75: api.proto.service.ManagementService.CreateUser:output_type -> api.proto.endpoints.CreateUserResponse
+	75, // 76: api.proto.service.ManagementService.GetServerInfo:output_type -> api.proto.endpoints.GetServerInfoResponse
+	76, // 77: api.proto.service.ManagementService.GetPostgresInsights:output_type -> api.proto.endpoints.GetBackendPostgresInsightsResponse
+	77, // 78: api.proto.service.ManagementService.RestartBackendService:output_type -> api.proto.endpoints.RestartBackendServiceResponse
+	78, // 79: api.proto.service.ManagementService.ShutdownBackend:output_type -> api.proto.endpoints.ShutdownBackendResponse
+	40, // [40:80] is the sub-list for method output_type
+	0,  // [0:40] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name

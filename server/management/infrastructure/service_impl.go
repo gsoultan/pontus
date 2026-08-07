@@ -22,6 +22,7 @@ type serviceImpl struct {
 	BackendService       service.Backend
 	ObservabilityService service.Observability
 	ClusterService       service.Cluster
+	ReplicationService   service.Replication
 	AuthService          service.Auth
 	InfoService          service.Info
 }
@@ -37,6 +38,7 @@ func NewService(ctx context.Context, projectStore store.Project, userStore store
 		BackendService:       manager.NewBackend(r),
 		ObservabilityService: manager.NewObservability(r),
 		ClusterService:       manager.NewCluster(r, settingStore),
+		ReplicationService:   manager.NewReplication(r),
 		AuthService:          manager.NewAuth(r, issuer),
 		InfoService:          manager.NewInfo(r),
 	})
@@ -187,4 +189,16 @@ func (s *serviceImpl) RestartBackendService(ctx context.Context, req *endpoints.
 
 func (s *serviceImpl) ShutdownBackend(ctx context.Context, req *endpoints.ShutdownBackendRequest) (*endpoints.ShutdownBackendResponse, error) {
 	return s.BackendService.ShutdownBackend(ctx, req)
+}
+
+func (s *serviceImpl) ListStreams(ctx context.Context, req *endpoints.ListReplicationStreamsRequest) (*endpoints.ListReplicationStreamsResponse, error) {
+	return s.ReplicationService.ListStreams(ctx, req)
+}
+
+func (s *serviceImpl) TerminateStream(ctx context.Context, req *endpoints.TerminateReplicationStreamRequest) (*endpoints.TerminateReplicationStreamResponse, error) {
+	return s.ReplicationService.TerminateStream(ctx, req)
+}
+
+func (s *serviceImpl) CreateLogicalSlot(ctx context.Context, req *endpoints.CreateLogicalSlotRequest) (*endpoints.CreateLogicalSlotResponse, error) {
+	return s.ReplicationService.CreateLogicalSlot(ctx, req)
 }

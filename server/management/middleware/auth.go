@@ -23,6 +23,8 @@ var readOnlyProcedures = []string{
 	"/GetMetricsHistory",
 	"/GetTopQueriesHistory",
 	"/GetLogs",
+	// Read-only view of attached CDC consumers; terminating one is admin-only.
+	"/ListReplicationStreams",
 	"/GetServerInfo",
 	"/ValidateBackend",
 }

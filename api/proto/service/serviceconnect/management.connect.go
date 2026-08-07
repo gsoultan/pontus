@@ -74,6 +74,15 @@ const (
 	// ManagementServiceValidateBackendProcedure is the fully-qualified name of the ManagementService's
 	// ValidateBackend RPC.
 	ManagementServiceValidateBackendProcedure = "/api.proto.service.ManagementService/ValidateBackend"
+	// ManagementServiceListReplicationStreamsProcedure is the fully-qualified name of the
+	// ManagementService's ListReplicationStreams RPC.
+	ManagementServiceListReplicationStreamsProcedure = "/api.proto.service.ManagementService/ListReplicationStreams"
+	// ManagementServiceTerminateReplicationStreamProcedure is the fully-qualified name of the
+	// ManagementService's TerminateReplicationStream RPC.
+	ManagementServiceTerminateReplicationStreamProcedure = "/api.proto.service.ManagementService/TerminateReplicationStream"
+	// ManagementServiceCreateLogicalSlotProcedure is the fully-qualified name of the
+	// ManagementService's CreateLogicalSlot RPC.
+	ManagementServiceCreateLogicalSlotProcedure = "/api.proto.service.ManagementService/CreateLogicalSlot"
 	// ManagementServiceStreamLogsProcedure is the fully-qualified name of the ManagementService's
 	// StreamLogs RPC.
 	ManagementServiceStreamLogsProcedure = "/api.proto.service.ManagementService/StreamLogs"
@@ -176,6 +185,14 @@ type ManagementServiceClient interface {
 	ProvisionReplica(context.Context, *connect.Request[endpoints.ProvisionReplicaRequest]) (*connect.ServerStreamForClient[endpoints.ProvisionProgress], error)
 	// ValidateBackend checks if a backend is accessible.
 	ValidateBackend(context.Context, *connect.Request[endpoints.ValidateBackendRequest]) (*connect.Response[endpoints.ValidateBackendResponse], error)
+	// ListReplicationStreams returns the CDC/replication consumers attached to
+	// this proxy. Read-only.
+	ListReplicationStreams(context.Context, *connect.Request[endpoints.ListReplicationStreamsRequest]) (*connect.Response[endpoints.ListReplicationStreamsResponse], error)
+	// TerminateReplicationStream disconnects one consumer. Admin only: the
+	// consumer must resync from its own checkpoint afterwards.
+	TerminateReplicationStream(context.Context, *connect.Request[endpoints.TerminateReplicationStreamRequest]) (*connect.Response[endpoints.TerminateReplicationStreamResponse], error)
+	// CreateLogicalSlot pre-creates a logical replication slot on a node.
+	CreateLogicalSlot(context.Context, *connect.Request[endpoints.CreateLogicalSlotRequest]) (*connect.Response[endpoints.CreateLogicalSlotResponse], error)
 	// StreamLogs returns a real-time stream of logs.
 	StreamLogs(context.Context, *connect.Request[endpoints.StreamLogsRequest]) (*connect.ServerStreamForClient[domain.LogEntry], error)
 	// InitializeNode initializes a database on a clean host via Agent.
@@ -313,6 +330,24 @@ func NewManagementServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+ManagementServiceValidateBackendProcedure,
 			connect.WithSchema(managementServiceMethods.ByName("ValidateBackend")),
+			connect.WithClientOptions(opts...),
+		),
+		listReplicationStreams: connect.NewClient[endpoints.ListReplicationStreamsRequest, endpoints.ListReplicationStreamsResponse](
+			httpClient,
+			baseURL+ManagementServiceListReplicationStreamsProcedure,
+			connect.WithSchema(managementServiceMethods.ByName("ListReplicationStreams")),
+			connect.WithClientOptions(opts...),
+		),
+		terminateReplicationStream: connect.NewClient[endpoints.TerminateReplicationStreamRequest, endpoints.TerminateReplicationStreamResponse](
+			httpClient,
+			baseURL+ManagementServiceTerminateReplicationStreamProcedure,
+			connect.WithSchema(managementServiceMethods.ByName("TerminateReplicationStream")),
+			connect.WithClientOptions(opts...),
+		),
+		createLogicalSlot: connect.NewClient[endpoints.CreateLogicalSlotRequest, endpoints.CreateLogicalSlotResponse](
+			httpClient,
+			baseURL+ManagementServiceCreateLogicalSlotProcedure,
+			connect.WithSchema(managementServiceMethods.ByName("CreateLogicalSlot")),
 			connect.WithClientOptions(opts...),
 		),
 		streamLogs: connect.NewClient[endpoints.StreamLogsRequest, domain.LogEntry](
@@ -464,43 +499,46 @@ func NewManagementServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // managementServiceClient implements ManagementServiceClient.
 type managementServiceClient struct {
-	listProjects          *connect.Client[endpoints.ListProjectsRequest, endpoints.ListProjectsResponse]
-	createProject         *connect.Client[endpoints.CreateProjectRequest, endpoints.CreateProjectResponse]
-	deleteProject         *connect.Client[endpoints.DeleteProjectRequest, endpoints.DeleteProjectResponse]
-	addProxy              *connect.Client[endpoints.AddProxyRequest, endpoints.AddProxyResponse]
-	removeProxy           *connect.Client[endpoints.RemoveProxyRequest, endpoints.RemoveProxyResponse]
-	updateProxy           *connect.Client[endpoints.UpdateProxyRequest, endpoints.UpdateProxyResponse]
-	getStatus             *connect.Client[endpoints.GetStatusRequest, endpoints.GetStatusResponse]
-	streamStatus          *connect.Client[endpoints.StreamStatusRequest, endpoints.GetStatusResponse]
-	addBackend            *connect.Client[endpoints.AddBackendRequest, endpoints.AddBackendResponse]
-	removeBackend         *connect.Client[endpoints.RemoveBackendRequest, endpoints.RemoveBackendResponse]
-	updateBackend         *connect.Client[endpoints.UpdateBackendRequest, endpoints.UpdateBackendResponse]
-	provisionReplica      *connect.Client[endpoints.ProvisionReplicaRequest, endpoints.ProvisionProgress]
-	validateBackend       *connect.Client[endpoints.ValidateBackendRequest, endpoints.ValidateBackendResponse]
-	streamLogs            *connect.Client[endpoints.StreamLogsRequest, domain.LogEntry]
-	initializeNode        *connect.Client[endpoints.InitializeNodeRequest, endpoints.InitializeNodeProgress]
-	installNode           *connect.Client[endpoints.InstallNodeRequest, endpoints.InstallNodeProgress]
-	backupBackend         *connect.Client[endpoints.BackupBackendRequest, endpoints.BackupBackendProgress]
-	restoreBackend        *connect.Client[endpoints.RestoreBackendRequest, endpoints.RestoreBackendProgress]
-	promoteBackend        *connect.Client[endpoints.PromoteBackendRequest, endpoints.PromoteBackendResponse]
-	getMetricsHistory     *connect.Client[endpoints.GetMetricsHistoryRequest, endpoints.GetMetricsHistoryResponse]
-	getTopQueriesHistory  *connect.Client[endpoints.GetTopQueriesHistoryRequest, endpoints.GetTopQueriesHistoryResponse]
-	setClusterConfig      *connect.Client[endpoints.SetClusterConfigRequest, endpoints.SetClusterConfigResponse]
-	getClusterConfig      *connect.Client[endpoints.GetClusterConfigRequest, endpoints.GetClusterConfigResponse]
-	discoverCluster       *connect.Client[endpoints.DiscoverClusterRequest, endpoints.DiscoverClusterResponse]
-	vacuumBackend         *connect.Client[endpoints.VacuumBackendRequest, endpoints.VacuumBackendProgress]
-	explainQuery          *connect.Client[endpoints.ExplainQueryRequest, endpoints.ExplainQueryResponse]
-	getLogs               *connect.Client[endpoints.GetLogsRequest, endpoints.GetLogsResponse]
-	tuneDatabase          *connect.Client[endpoints.TuneDatabaseRequest, endpoints.TuneDatabaseResponse]
-	applyTuning           *connect.Client[endpoints.ApplyTuningRequest, endpoints.ApplyTuningResponse]
-	getAgentInfo          *connect.Client[endpoints.GetAgentInfoRequest, endpoints.GetAgentInfoResponse]
-	getAvailableVersions  *connect.Client[endpoints.GetAvailableVersionsRequest, endpoints.GetAvailableVersionsResponse]
-	login                 *connect.Client[endpoints.LoginRequest, endpoints.LoginResponse]
-	createUser            *connect.Client[endpoints.CreateUserRequest, endpoints.CreateUserResponse]
-	getServerInfo         *connect.Client[endpoints.GetServerInfoRequest, endpoints.GetServerInfoResponse]
-	getPostgresInsights   *connect.Client[endpoints.GetBackendPostgresInsightsRequest, endpoints.GetBackendPostgresInsightsResponse]
-	restartBackendService *connect.Client[endpoints.RestartBackendServiceRequest, endpoints.RestartBackendServiceResponse]
-	shutdownBackend       *connect.Client[endpoints.ShutdownBackendRequest, endpoints.ShutdownBackendResponse]
+	listProjects               *connect.Client[endpoints.ListProjectsRequest, endpoints.ListProjectsResponse]
+	createProject              *connect.Client[endpoints.CreateProjectRequest, endpoints.CreateProjectResponse]
+	deleteProject              *connect.Client[endpoints.DeleteProjectRequest, endpoints.DeleteProjectResponse]
+	addProxy                   *connect.Client[endpoints.AddProxyRequest, endpoints.AddProxyResponse]
+	removeProxy                *connect.Client[endpoints.RemoveProxyRequest, endpoints.RemoveProxyResponse]
+	updateProxy                *connect.Client[endpoints.UpdateProxyRequest, endpoints.UpdateProxyResponse]
+	getStatus                  *connect.Client[endpoints.GetStatusRequest, endpoints.GetStatusResponse]
+	streamStatus               *connect.Client[endpoints.StreamStatusRequest, endpoints.GetStatusResponse]
+	addBackend                 *connect.Client[endpoints.AddBackendRequest, endpoints.AddBackendResponse]
+	removeBackend              *connect.Client[endpoints.RemoveBackendRequest, endpoints.RemoveBackendResponse]
+	updateBackend              *connect.Client[endpoints.UpdateBackendRequest, endpoints.UpdateBackendResponse]
+	provisionReplica           *connect.Client[endpoints.ProvisionReplicaRequest, endpoints.ProvisionProgress]
+	validateBackend            *connect.Client[endpoints.ValidateBackendRequest, endpoints.ValidateBackendResponse]
+	listReplicationStreams     *connect.Client[endpoints.ListReplicationStreamsRequest, endpoints.ListReplicationStreamsResponse]
+	terminateReplicationStream *connect.Client[endpoints.TerminateReplicationStreamRequest, endpoints.TerminateReplicationStreamResponse]
+	createLogicalSlot          *connect.Client[endpoints.CreateLogicalSlotRequest, endpoints.CreateLogicalSlotResponse]
+	streamLogs                 *connect.Client[endpoints.StreamLogsRequest, domain.LogEntry]
+	initializeNode             *connect.Client[endpoints.InitializeNodeRequest, endpoints.InitializeNodeProgress]
+	installNode                *connect.Client[endpoints.InstallNodeRequest, endpoints.InstallNodeProgress]
+	backupBackend              *connect.Client[endpoints.BackupBackendRequest, endpoints.BackupBackendProgress]
+	restoreBackend             *connect.Client[endpoints.RestoreBackendRequest, endpoints.RestoreBackendProgress]
+	promoteBackend             *connect.Client[endpoints.PromoteBackendRequest, endpoints.PromoteBackendResponse]
+	getMetricsHistory          *connect.Client[endpoints.GetMetricsHistoryRequest, endpoints.GetMetricsHistoryResponse]
+	getTopQueriesHistory       *connect.Client[endpoints.GetTopQueriesHistoryRequest, endpoints.GetTopQueriesHistoryResponse]
+	setClusterConfig           *connect.Client[endpoints.SetClusterConfigRequest, endpoints.SetClusterConfigResponse]
+	getClusterConfig           *connect.Client[endpoints.GetClusterConfigRequest, endpoints.GetClusterConfigResponse]
+	discoverCluster            *connect.Client[endpoints.DiscoverClusterRequest, endpoints.DiscoverClusterResponse]
+	vacuumBackend              *connect.Client[endpoints.VacuumBackendRequest, endpoints.VacuumBackendProgress]
+	explainQuery               *connect.Client[endpoints.ExplainQueryRequest, endpoints.ExplainQueryResponse]
+	getLogs                    *connect.Client[endpoints.GetLogsRequest, endpoints.GetLogsResponse]
+	tuneDatabase               *connect.Client[endpoints.TuneDatabaseRequest, endpoints.TuneDatabaseResponse]
+	applyTuning                *connect.Client[endpoints.ApplyTuningRequest, endpoints.ApplyTuningResponse]
+	getAgentInfo               *connect.Client[endpoints.GetAgentInfoRequest, endpoints.GetAgentInfoResponse]
+	getAvailableVersions       *connect.Client[endpoints.GetAvailableVersionsRequest, endpoints.GetAvailableVersionsResponse]
+	login                      *connect.Client[endpoints.LoginRequest, endpoints.LoginResponse]
+	createUser                 *connect.Client[endpoints.CreateUserRequest, endpoints.CreateUserResponse]
+	getServerInfo              *connect.Client[endpoints.GetServerInfoRequest, endpoints.GetServerInfoResponse]
+	getPostgresInsights        *connect.Client[endpoints.GetBackendPostgresInsightsRequest, endpoints.GetBackendPostgresInsightsResponse]
+	restartBackendService      *connect.Client[endpoints.RestartBackendServiceRequest, endpoints.RestartBackendServiceResponse]
+	shutdownBackend            *connect.Client[endpoints.ShutdownBackendRequest, endpoints.ShutdownBackendResponse]
 }
 
 // ListProjects calls api.proto.service.ManagementService.ListProjects.
@@ -566,6 +604,21 @@ func (c *managementServiceClient) ProvisionReplica(ctx context.Context, req *con
 // ValidateBackend calls api.proto.service.ManagementService.ValidateBackend.
 func (c *managementServiceClient) ValidateBackend(ctx context.Context, req *connect.Request[endpoints.ValidateBackendRequest]) (*connect.Response[endpoints.ValidateBackendResponse], error) {
 	return c.validateBackend.CallUnary(ctx, req)
+}
+
+// ListReplicationStreams calls api.proto.service.ManagementService.ListReplicationStreams.
+func (c *managementServiceClient) ListReplicationStreams(ctx context.Context, req *connect.Request[endpoints.ListReplicationStreamsRequest]) (*connect.Response[endpoints.ListReplicationStreamsResponse], error) {
+	return c.listReplicationStreams.CallUnary(ctx, req)
+}
+
+// TerminateReplicationStream calls api.proto.service.ManagementService.TerminateReplicationStream.
+func (c *managementServiceClient) TerminateReplicationStream(ctx context.Context, req *connect.Request[endpoints.TerminateReplicationStreamRequest]) (*connect.Response[endpoints.TerminateReplicationStreamResponse], error) {
+	return c.terminateReplicationStream.CallUnary(ctx, req)
+}
+
+// CreateLogicalSlot calls api.proto.service.ManagementService.CreateLogicalSlot.
+func (c *managementServiceClient) CreateLogicalSlot(ctx context.Context, req *connect.Request[endpoints.CreateLogicalSlotRequest]) (*connect.Response[endpoints.CreateLogicalSlotResponse], error) {
+	return c.createLogicalSlot.CallUnary(ctx, req)
 }
 
 // StreamLogs calls api.proto.service.ManagementService.StreamLogs.
@@ -717,6 +770,14 @@ type ManagementServiceHandler interface {
 	ProvisionReplica(context.Context, *connect.Request[endpoints.ProvisionReplicaRequest], *connect.ServerStream[endpoints.ProvisionProgress]) error
 	// ValidateBackend checks if a backend is accessible.
 	ValidateBackend(context.Context, *connect.Request[endpoints.ValidateBackendRequest]) (*connect.Response[endpoints.ValidateBackendResponse], error)
+	// ListReplicationStreams returns the CDC/replication consumers attached to
+	// this proxy. Read-only.
+	ListReplicationStreams(context.Context, *connect.Request[endpoints.ListReplicationStreamsRequest]) (*connect.Response[endpoints.ListReplicationStreamsResponse], error)
+	// TerminateReplicationStream disconnects one consumer. Admin only: the
+	// consumer must resync from its own checkpoint afterwards.
+	TerminateReplicationStream(context.Context, *connect.Request[endpoints.TerminateReplicationStreamRequest]) (*connect.Response[endpoints.TerminateReplicationStreamResponse], error)
+	// CreateLogicalSlot pre-creates a logical replication slot on a node.
+	CreateLogicalSlot(context.Context, *connect.Request[endpoints.CreateLogicalSlotRequest]) (*connect.Response[endpoints.CreateLogicalSlotResponse], error)
 	// StreamLogs returns a real-time stream of logs.
 	StreamLogs(context.Context, *connect.Request[endpoints.StreamLogsRequest], *connect.ServerStream[domain.LogEntry]) error
 	// InitializeNode initializes a database on a clean host via Agent.
@@ -850,6 +911,24 @@ func NewManagementServiceHandler(svc ManagementServiceHandler, opts ...connect.H
 		ManagementServiceValidateBackendProcedure,
 		svc.ValidateBackend,
 		connect.WithSchema(managementServiceMethods.ByName("ValidateBackend")),
+		connect.WithHandlerOptions(opts...),
+	)
+	managementServiceListReplicationStreamsHandler := connect.NewUnaryHandler(
+		ManagementServiceListReplicationStreamsProcedure,
+		svc.ListReplicationStreams,
+		connect.WithSchema(managementServiceMethods.ByName("ListReplicationStreams")),
+		connect.WithHandlerOptions(opts...),
+	)
+	managementServiceTerminateReplicationStreamHandler := connect.NewUnaryHandler(
+		ManagementServiceTerminateReplicationStreamProcedure,
+		svc.TerminateReplicationStream,
+		connect.WithSchema(managementServiceMethods.ByName("TerminateReplicationStream")),
+		connect.WithHandlerOptions(opts...),
+	)
+	managementServiceCreateLogicalSlotHandler := connect.NewUnaryHandler(
+		ManagementServiceCreateLogicalSlotProcedure,
+		svc.CreateLogicalSlot,
+		connect.WithSchema(managementServiceMethods.ByName("CreateLogicalSlot")),
 		connect.WithHandlerOptions(opts...),
 	)
 	managementServiceStreamLogsHandler := connect.NewServerStreamHandler(
@@ -1024,6 +1103,12 @@ func NewManagementServiceHandler(svc ManagementServiceHandler, opts ...connect.H
 			managementServiceProvisionReplicaHandler.ServeHTTP(w, r)
 		case ManagementServiceValidateBackendProcedure:
 			managementServiceValidateBackendHandler.ServeHTTP(w, r)
+		case ManagementServiceListReplicationStreamsProcedure:
+			managementServiceListReplicationStreamsHandler.ServeHTTP(w, r)
+		case ManagementServiceTerminateReplicationStreamProcedure:
+			managementServiceTerminateReplicationStreamHandler.ServeHTTP(w, r)
+		case ManagementServiceCreateLogicalSlotProcedure:
+			managementServiceCreateLogicalSlotHandler.ServeHTTP(w, r)
 		case ManagementServiceStreamLogsProcedure:
 			managementServiceStreamLogsHandler.ServeHTTP(w, r)
 		case ManagementServiceInitializeNodeProcedure:
@@ -1131,6 +1216,18 @@ func (UnimplementedManagementServiceHandler) ProvisionReplica(context.Context, *
 
 func (UnimplementedManagementServiceHandler) ValidateBackend(context.Context, *connect.Request[endpoints.ValidateBackendRequest]) (*connect.Response[endpoints.ValidateBackendResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.proto.service.ManagementService.ValidateBackend is not implemented"))
+}
+
+func (UnimplementedManagementServiceHandler) ListReplicationStreams(context.Context, *connect.Request[endpoints.ListReplicationStreamsRequest]) (*connect.Response[endpoints.ListReplicationStreamsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.proto.service.ManagementService.ListReplicationStreams is not implemented"))
+}
+
+func (UnimplementedManagementServiceHandler) TerminateReplicationStream(context.Context, *connect.Request[endpoints.TerminateReplicationStreamRequest]) (*connect.Response[endpoints.TerminateReplicationStreamResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.proto.service.ManagementService.TerminateReplicationStream is not implemented"))
+}
+
+func (UnimplementedManagementServiceHandler) CreateLogicalSlot(context.Context, *connect.Request[endpoints.CreateLogicalSlotRequest]) (*connect.Response[endpoints.CreateLogicalSlotResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("api.proto.service.ManagementService.CreateLogicalSlot is not implemented"))
 }
 
 func (UnimplementedManagementServiceHandler) StreamLogs(context.Context, *connect.Request[endpoints.StreamLogsRequest], *connect.ServerStream[domain.LogEntry]) error {
