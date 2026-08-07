@@ -133,13 +133,7 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 		backends = append(backends, p)
 	}
 
-	var lb balancer2.Balancer
-	switch strings.ToLower(prcfg.Balancer) {
-	case "consistent":
-		lb = balancer2.NewConsistentHash(backends)
-	default:
-		lb = balancer2.NewRoundRobin(backends)
-	}
+	lb := newBalancer(prcfg.Balancer, backends)
 
 	targets := make([]health.Target, len(backends))
 	for i, b := range backends {
@@ -243,4 +237,31 @@ func (r *Registry) UserStore() store.User {
 
 func (r *Registry) DialTimeout() time.Duration {
 	return r.dialTimeout
+}
+
+// newBalancer resolves the configured strategy name to an implementation.
+//
+// Four of the six strategies used to be unreachable: the switch handled
+// "consistent" and sent everything else to round-robin, so a deployment asking
+// for p2c or least-conns silently got round-robin instead. An unknown name now
+// says so rather than pretending it was honoured.
+func newBalancer(name string, backends []pool2.Backend) balancer2.Balancer {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "round-robin", "roundrobin":
+		return balancer2.NewRoundRobin(backends)
+	case "weighted", "weighted-round-robin", "weightedroundrobin":
+		return balancer2.NewWeightedRoundRobin(backends)
+	case "least-conns", "least-connections", "leastconn":
+		return balancer2.NewLeastConn(backends)
+	case "p2c", "power-of-two":
+		return balancer2.NewP2C(backends)
+	case "peak-ewma", "ewma":
+		return balancer2.NewPeakEWMA(backends)
+	case "consistent", "consistent-hash", "ip-hash":
+		return balancer2.NewConsistentHash(backends)
+	default:
+		slog.Warn("Unknown balancer strategy, falling back to round-robin",
+			"configured", name)
+		return balancer2.NewRoundRobin(backends)
+	}
 }

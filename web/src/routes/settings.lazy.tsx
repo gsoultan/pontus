@@ -40,11 +40,16 @@ export const Route = createLazyFileRoute('/settings')({
   component: SettingsPage,
 })
 
+// Must stay in sync with newBalancer() in the registry. "Random" used to be
+// offered here and has no implementation — it fell through to round-robin, as
+// did least-conns, so the dashboard reported a strategy that was not running.
 const BALANCERS = [
   { value: 'round-robin', label: 'Round Robin' },
+  { value: 'weighted-round-robin', label: 'Weighted Round Robin' },
   { value: 'least-conns', label: 'Least Connections' },
-  { value: 'random', label: 'Random' },
-  { value: 'ip-hash', label: 'IP Hash' },
+  { value: 'p2c', label: 'Power of Two Choices' },
+  { value: 'peak-ewma', label: 'Peak EWMA (latency-aware)' },
+  { value: 'consistent', label: 'Consistent Hash' },
 ]
 
 const POOLING_MODES = [
