@@ -109,15 +109,28 @@ func (a *App) Run(ctx context.Context) error {
 	if err != nil {
 		log.Printf("Warning: Failed to initialize metric store: %v", err)
 	} else {
+		// SetStore also hydrates the in-memory trend ring and the lifetime
+		// counters from disk, so a restart does not blank the dashboard.
 		observability.DefaultTracker.SetStore(metricStore)
 		// Prune metrics every hour, keep for 7 days
 		observability.DefaultTracker.StartPruner(ctx, time.Hour, 7*24*time.Hour)
-		defer metricStore.Close()
+
+		// Persist the final interval on the way out; without this every
+		// restart discards up to a full snapshot period.
+		defer func() {
+			flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			observability.DefaultTracker.Flush(flushCtx)
+			cancel()
+			metricStore.Close()
+		}()
 	}
 
 	// Start system metrics reporting
 	observability.StartSystemMetricsReporting(ctx)
 	observability.DefaultTracker.StartHistoryCollector(ctx)
+	// Refresh the live RPS/error-rate window well inside the dashboard's poll
+	// interval so the tiles show current throughput, not a lifetime average.
+	observability.DefaultTracker.StartRateSampler(ctx, 5*time.Second)
 
 	// Start Observability Sync
 	observability.StartBackgroundSync(ctx, 30*time.Second)
