@@ -8,6 +8,7 @@ import (
 	"github.com/gsoultan/pontus/api/proto/domain"
 	"github.com/gsoultan/pontus/api/proto/endpoints"
 	"github.com/gsoultan/pontus/pkg/auth"
+	"github.com/gsoultan/pontus/pkg/config"
 	"github.com/gsoultan/pontus/server/management/infrastructure/manager"
 	"github.com/gsoultan/pontus/server/management/infrastructure/registry"
 	"github.com/gsoultan/pontus/server/management/service"
@@ -26,8 +27,8 @@ type serviceImpl struct {
 }
 
 // NewService creates a new management service.
-func NewService(ctx context.Context, projectStore store.Project, userStore store.User, settingStore service.SettingProvider, dialTimeout time.Duration, backendTLS *tls.Config, issuer *auth.Issuer) service.Service {
-	r := registry.NewRegistry(ctx, projectStore, userStore, dialTimeout, backendTLS)
+func NewService(ctx context.Context, projectStore store.Project, userStore store.User, settingStore service.SettingProvider, dialTimeout time.Duration, backendTLS *tls.Config, issuer *auth.Issuer, defaults *config.Options) service.Service {
+	r := registry.NewRegistry(ctx, projectStore, userStore, dialTimeout, backendTLS, defaults)
 
 	return new(serviceImpl{
 		Registry:             r,

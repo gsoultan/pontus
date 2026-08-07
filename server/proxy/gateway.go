@@ -367,6 +367,11 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	if err != nil {
 		status = "error"
 	}
+	// Feed the tracker. Without this call nothing on the query path is ever
+	// observed: total requests, error rate, RPS and Top Queries all stayed at
+	// zero in a real deployment while the dashboard rendered them as fact.
+	observability2.DefaultTracker.Record(s.Normalized, duration, err)
+
 	slog.Info("Query executed",
 		"query", s.Normalized,
 		"duration_ms", duration.Milliseconds(),

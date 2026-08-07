@@ -24,7 +24,7 @@ func TestService_GetStatus(t *testing.T) {
 	ustore := store.NewSQLiteUser(db)
 	sstore := store.NewSQLiteSetting(db)
 
-	svc := NewService(t.Context(), pstore, ustore, sstore, 1*time.Second, nil, mustIssuer(t))
+	svc := NewService(t.Context(), pstore, ustore, sstore, 1*time.Second, nil, mustIssuer(t), nil)
 
 	// 1. Test GetStatus with non-existent project
 	_, err = svc.GetStatus(t.Context(), &endpoints.GetStatusRequest{
@@ -43,7 +43,7 @@ func TestService_GetStatus(t *testing.T) {
 
 	// We need to reload or manually add to projects map, but NewService loads from store.
 	// Since we already called NewService, we should use CreateProject or re-init.
-	svc = NewService(t.Context(), pstore, ustore, sstore, 1*time.Second, nil, mustIssuer(t))
+	svc = NewService(t.Context(), pstore, ustore, sstore, 1*time.Second, nil, mustIssuer(t), nil)
 
 	resp, err := svc.GetStatus(t.Context(), &endpoints.GetStatusRequest{
 		ProjectId: "p1",

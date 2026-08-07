@@ -33,9 +33,14 @@ type Registry struct {
 	dialTimeout time.Duration
 	backendTLS  *tls.Config
 	monitor     *system.Monitor
+	// defaults carries the global settings that have no per-proxy field in
+	// ProxyConfig — firewall, rate limit, cache, pooling mode. Without this
+	// the gateway was built from five fields and every one of those features
+	// was silently off, whatever config.yaml said.
+	defaults *config.Options
 }
 
-func NewRegistry(ctx context.Context, store store.Project, userStore store.User, dialTimeout time.Duration, backendTLS *tls.Config) *Registry {
+func NewRegistry(ctx context.Context, store store.Project, userStore store.User, dialTimeout time.Duration, backendTLS *tls.Config, defaults *config.Options) *Registry {
 	m := system.NewMonitor()
 	m.Start(5 * time.Second)
 
@@ -47,6 +52,7 @@ func NewRegistry(ctx context.Context, store store.Project, userStore store.User,
 		dialTimeout: dialTimeout,
 		backendTLS:  backendTLS,
 		monitor:     m,
+		defaults:    defaults,
 	}
 
 	// Load and start projects
@@ -155,6 +161,22 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 		DialTimeout:  r.dialTimeout,
 		MaxConns:     prcfg.MaxConns,
 		QueryTimeout: 30 * time.Second,
+		Balancer:     prcfg.Balancer,
+	}
+	// Inherit the global data-plane settings. ProxyConfig has no fields for
+	// these, so without inheriting them the firewall, rate limiter and result
+	// cache are never enabled for any proxy the registry builds.
+	if d := r.defaults; d != nil {
+		proxyCfg.Firewall = d.Firewall
+		proxyCfg.RateLimit = d.RateLimit
+		proxyCfg.Cache = d.Cache
+		proxyCfg.ShadowBackends = d.ShadowBackends
+		if d.PoolingMode != "" {
+			proxyCfg.PoolingMode = d.PoolingMode
+		}
+		if d.QueryTimeout > 0 {
+			proxyCfg.QueryTimeout = d.QueryTimeout
+		}
 	}
 
 	gateway := proxy.NewGateway(handler, lb, failoverMgr, proxyCfg, r.backendTLS)

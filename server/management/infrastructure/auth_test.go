@@ -25,7 +25,7 @@ func TestAuth_Login(t *testing.T) {
 		t.Fatalf("failed to create issuer: %v", err)
 	}
 
-	svc := NewService(t.Context(), pstore, ustore, sstore, 1*time.Second, nil, issuer)
+	svc := NewService(t.Context(), pstore, ustore, sstore, 1*time.Second, nil, issuer, nil)
 
 	// 1. Create a user
 	username := "testuser"

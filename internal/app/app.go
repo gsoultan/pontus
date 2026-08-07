@@ -162,7 +162,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	// Initialize Management Service (Multi-project aware)
-	svc := infrastructure.NewService(ctx, a.projectStore, a.userStore, a.settingStore, a.cfg.DialTimeout, a.backendTLS, issuer)
+	svc := infrastructure.NewService(ctx, a.projectStore, a.userStore, a.settingStore, a.cfg.DialTimeout, a.backendTLS, issuer, a.cfg)
 	endpoints := management.MakeEndpoints(svc)
 
 	// Start Management gRPC Server
