@@ -25,6 +25,18 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// runtimeConfig is the hot-reloadable state the query path reads.
+//
+// It is swapped as one immutable value rather than mutated field by field:
+// handleClient and proxyResponse read it on every request and cannot take a
+// lock without holding it across connection I/O. Publishing a snapshot also
+// keeps the chain and the firewall config consistent with each other — with
+// separate fields a request could run a new chain against an old fwConfig.
+type runtimeConfig struct {
+	chain    middleware.Chain
+	fwConfig *config.Firewall
+}
+
 // Gateway implements the proxy.Provider interface.
 type Gateway struct {
 	handler        protocol.Handler
@@ -44,6 +56,7 @@ type Gateway struct {
 	inFlight       map[string]*inflightCall
 	queryTimeout   time.Duration
 	chain          middleware.Chain
+	runtime        atomic.Pointer[runtimeConfig]
 	configMu       sync.RWMutex
 	config         *config.Options
 	shadowBackends []pool2.Backend
@@ -163,6 +176,18 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 		middleware.NewFirewall(g.fwConfig, g.handler),
 		middleware.NewCache(g.cacheManager, g.cacheConfig, g.handler),
 	}
+
+	// Publish atomically for the query path.
+	g.runtime.Store(&runtimeConfig{chain: g.chain, fwConfig: g.fwConfig})
+}
+
+// current returns the active runtime configuration. Never nil after
+// NewGateway, which calls reconfigure before returning.
+func (g *Gateway) current() *runtimeConfig {
+	if rc := g.runtime.Load(); rc != nil {
+		return rc
+	}
+	return &runtimeConfig{}
 }
 
 // UpdateConfig updates the gateway configuration at runtime.
@@ -453,7 +478,7 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		session.QueryInfo = g.handler.ClassifyQuery(session.Data)
 
 		// Execute through middleware chain
-		if err := g.chain.Handle(qctx, session, g.executeRequest); err != nil {
+		if err := g.current().chain.Handle(qctx, session, g.executeRequest); err != nil {
 			slog.Error("Request failed", "client", remoteAddr, "error", err)
 			qcancel()
 			if session.Server != nil {
@@ -589,7 +614,8 @@ func (g *Gateway) CacheManager() *cache.Manager {
 
 func (g *Gateway) proxyResponse(client, server net.Conn, buf []byte, capture *bytes.Buffer, readOnly bool) (protocol.TransactionState, bool, time.Duration, error) {
 	// Fast Path: If it's a simple read-only query and no capture/firewall needed, use optimized steering
-	if readOnly && capture == nil && (g.fwConfig == nil || g.fwConfig.MaxResponseSizeMB == 0) {
+	fw := g.current().fwConfig
+	if readOnly && capture == nil && (fw == nil || fw.MaxResponseSizeMB == 0) {
 		return g.proxyResponseFastPath(client, server, buf)
 	}
 
@@ -632,8 +658,8 @@ func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, 
 	firstByte := true
 	var totalSize int64
 	maxSize := int64(0)
-	if g.fwConfig != nil && g.fwConfig.MaxResponseSizeMB > 0 {
-		maxSize = g.fwConfig.MaxResponseSizeMB * 1024 * 1024
+	if fw := g.current().fwConfig; fw != nil && fw.MaxResponseSizeMB > 0 {
+		maxSize = fw.MaxResponseSizeMB * 1024 * 1024
 	}
 
 	for {
