@@ -1,3 +1,4 @@
+import { BALANCERS, DEFAULT_BALANCER } from '../../common/balancers';
 import { Stack, TextInput, Select } from '@mantine/core';
 
 interface ProxyConfigFormProps {
@@ -30,13 +31,9 @@ export function ProxyConfigForm({ values, onChange }: ProxyConfigFormProps) {
       <Select
         label="Balancing Strategy"
         description="How traffic is distributed"
-        data={[
-          { value: 'round_robin', label: 'Round Robin' },
-          { value: 'least_conn', label: 'Least Connections' },
-          { value: 'random', label: 'Random' },
-        ]}
+        data={[...BALANCERS]}
         value={values.balancer}
-        onChange={(val) => onChange({ ...values, balancer: val || 'round_robin' })}
+        onChange={(val) => onChange({ ...values, balancer: val || DEFAULT_BALANCER })}
       />
     </Stack>
   );

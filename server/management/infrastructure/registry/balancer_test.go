@@ -28,6 +28,12 @@ func TestNewBalancerResolvesEveryStrategy(t *testing.T) {
 		{"peak-ewma", &balancer2.PeakEWMA{}},
 		{"ewma", &balancer2.PeakEWMA{}},
 		{"consistent", &balancer2.ConsistentHash{}},
+		// Underscore spellings the dashboard stored before the names were
+		// aligned; proxies created then must not silently change strategy.
+		{"round_robin", &balancer2.RoundRobin{}},
+		{"least_conn", &balancer2.LeastConn{}},
+		{"peak_ewma", &balancer2.PeakEWMA{}},
+		{"ip_hash", &balancer2.ConsistentHash{}},
 		{"ip-hash", &balancer2.ConsistentHash{}},
 		// Case and surrounding whitespace must not change the result.
 		{"  P2C  ", &balancer2.P2C{}},

@@ -1,3 +1,4 @@
+import { DEFAULT_BALANCER } from '../common/balancers'
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { 
   Container, 
@@ -51,7 +52,7 @@ function NewProxyPage() {
   const [proxyForm, setProxyForm] = useState({
     name: '',
     address: '',
-    balancer: 'round_robin'
+    balancer: DEFAULT_BALANCER
   });
   
   const [backends, setBackends] = useState<any[]>([]);

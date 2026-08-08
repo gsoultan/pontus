@@ -31,22 +31,12 @@ import { useClusterConfig } from '../status/hooks/useClusterConfig'
 import { useServerInfo } from '../services/useServerInfo'
 import { useAuthStore } from '../store/useAuthStore'
 import { CreateUserModal } from '../users/components/CreateUserModal'
+import { BALANCERS, DEFAULT_BALANCER } from '../common/balancers'
 
 export const Route = createLazyFileRoute('/settings')({
   component: SettingsPage,
 })
 
-// Must stay in sync with newBalancer() in the registry. "Random" used to be
-// offered here and has no implementation — it fell through to round-robin, as
-// did least-conns, so the dashboard reported a strategy that was not running.
-const BALANCERS = [
-  { value: 'round-robin', label: 'Round Robin' },
-  { value: 'weighted-round-robin', label: 'Weighted Round Robin' },
-  { value: 'least-conns', label: 'Least Connections' },
-  { value: 'p2c', label: 'Power of Two Choices' },
-  { value: 'peak-ewma', label: 'Peak EWMA (latency-aware)' },
-  { value: 'consistent', label: 'Consistent Hash' },
-]
 
 const POOLING_MODES = [
   { value: 'transaction', label: 'Transaction' },
@@ -197,9 +187,9 @@ function SettingsForm({ initialValues, isUpdating, onSubmit, onSync }: SettingsF
                   <Select
                     label="Balancing Strategy"
                     description="Logic for backend routing"
-                    data={BALANCERS}
+                    data={[...BALANCERS]}
                     value={field.state.value}
-                    onChange={(value) => field.handleChange(value ?? 'round-robin')}
+                    onChange={(value) => field.handleChange(value ?? DEFAULT_BALANCER)}
                     allowDeselect={false}
                   />
                 )}
@@ -250,7 +240,7 @@ function SettingsPage() {
             initialValues={{
               query_timeout: config.query_timeout || '30s',
               max_conns: Number.parseInt(config.max_conns || '1000', 10),
-              balancer: config.balancer || 'round-robin',
+              balancer: config.balancer || DEFAULT_BALANCER,
               pooling_mode: config.pooling_mode || 'transaction',
             }}
             isUpdating={isUpdating}

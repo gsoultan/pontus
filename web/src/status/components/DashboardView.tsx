@@ -44,7 +44,11 @@ export function DashboardView() {
           </Suspense>
         </SimpleGrid>
 
-        <ClusterOverview backends={data?.backends ?? []} protocol={data?.protocol ?? 'Unknown'} />
+        <ClusterOverview
+          backends={data?.backends ?? []}
+          protocol={data?.protocol ?? 'Unknown'}
+          balancerType={data?.balancerType}
+        />
 
         <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
           <AdaptiveStatusCard status={data?.adaptiveStatus} />

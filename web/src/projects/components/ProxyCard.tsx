@@ -1,3 +1,4 @@
+import { balancerLabel } from '../../common/balancers';
 import { Card, Group, Text, Button, ActionIcon, Stack, Code, Badge, ThemeIcon, rem, Box } from '@mantine/core';
 import { IconServer, IconEdit, IconTrash, IconDatabase, IconChevronRight } from '@tabler/icons-react';
 import { Link } from '@tanstack/react-router';
@@ -20,7 +21,7 @@ export function ProxyCard({ projectId, proxy, isAdmin, onSelect, onRemove }: Pro
           </ThemeIcon>
           <Box>
             <Text fw={700} size="md">{proxy.name}</Text>
-            <Badge size="xs" variant="light" color="gray" radius="sm">{proxy.balancer}</Badge>
+            <Badge size="xs" variant="light" color="gray" radius="sm">{balancerLabel(proxy.balancer)}</Badge>
           </Box>
         </Group>
         {isAdmin && (

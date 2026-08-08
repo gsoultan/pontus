@@ -1,13 +1,16 @@
 import { Paper, Group, Text, Stack, rem, Badge, ThemeIcon, Box } from "@mantine/core";
 import { IconCrown, IconLink } from "@tabler/icons-react";
 import type { BackendStatus } from "../../gen/api/proto/domain/status_pb";
+import { balancerLabel } from "../../common/balancers";
 
 interface ClusterOverviewProps {
   backends: BackendStatus[];
   protocol: string;
+  /** The strategy actually in use, as reported by the running proxy. */
+  balancerType?: string;
 }
 
-export function ClusterOverview({ backends, protocol }: ClusterOverviewProps) {
+export function ClusterOverview({ backends, protocol, balancerType }: ClusterOverviewProps) {
   const primary = backends.find(b => b.role === "primary");
   const replicas = backends.filter(b => b.role === "replica");
 
@@ -23,7 +26,17 @@ export function ClusterOverview({ backends, protocol }: ClusterOverviewProps) {
             <Text size="xs" c="dimmed" fw={500}>{protocol} distribution</Text>
           </Box>
         </Group>
-        <Badge variant="light" color="pontusBlue" size="sm">{backends.length} Nodes</Badge>
+        <Group gap={6}>
+          {/* Reported by the proxy, not read back from config. A picker that
+              stored a name the server did not recognise silently fell back to
+              round-robin; showing what is running is what makes that visible. */}
+          {balancerType && (
+            <Badge variant="light" color="grape" size="sm">
+              {balancerLabel(balancerType)}
+            </Badge>
+          )}
+          <Badge variant="light" color="pontusBlue" size="sm">{backends.length} Nodes</Badge>
+        </Group>
       </Group>
 
       <Box style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: rem(24), py: rem(10) }}>

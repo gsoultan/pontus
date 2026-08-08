@@ -280,17 +280,19 @@ const (
 
 func newBalancer(name string, backends []pool2.Backend) balancer2.Balancer {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "", "round-robin", "roundrobin":
+	case "", "round-robin", "roundrobin", "round_robin":
 		return balancer2.NewRoundRobin(backends)
-	case "weighted", "weighted-round-robin", "weightedroundrobin":
+	case "weighted", "weighted-round-robin", "weightedroundrobin", "weighted_round_robin":
 		return balancer2.NewWeightedRoundRobin(backends)
-	case "least-conns", "least-connections", "leastconn":
+	// least_conn is the spelling the proxy-creation form stored for a long
+	// time. It never matched, so those proxies silently ran round-robin.
+	case "least-conns", "least-connections", "leastconn", "least_conn", "least_conns":
 		return balancer2.NewLeastConn(backends)
 	case "p2c", "power-of-two":
 		return balancer2.NewP2C(backends)
-	case "peak-ewma", "ewma":
+	case "peak-ewma", "ewma", "peak_ewma":
 		return balancer2.NewPeakEWMA(backends)
-	case "consistent", "consistent-hash", "ip-hash":
+	case "consistent", "consistent-hash", "ip-hash", "ip_hash":
 		return balancer2.NewConsistentHash(backends)
 	default:
 		slog.Warn("Unknown balancer strategy, falling back to round-robin",
