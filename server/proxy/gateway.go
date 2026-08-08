@@ -438,6 +438,22 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 		s.Server = nil
 	}
 
+	// Report the backend's failure.
+	//
+	// This returned nil unconditionally: a backend that went away was logged
+	// at error level and then reported to the caller as success. Nothing was
+	// written to the client and the session loop went back to waiting for the
+	// next message, so the client sat until its own deadline expired against a
+	// proxy that had already noticed — measured at 40s for a failure the proxy
+	// detected in under a millisecond.
+	//
+	// isReadOnlyErr is the one exception: a write that landed on a demoted
+	// primary is retried elsewhere rather than failed, and that path has
+	// already handled it.
+	if err != nil && !isReadOnlyErr {
+		return err
+	}
+
 	return nil
 }
 
@@ -606,13 +622,12 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 func (g *Gateway) acquireBackend(ctx context.Context, hint balancer2.Hint) (pool2.Backend, net.Conn, error) {
 	var lastErr error
 	for i := range 3 {
-		// If in failover, wait for resolution
+		// If in failover, wait for resolution — but no longer than the caller
+		// is prepared to wait.
 		if !hint.ReadOnly {
-			g.failoverMu.RLock()
-			for g.inFailover.Load() {
-				g.pauseCond.Wait()
+			if err := g.waitWhilePaused(ctx); err != nil {
+				return nil, nil, err
 			}
-			g.failoverMu.RUnlock()
 		}
 
 		backend, err := g.balancer.Next(ctx, hint)
@@ -646,6 +661,46 @@ func (g *Gateway) acquireBackend(ctx context.Context, hint balancer2.Hint) (pool
 		}
 	}
 	return nil, nil, lastErr
+}
+
+// waitWhilePaused blocks writes until a failover resolves, or until the
+// caller's context expires.
+//
+// The wait used to be an unbounded sync.Cond, so a client waited for the
+// failover goroutine to give up rather than for its own query timeout. With a
+// single backend that is the common outage: there is no replica to promote,
+// the failover cannot succeed, and every query stalled for thirty seconds
+// before failing anyway. Pausing briefly to ride out a promotion is the point;
+// outlasting the caller's deadline is not.
+func (g *Gateway) waitWhilePaused(ctx context.Context) error {
+	if !g.inFailover.Load() {
+		return nil
+	}
+
+	// sync.Cond has no context, so the context is given a way to wake the
+	// waiter: on cancellation this broadcast returns Wait, the loop re-checks,
+	// and the caller gets its own error rather than someone else's timeout.
+	done := make(chan struct{})
+	defer close(done)
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			g.pauseCond.Broadcast()
+		case <-done:
+		}
+	}()
+
+	g.failoverMu.RLock()
+	defer g.failoverMu.RUnlock()
+
+	for g.inFailover.Load() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		g.pauseCond.Wait()
+	}
+	return nil
 }
 
 func (g *Gateway) triggerFailover() {
