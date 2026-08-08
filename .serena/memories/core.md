@@ -26,6 +26,8 @@ references this task needs. Do not re-derive from source what is already written
 
 ## Security & correctness
 - Trust boundaries, WAF, auth invariants and what must never regress: `mem:security`.
+- What the agent orchestrates, what failover actually does, and why failback does **not**
+  exist despite a comment that said it did: `mem:failover`.
 - Open findings, highest severity first: `mem:findings`. **Read the "Dead code that silently
   disables a whole subsystem" section before reasoning about the cache, the balancer or TLS** —
   cache invalidation, the load-balancer cost function and client-facing TLS all look implemented

@@ -14,13 +14,27 @@ type mockBackend struct {
 	address string
 	role    pool.Role
 	healthy bool
+
+	mu         sync.Mutex
+	reevaluted int
 }
 
 func (m *mockBackend) Address() string   { return m.address }
 func (m *mockBackend) Role() pool.Role   { return m.role }
 func (m *mockBackend) IsHealthy() bool   { return m.healthy }
 func (m *mockBackend) SetHealthy(h bool) { m.healthy = h }
-func (m *mockBackend) ReevaluateRole()   {}
+
+func (m *mockBackend) ReevaluateRole() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.reevaluted++
+}
+
+func (m *mockBackend) reevaluations() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.reevaluted
+}
 
 type mockProvisioner struct {
 	Provisioner
@@ -96,4 +110,107 @@ func TestFailoverManager_AutomaticFailback_SplitBrain(t *testing.T) {
 		t.Errorf("Expected p2 to be demoted, got %s", provisioner.demoted[0])
 	}
 	provisioner.mu.Unlock()
+}
+
+// Promoting a replica is only half a failover: the proxy still has the node
+// recorded as a replica, so it keeps routing writes at the primary that just
+// died. The pool re-checks roles on a 30s tick, which means up to half a
+// minute of failed writes after a failover the logs already called successful.
+//
+// The split-brain path already re-evaluates the node it demotes. The failover
+// path has to do the same for the node it promotes.
+func TestFailoverTellsTheProxyTheWriteNodeMoved(t *testing.T) {
+	dead := &mockBackend{address: "p1", role: pool.RolePrimary, healthy: false}
+	promoted := &mockBackend{address: "r1", role: pool.RoleReplica, healthy: true}
+
+	backends := []pool.Backend{dead, promoted}
+	provisioner := &mockProvisioner{}
+
+	mgr := NewFailoverManager(provisioner, &mockConsensus{leader: true},
+		func() []pool.Backend { return backends })
+
+	if err := mgr.TriggerFailover(t.Context()); err != nil {
+		t.Fatalf("TriggerFailover: %v", err)
+	}
+
+	if got := promoted.reevaluations(); got == 0 {
+		t.Error("the promoted node was never re-evaluated, so the proxy would " +
+			"keep sending writes to the old primary until the next 30s role check")
+	}
+}
+
+// The old primary coming back after a failover is the normal end of a failover,
+// not an exotic case: the node reboots, Postgres starts, and it still believes
+// it is the primary. Two primaries is the expected transient state.
+//
+// registry.go constructs the FailoverManager with a nil Consensus — there is no
+// Raft in a single-node deployment — and the split-brain branch calls
+// m.consensus.GetPrimary() without the nil guard the leader check above it has.
+// So the recovery path panics on the monitor goroutine and takes the proxy down.
+func TestSplitBrainWithoutConsensusDoesNotPanic(t *testing.T) {
+	recovered := &mockBackend{address: "p1", role: pool.RolePrimary, healthy: true}
+	promoted := &mockBackend{address: "r1", role: pool.RolePrimary, healthy: true}
+
+	backends := []pool.Backend{recovered, promoted}
+	provisioner := &mockProvisioner{}
+
+	// nil consensus, exactly as registry.go builds it.
+	mgr := NewFailoverManager(provisioner, nil, func() []pool.Backend { return backends })
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("monitor panicked resolving split-brain with no consensus: %v", r)
+		}
+	}()
+	mgr.monitor(t.Context())
+
+	provisioner.mu.Lock()
+	demoted := len(provisioner.demoted)
+	provisioner.mu.Unlock()
+	if demoted != 1 {
+		t.Errorf("expected exactly one node demoted, got %d", demoted)
+	}
+}
+
+// A failover followed by the old primary rebooting must not hand the write
+// role back to it.
+//
+// The promoted replica has already taken writes the old primary never saw. With
+// no consensus configured, resolving split-brain by config order picks the
+// original primary — undoing the failover and pointing writes at the node that
+// just failed, on top of a diverged timeline.
+func TestRecoveredPrimaryDoesNotStealBackTheWriteRole(t *testing.T) {
+	old := &mockBackend{address: "p1", role: pool.RolePrimary, healthy: false}
+	replica := &mockBackend{address: "r1", role: pool.RoleReplica, healthy: true}
+
+	backends := []pool.Backend{old, replica}
+	provisioner := &mockProvisioner{}
+	mgr := NewFailoverManager(provisioner, nil, func() []pool.Backend { return backends })
+
+	// The primary dies and r1 is promoted.
+	mgr.monitor(t.Context())
+
+	provisioner.mu.Lock()
+	promotedAddr := provisioner.promoted
+	provisioner.mu.Unlock()
+	if promotedAddr != "r1" {
+		t.Fatalf("expected r1 promoted, got %q", promotedAddr)
+	}
+	replica.role = pool.RolePrimary
+
+	// p1 reboots and comes back still believing it is the primary.
+	old.healthy = true
+	mgr.monitor(t.Context())
+
+	provisioner.mu.Lock()
+	demoted := append([]string(nil), provisioner.demoted...)
+	provisioner.mu.Unlock()
+
+	if len(demoted) != 1 {
+		t.Fatalf("expected one node demoted, got %v", demoted)
+	}
+	if demoted[0] != "p1" {
+		t.Errorf("demoted %q; the recovered old primary should lose to the node "+
+			"that was promoted, not the other way round", demoted[0])
+	}
 }

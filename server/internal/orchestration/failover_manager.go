@@ -31,6 +31,12 @@ type FailoverManager struct {
 	backends    func() []pool.Backend
 	mu          sync.Mutex
 	state       FailoverState
+
+	// lastPromoted is the node this manager most recently made primary. It is
+	// the tie-breaker when an old primary comes back and there is no consensus
+	// to ask, because config order alone would hand the write role back to the
+	// node that just failed.
+	lastPromoted string
 }
 
 func NewFailoverManager(provisioner Provisioner, consensus Consensus, backends func() []pool.Backend) *FailoverManager {
@@ -94,13 +100,26 @@ func (m *FailoverManager) monitor(ctx context.Context) {
 		return
 	}
 
-	// 2. Automatic Failback / Self-Healing: Check for recovered nodes that think they are primary
-	// or replicas that are now healthy and could be promoted back if they were the preferred primary.
-	// For now, let's focus on split-brain prevention and basic failback.
+	// 2. Split-brain resolution.
+	//
+	// This is what an old primary coming back after a failover looks like: it
+	// reboots, Postgres starts, and it still believes it is the primary. Two
+	// primaries is the ordinary end of a failover, not an exotic case.
+	//
+	// Note this is *not* failback — the recovered node is demoted to a replica
+	// and the write role stays where the failover put it. Returning the write
+	// role to a preferred node is a separate, deliberate operation.
 	if len(allPrimaries) > 1 {
 		slog.Error("Multiple primaries detected! Split-brain scenario.", "count", len(allPrimaries))
-		// Use consensus to decide who is the real primary
-		consensusPrimary, _ := m.consensus.GetPrimary()
+
+		// Consensus is nil in a single-node deployment — registry.go constructs
+		// the manager that way — and asking a nil Consensus for the primary
+		// wedges this goroutine, which is the one running failover detection.
+		// The leader check above already guards for nil; this call did not.
+		var consensusPrimary string
+		if m.consensus != nil {
+			consensusPrimary, _ = m.consensus.GetPrimary()
+		}
 
 		var winner pool.Backend
 		if consensusPrimary != "" {
@@ -111,7 +130,28 @@ func (m *FailoverManager) monitor(ctx context.Context) {
 				}
 			}
 		}
+		// With no consensus to appeal to, prefer the node this manager promoted.
+		// Config order would pick the original primary, so a node that failed
+		// and came back would win against the replica promoted to replace it —
+		// silently undoing the failover and sending writes to the node that
+		// just failed, after a replica has already taken writes.
 		if winner == nil {
+			m.mu.Lock()
+			promoted := m.lastPromoted
+			m.mu.Unlock()
+
+			for _, p := range allPrimaries {
+				if p.Address() == promoted && p.IsHealthy() {
+					winner = p
+					break
+				}
+			}
+		}
+		if winner == nil {
+			if len(healthyPrimaries) == 0 {
+				slog.Error("Split-brain with no healthy primary; leaving roles alone")
+				return
+			}
 			winner = healthyPrimaries[0]
 		}
 
@@ -179,6 +219,27 @@ func (m *FailoverManager) TriggerFailover(ctx context.Context) error {
 	if m.consensus != nil {
 		if err := m.consensus.SetPrimary(bestReplica.Address()); err != nil {
 			slog.Error("Failed to update consensus with new primary", "error", err)
+		}
+	}
+
+	m.mu.Lock()
+	m.lastPromoted = bestReplica.Address()
+	m.mu.Unlock()
+
+	// 4. Tell the data plane the write node moved.
+	//
+	// Promotion happens on the database host; the pool only learns a role
+	// changed when its own 30s deep check next runs. Until then the proxy still
+	// has the promoted node recorded as a replica and the dead node recorded as
+	// the primary, so every write goes to the backend that just failed — for up
+	// to half a minute after the log line above says the failover succeeded.
+	//
+	// ReevaluateRole is a non-blocking nudge to the pool's role checker, so this
+	// is safe to call while holding nothing.
+	bestReplica.ReevaluateRole()
+	for _, b := range m.backends() {
+		if b.Role() == pool.RolePrimary && b.Address() != bestReplica.Address() {
+			b.ReevaluateRole()
 		}
 	}
 
