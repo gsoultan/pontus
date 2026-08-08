@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"crypto/subtle"
 
 	kitendpoint "github.com/go-kit/kit/endpoint"
 	grpctransport "github.com/go-kit/kit/transport/grpc"
@@ -167,23 +168,36 @@ func (s *grpcServer) VacuumDatabase(req *endpoints.VacuumDatabaseRequest, stream
 	return nil
 }
 
+// authorize reports whether the call carried the expected token.
+//
+// The comparison is constant-time: a byte-wise `!=` returns on the first
+// differing byte, which leaks the length of the matching prefix to anyone who
+// can time the response. That is enough to recover a token one byte at a time,
+// and this token guards InstallDatabase and PromoteNode.
+func authorize(ctx context.Context, token string) error {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return status.Error(codes.Unauthenticated, "metadata is not provided")
+	}
+
+	values := md["authorization"]
+	if len(values) == 0 {
+		return status.Error(codes.Unauthenticated, "authorization token is not provided")
+	}
+
+	if subtle.ConstantTimeCompare([]byte(values[0]), []byte(token)) != 1 {
+		return status.Error(codes.Unauthenticated, "invalid authorization token")
+	}
+
+	return nil
+}
+
 // TokenInterceptor returns a gRPC unary interceptor that validates the token.
 func TokenInterceptor(token string) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		md, ok := metadata.FromIncomingContext(ctx)
-		if !ok {
-			return nil, status.Errorf(codes.Unauthenticated, "metadata is not provided")
+		if err := authorize(ctx, token); err != nil {
+			return nil, err
 		}
-
-		values := md["authorization"]
-		if len(values) == 0 {
-			return nil, status.Errorf(codes.Unauthenticated, "authorization token is not provided")
-		}
-
-		if values[0] != token {
-			return nil, status.Errorf(codes.Unauthenticated, "invalid authorization token")
-		}
-
 		return handler(ctx, req)
 	}
 }
@@ -191,20 +205,9 @@ func TokenInterceptor(token string) grpc.UnaryServerInterceptor {
 // StreamTokenInterceptor returns a gRPC stream interceptor that validates the token.
 func StreamTokenInterceptor(token string) grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		md, ok := metadata.FromIncomingContext(ss.Context())
-		if !ok {
-			return status.Errorf(codes.Unauthenticated, "metadata is not provided")
+		if err := authorize(ss.Context(), token); err != nil {
+			return err
 		}
-
-		values := md["authorization"]
-		if len(values) == 0 {
-			return status.Errorf(codes.Unauthenticated, "authorization token is not provided")
-		}
-
-		if values[0] != token {
-			return status.Errorf(codes.Unauthenticated, "invalid authorization token")
-		}
-
 		return handler(srv, ss)
 	}
 }

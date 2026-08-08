@@ -72,25 +72,6 @@ func (m *management) ExecuteCommand(ctx context.Context, req *endpoints.ExecuteC
 		return nil, fmt.Errorf("command is required")
 	}
 
-	// Security: Command allowlist
-	allowedCommands := map[string]bool{
-		"ls":            true,
-		"ps":            true,
-		"df":            true,
-		"free":          true,
-		"pg_basebackup": true,
-		"pg_ctl":        true,
-		"pg_dump":       true,
-		"pg_restore":    true,
-		"systemctl":     true,
-		"service":       true,
-		"echo":          true, // for testing
-		"pg_isready":    true,
-		"cat":           true,
-		"pontus-agent":  true,
-		"tail":          true,
-	}
-
 	if !allowedCommands[req.Command] {
 		return nil, fmt.Errorf("command %s is not allowed", req.Command)
 	}

@@ -1,6 +1,10 @@
 package service
 
-import "github.com/kardianos/service"
+import (
+	"log/slog"
+
+	"github.com/kardianos/service"
+)
 
 type handler struct {
 	onStart func() error
@@ -10,10 +14,23 @@ type handler struct {
 // Start is called when the service is started.
 func (h *handler) Start(s service.Service) error {
 	go func() {
-		if err := h.onStart(); err != nil {
-			// In a real application, you might want to log this or handle it differently.
-			_ = s.Stop()
+		err := h.onStart()
+		if err == nil {
+			return
 		}
+
+		// Report it. This error used to be discarded, so a service that failed
+		// to start — port already bound, bad config, missing credentials —
+		// looked identical to one running normally: no output, no exit, just a
+		// process sitting there. Under systemd it was worse, because the unit
+		// stayed "active" while doing nothing.
+		logger, logErr := s.Logger(nil)
+		if logErr == nil {
+			_ = logger.Error(err)
+		}
+		slog.Error("service failed to start", "error", err)
+
+		_ = s.Stop()
 	}()
 	return nil
 }

@@ -41,9 +41,33 @@ Serves the ConnectRPC API, `/metrics`, and the dashboard on one mux.
 
 ## Boundary 3 — the agent (`agent_addr`)
 
-`agent_token` is mandatory (`pool.NewServer` errors without an agent address). The agent can
-manage database services and install packages, so an agent RPC must never build a shell
-command from a request field, and must never report healthy on an error path.
+The agent is the **database orchestrator**: it installs and updates database software, picks
+the version the operator asked for, initialises the primary, sets up replication, tunes
+config, and promotes a replica during failover. It runs as root on the database host. That
+makes it the most powerful component in the system and the one with the least in front of it.
+
+`agent_token` is mandatory on both sides:
+
+- **Server** (`cmd/agent`) refuses to start without `-token` or `PONTUS_AGENT_TOKEN`. It used
+  to attach the auth interceptor only when a token happened to be set, so an agent started
+  without one served all 16 RPCs — `InstallDatabase`, `PromoteNode`, `RemoveDatabase` — to
+  anyone who could reach `:9091`. `-insecure` exists for localhost testing and logs a warning
+  naming the exposed RPCs. The token is read from the environment, never propagated into the
+  installed service definition, because argv is world-readable.
+- **Client** (`orchestration.NewAgentClient`) attaches it as `authorization` metadata.
+- **Comparison** is `subtle.ConstantTimeCompare`. A `!=` on the token leaks the matching
+  prefix length by timing, which is enough to recover it byte by byte.
+
+`ExecuteCommand` runs an allowlisted binary (`agent/infrastructure/allowlist.go`), argv-style
+— no shell, so no injection. The allowlist is the boundary between "orchestrate Postgres" and
+"own the host", and a name belongs on it only if it cannot read an arbitrary file, cannot
+re-exec the agent, and is not an interpreter. `cat` and `tail` were on it (→ `.pgpass`,
+`admin_dsn`, `/etc/shadow` over the wire) and so was `pontus-agent` itself, which let a caller
+spawn a second agent with `-insecure` and walk around authentication entirely. Prefer adding
+an RPC that names the operation over adding a binary here.
+
+An agent RPC must never build a shell command from a request field, and must never report
+healthy on an error path.
 
 ## Current violations
 
