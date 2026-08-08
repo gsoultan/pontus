@@ -46,6 +46,26 @@ Everything else is open. None of the open items are precedent to copy.
 
 - **B12. The agent token travels in plaintext by default** — `insecure.NewCredentials()` when
   `tlsConfig == nil`, and one `tls.Config` is shared by the agent client and the DB dialer.
+  Still open, and it now matters more: the token is mandatory, so it is always on the wire.
+
+- **B13 [FIXED 2026-08-08]. The agent served every RPC unauthenticated.** The interceptor was
+  attached only when a token happened to be set, so `cmd/agent` with no `-token` exposed
+  `InstallDatabase`, `PromoteNode` and `RemoveDatabase` — as root — to anyone who could reach
+  `:9091`. Now fails closed; `-insecure` is an explicit, warned opt-out. The token comparison
+  was also a plain `!=`, which leaks the matching prefix by timing.
+
+- **B14 [FIXED 2026-08-08]. The ExecuteCommand allowlist let a caller own the host.** The
+  allowlist existed but contained `cat` and `tail` (arbitrary file read as root → `.pgpass`,
+  `admin_dsn`, `/etc/shadow`) and `pontus-agent` itself, which let a caller spawn a second
+  agent with `-insecure` on another port and bypass authentication entirely. See
+  `agent/infrastructure/allowlist.go` for the criteria a name has to meet.
+
+- **A6 [FIXED 2026-08-08]. Failover never reached the proxy, and could wedge or reverse
+  itself.** Three defects between promotion and routing — see `mem:failover`.
+
+- **A7 [FIXED 2026-08-08]. `pkg/service` discarded the error from `onStart`.** Any failed
+  startup — port in use, bad config, missing credentials — became a silent hang that systemd
+  still reported as active.
 
 - **A3. Client-facing TLS is not wired.** Only `cfg.BackendTLS` reaches `CreateTLSConfig`; the
   proxy listener is a plain `net.Listen`. The `tls:` block is inert.
