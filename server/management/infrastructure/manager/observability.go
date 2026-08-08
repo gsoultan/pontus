@@ -174,6 +174,7 @@ func (m *Observability) GetStatus(ctx context.Context, req *endpoints.GetStatusR
 		TotalConns:        totalConns,
 		Protocol:          p.Config.Protocol,
 		BalancerType:      ps.Balancer.Name(),
+		LocalZone:         localZoneOf(ps),
 		UptimeSeconds:     int64(observability2.DefaultTracker.Uptime().Seconds()),
 		RequestsPerSecond: float32(rps),
 		TotalRequests:     totalRequests,
@@ -565,4 +566,14 @@ func streamBudget(ps *state.Proxy) int {
 		return 0
 	}
 	return ps.Streams.Budget()
+}
+
+// localZoneOf reports the zone the proxy considers local, which is what the
+// balancer compares a backend's zone against when applying its locality
+// penalty.
+func localZoneOf(ps *state.Proxy) string {
+	if ps == nil || ps.Gateway == nil {
+		return ""
+	}
+	return ps.Gateway.LocalZone()
 }

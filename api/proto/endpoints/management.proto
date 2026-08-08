@@ -97,6 +97,10 @@ message GetStatusResponse {
   .api.proto.domain.Topology topology = 16;
   .api.proto.domain.AdaptiveStatus adaptive_status = 17;
   repeated .api.proto.domain.PerformanceSuggestion performance_suggestions = 18;
+  // The zone this proxy runs in. Without it the dashboard can show each
+  // backend's zone but not which of them are remote, and the locality penalty
+  // the balancer applies stays invisible.
+  string local_zone = 19;
 }
 
 // Backends management

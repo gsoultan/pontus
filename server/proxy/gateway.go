@@ -385,6 +385,16 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	// zero in a real deployment while the dashboard rendered them as fact.
 	observability2.DefaultTracker.Record(s.Normalized, duration, err)
 
+	// Per-backend counters. IncRequests and IncErrors existed with no callers,
+	// so every backend reported zero traffic and the dashboard had no way to
+	// show how a strategy was actually distributing load.
+	if s.Backend != nil {
+		s.Backend.IncRequests()
+		if err != nil {
+			s.Backend.IncErrors()
+		}
+	}
+
 	// Log the queries worth reading, not every query.
 	//
 	// An INFO line per query carrying its full SQL text was the dominant log
@@ -688,6 +698,10 @@ func (g *Gateway) Stop(ctx context.Context) error {
 // needs it for protocol-specific administration such as creating a logical
 // replication slot.
 func (g *Gateway) Handler() protocol.Handler { return g.handler }
+
+// LocalZone reports the zone this proxy runs in, so the dashboard can show
+// which backends the balancer treats as remote.
+func (g *Gateway) LocalZone() string { return g.current().localZone }
 
 func (g *Gateway) CacheManager() *cache.Manager {
 	return g.cacheManager

@@ -168,6 +168,9 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 	// these, so without inheriting them the rate limiter and result cache are
 	// never enabled for any proxy the registry builds.
 	if d := r.defaults; d != nil {
+		// The zone this proxy runs in. Without it the balancer's locality
+		// penalty never applies, because CallerZone is empty on every hint.
+		proxyCfg.LocalZone = d.LocalZone
 		proxyCfg.RateLimit = d.RateLimit
 		proxyCfg.Cache = d.Cache
 		proxyCfg.ShadowBackends = d.ShadowBackends

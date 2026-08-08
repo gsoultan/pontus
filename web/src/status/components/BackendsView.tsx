@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/useAuthStore'
 import { ConfirmDangerModal } from '../../common/components/ConfirmDangerModal'
 import { PromoteBackendModal } from '../../cluster/components/PromoteBackendModal'
 import { BackendsSection } from './BackendsSection'
+import { TrafficDistribution } from './TrafficDistribution'
 import { BackendModal } from './BackendModal'
 import { MaintenanceModal } from './MaintenanceModal'
 import { PostgresInsights } from './PostgresInsights'
@@ -28,6 +29,12 @@ export function BackendsView() {
       title="Backend Management"
       description="Register, monitor and operate the database nodes behind this proxy"
     >
+      <TrafficDistribution
+        backends={backends}
+        balancerType={data?.balancerType}
+        localZone={data?.localZone}
+      />
+
       <BackendsSection
         backends={backends}
         onAdd={actions.openAdd}

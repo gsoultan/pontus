@@ -303,6 +303,7 @@ mgmt_addr: "%s"
 protocol: postgres
 pooling_mode: transaction
 balancer: p2c
+local_zone: e2e
 data_dir: "%s"
 
 dial_timeout: 5s

@@ -759,8 +759,12 @@ type GetStatusResponse struct {
 	Topology               *domain.Topology                `protobuf:"bytes,16,opt,name=topology,proto3" json:"topology,omitempty"`
 	AdaptiveStatus         *domain.AdaptiveStatus          `protobuf:"bytes,17,opt,name=adaptive_status,json=adaptiveStatus,proto3" json:"adaptive_status,omitempty"`
 	PerformanceSuggestions []*domain.PerformanceSuggestion `protobuf:"bytes,18,rep,name=performance_suggestions,json=performanceSuggestions,proto3" json:"performance_suggestions,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	// The zone this proxy runs in. Without it the dashboard can show each
+	// backend's zone but not which of them are remote, and the locality penalty
+	// the balancer applies stays invisible.
+	LocalZone     string `protobuf:"bytes,19,opt,name=local_zone,json=localZone,proto3" json:"local_zone,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetStatusResponse) Reset() {
@@ -910,6 +914,13 @@ func (x *GetStatusResponse) GetPerformanceSuggestions() []*domain.PerformanceSug
 		return x.PerformanceSuggestions
 	}
 	return nil
+}
+
+func (x *GetStatusResponse) GetLocalZone() string {
+	if x != nil {
+		return x.LocalZone
+	}
+	return ""
 }
 
 // Backends management
@@ -4560,7 +4571,7 @@ const file_api_proto_endpoints_management_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +
 	"\bproxy_id\x18\x02 \x01(\tR\aproxyId\x12\x1f\n" +
 	"\vinterval_ms\x18\x03 \x01(\x05R\n" +
-	"intervalMs\"\x8c\a\n" +
+	"intervalMs\"\xab\a\n" +
 	"\x11GetStatusResponse\x12;\n" +
 	"\bbackends\x18\x01 \x03(\v2\x1f.api.proto.domain.BackendStatusR\bbackends\x12\x1f\n" +
 	"\vtotal_conns\x18\x02 \x01(\x03R\n" +
@@ -4583,7 +4594,9 @@ const file_api_proto_endpoints_management_proto_rawDesc = "" +
 	"\ahistory\x18\x0f \x03(\v2 .api.proto.domain.MetricSnapshotR\ahistory\x126\n" +
 	"\btopology\x18\x10 \x01(\v2\x1a.api.proto.domain.TopologyR\btopology\x12I\n" +
 	"\x0fadaptive_status\x18\x11 \x01(\v2 .api.proto.domain.AdaptiveStatusR\x0eadaptiveStatus\x12`\n" +
-	"\x17performance_suggestions\x18\x12 \x03(\v2'.api.proto.domain.PerformanceSuggestionR\x16performanceSuggestionsJ\x04\b\x0e\x10\x0fR\x0efirewall_stats\"\x86\x01\n" +
+	"\x17performance_suggestions\x18\x12 \x03(\v2'.api.proto.domain.PerformanceSuggestionR\x16performanceSuggestions\x12\x1d\n" +
+	"\n" +
+	"local_zone\x18\x13 \x01(\tR\tlocalZoneJ\x04\b\x0e\x10\x0fR\x0efirewall_stats\"\x86\x01\n" +
 	"\x11AddBackendRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +

@@ -9,6 +9,7 @@ import { StatusPageShell } from './StatusPageShell'
 import { StatusStats } from './StatusStats'
 import { SystemMetrics } from './SystemMetrics'
 import { TopQueries } from './TopQueries'
+import { TrafficDistribution } from './TrafficDistribution'
 
 const PerformanceCharts = lazy(() =>
   import('./PerformanceCharts').then((m) => ({ default: m.PerformanceCharts })),
@@ -43,6 +44,12 @@ export function DashboardView() {
             <SQLPlayground />
           </Suspense>
         </SimpleGrid>
+
+        <TrafficDistribution
+          backends={data?.backends ?? []}
+          balancerType={data?.balancerType}
+          localZone={data?.localZone}
+        />
 
         <ClusterOverview
           backends={data?.backends ?? []}
