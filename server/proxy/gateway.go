@@ -115,7 +115,11 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	// How stale a replica may be before reads stop going to it. Applied on
 	// reload as well as at startup: an operator raising this during a
 	// replication backlog should not have to restart the proxy.
-	balancer2.SetMaxReplicaLag(cfg.FailoverOptions().MaxReplicaLag)
+	fo := cfg.FailoverOptions()
+	balancer2.SetMaxReplicaLag(fo.MaxReplicaLag)
+	// Whether a replica that lost its WAL receiver is pulled from the read pool,
+	// and how long it must stream cleanly before it is trusted again.
+	pool2.SetAutoReattach(*fo.AutoReattach, fo.AutoReattachInterval)
 	if cfg.RateLimit != nil && cfg.RateLimit.Enabled {
 		g.limiter = rate.NewLimiter(rate.Limit(cfg.RateLimit.RPS), cfg.RateLimit.Burst)
 		// Per-tenant limiters share the configured rate and live in a bounded,

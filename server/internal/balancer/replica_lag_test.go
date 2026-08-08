@@ -88,3 +88,31 @@ func TestZeroThresholdRestoresTheDefault(t *testing.T) {
 		t.Errorf("MaxReplicaLag() = %v after a negative value, want the default", got)
 	}
 }
+
+// A replica that has lost its WAL receiver reports zero lag — it replayed
+// everything it received and then stopped receiving — so the lag gate waves it
+// through as the freshest node in the pool while it serves hours-old rows.
+// Streaming state is what catches it.
+func TestNonStreamingReplicaIsNotPreferredForReads(t *testing.T) {
+	t.Cleanup(func() { SetMaxReplicaLag(DefaultMaxReplicaLag) })
+	SetMaxReplicaLag(10 * time.Second)
+
+	streaming := &mockBackend{address: "r-live", healthy: true, role: pool.RoleReplica, lag: 2 * time.Second}
+	// Zero lag and cut off: exactly what a detached replica reports.
+	detached := &mockBackend{address: "r-detached", healthy: true, role: pool.RoleReplica, lag: 0, notStreaming: true}
+
+	nodes := []pool.Backend{streaming, detached}
+
+	targets := FilterNodes(nodes, Hint{ReadOnly: true})
+	defer targetsPool.Put(targets)
+
+	for _, n := range *targets {
+		if n.Address() == "r-detached" {
+			t.Error("a replica with no WAL receiver was preferred for reads; " +
+				"it reports zero lag precisely because it stopped receiving WAL")
+		}
+	}
+	if len(*targets) != 1 {
+		t.Errorf("expected only the streaming replica, got %d targets", len(*targets))
+	}
+}

@@ -111,6 +111,7 @@ func (m *mockBackend) RTT() time.Duration            { return 0 }
 func (m *mockBackend) ReportLatency(time.Duration)   {}
 func (m *mockBackend) ReportRTT(time.Duration)       {}
 func (m *mockBackend) ReplicationLag() time.Duration { return 0 }
+func (m *mockBackend) IsReplicating() bool           { return true }
 func (m *mockBackend) LastHealthy() time.Time        { return time.Time{} }
 func (m *mockBackend) IsDraining() bool              { return false }
 func (m *mockBackend) SetDraining(bool)              {}

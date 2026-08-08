@@ -10,14 +10,15 @@ import (
 
 type mockBackend struct {
 	pool.Backend
-	address     string
-	healthy     bool
-	activeConns int64
-	role        pool.Role
-	weight      int
-	latency     time.Duration
-	lastHealthy time.Time
-	lag         time.Duration
+	address      string
+	healthy      bool
+	activeConns  int64
+	role         pool.Role
+	weight       int
+	latency      time.Duration
+	lastHealthy  time.Time
+	lag          time.Duration
+	notStreaming bool
 }
 
 func (m *mockBackend) Address() string    { return m.address }
@@ -42,6 +43,7 @@ func (m *mockBackend) RTT() time.Duration                            { return 0 
 func (m *mockBackend) ReportLatency(time.Duration)                   {}
 func (m *mockBackend) ReportRTT(time.Duration)                       {}
 func (m *mockBackend) ReplicationLag() time.Duration                 { return m.lag }
+func (m *mockBackend) IsReplicating() bool                           { return !m.notStreaming }
 func (m *mockBackend) LastHealthy() time.Time                        { return m.lastHealthy }
 func (m *mockBackend) IsDraining() bool                              { return false }
 func (m *mockBackend) SetDraining(bool)                              {}

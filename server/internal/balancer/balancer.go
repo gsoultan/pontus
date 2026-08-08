@@ -146,7 +146,13 @@ func FilterNodes(nodes []pool.Backend, hint Hint) *[]pool.Backend {
 		maxLag := MaxReplicaLag()
 		// Prefer replicas for read-only, but exclude those with high lag or draining
 		for node := range slices.Values(nodes) {
-			if node.Role() == pool.RoleReplica && node.IsHealthy() && !node.IsDraining() && node.ReplicationLag() <= maxLag {
+			// IsReplicating is the streaming check: a replica whose WAL receiver
+			// has gone is up, healthy and answering, and every row it returns is
+			// older than the last. Lag alone does not catch it — once it has
+			// replayed the little it received, receive==replay and it reports
+			// zero.
+			if node.Role() == pool.RoleReplica && node.IsHealthy() && !node.IsDraining() &&
+				node.IsReplicating() && node.ReplicationLag() <= maxLag {
 				targets = append(targets, node)
 			}
 		}

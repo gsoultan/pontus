@@ -29,6 +29,47 @@ proxy kept routing writes to the backend that had just died for up to half a min
 logging "Replica promoted successfully". `ReevaluateRole` pushes to `roleCheckChan`
 (`pool/server.go`), which the maintenance loop turns into an immediate `deepCheck`.
 
+## What exists now (2026-08-08)
+
+A `failover:` config block, translated into `orchestration.Options` by
+`registry.failoverOptions` — nothing under `server/internal` reads config directly.
+
+| Key | Default | Effect |
+| :--- | :--- | :--- |
+| `enabled` | **false** | automatic promotion; split-brain resolution runs regardless |
+| `failure_threshold` | 3 | consecutive checks with no healthy primary before promoting |
+| `follow_primary` | false | re-point surviving replicas after a promotion |
+| `follow_primary_timeout` | 30m | per-replica budget, since re-pointing can mean a base backup |
+| `max_replica_lag` | 10s | pgpool's `delay_threshold`; atomic, applied on reload |
+| `auto_reattach` | **true** | pull a non-streaming replica from the read pool |
+| `auto_reattach_interval` | 1m | dwell time before a recovered replica is trusted again |
+
+`auto_reattach` deliberately inverts pgpool's default and means something different —
+see the comment in `server/internal/pool/reattach.go`. pgpool's flag protects a node an
+operator *administratively detached*; Pontus has no detach (`SetDraining` exists on the
+interface with no production caller and no RPC), so "never re-admit" would mean "out until
+restart". Here `false` means routing ignores streaming state and gates on lag alone.
+
+## Two traps in measuring replica staleness
+
+Both were live, and both fail silently by returning stale rows rather than erroring.
+
+1. **`deepCheckAdmin` never measured lag at all.** It ran only `pg_is_in_recovery()`, so
+   with `admin_dsn` configured — the recommended setup — `ReplicationLag()` was pinned at
+   zero for the life of the process, and every gate downstream passed: the balancer's
+   staleness filter, its cost penalty, and the failover manager's choice of which replica to
+   promote. `[repro]`
+2. **Neither obvious lag signal works alone.** Time since last replay reports a healthy
+   replica as badly lagged whenever the primary is idle. LSN equality reports a replica
+   *cut off entirely* as perfectly caught up — its WAL receiver is gone, so it stops
+   receiving, finishes replaying what it had, and `receive == replay` forever. That node
+   then looks like the freshest replica in the pool. `replicationStatus.lag()` credits zero
+   only when a replica is both streaming and caught up. `[repro]`
+
+The query lives in `pool/replication_status.go` and is exercised against a real backend by
+an `e2e`-tagged test in the same package — a broken health-check query fails the node
+outright, which is worse than the missing lag it was added to fix.
+
 ## Failback does not exist, and the code used to imply it did
 
 The split-brain branch was commented "Automatic Failback / Self-Healing". It is not

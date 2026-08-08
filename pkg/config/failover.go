@@ -43,9 +43,12 @@ type Failover struct {
 	// recovered primary. That node has diverged onto an old timeline and needs
 	// pg_rewind or a rebuild, so returning it to service is an operator action.
 	//
-	// Default off, as in pgpool: if you detached a node to work on it, you do
-	// not want the pooler putting it back under load.
-	AutoReattach bool `json:"auto_reattach,omitzero" yaml:"auto_reattach"`
+	// Unlike pgpool this defaults to ON, and "off" means something different —
+	// see server/internal/pool/reattach.go. pgpool's flag guards a node an
+	// operator administratively detached; Pontus has no detach, so "never
+	// re-admit" would mean "out until restart, with no way back". Here off
+	// simply means routing ignores streaming state and gates on lag alone.
+	AutoReattach *bool `json:"auto_reattach,omitzero" yaml:"auto_reattach"`
 
 	// AutoReattachInterval is the minimum gap between two automatic
 	// reattachments, so a node that keeps flapping cannot be re-added on every
@@ -79,6 +82,9 @@ func (f *Failover) withDefaults() Failover {
 	}
 	if out.AutoReattachInterval <= 0 {
 		out.AutoReattachInterval = DefaultAutoReattachInterval
+	}
+	if out.AutoReattach == nil {
+		out.AutoReattach = new(true)
 	}
 	return out
 }

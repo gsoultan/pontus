@@ -339,6 +339,16 @@ cache:
   ttl: 5s
   max_size: 128
 
+failover:
+  # Off by default and left off here: the suite runs a single primary, so a
+  # promotion has nowhere to go and would only add noise.
+  enabled: false
+  failure_threshold: 3
+  follow_primary: true
+  max_replica_lag: 10s
+  auto_reattach: true
+  auto_reattach_interval: 1m
+
 rate_limit:
   enabled: true
   rps: 500

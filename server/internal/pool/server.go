@@ -41,28 +41,33 @@ type Server struct {
 	// Stat samples its total and its shard counters independently, so an active
 	// count derived from them can read high while the background warm-up is in
 	// flight — and the balancer's cost function multiplies by this number.
-	checkedOut         atomic.Int64
-	maxConns           int32
-	minConns           int32
-	healthy            atomic.Bool
-	dialTimeout        time.Duration
-	maxIdleTime        time.Duration
-	maxLifetime        time.Duration
-	minIdle            int32
-	handler            protocol.Handler
-	tlsConfig          *tls.Config
-	latency            atomic.Int64 // nanoseconds
-	rtt                atomic.Int64 // nanoseconds
-	lastHealthy        atomic.Value // time.Time
-	breaker            health2.Breaker
-	ctx                context.Context
-	cancel             context.CancelFunc
-	mu                 sync.RWMutex
-	weight             int
-	waitTimeout        time.Duration
-	replicationLag     atomic.Int64 // nanoseconds
-	draining           atomic.Bool
-	roleCheckChan      chan struct{}
+	checkedOut     atomic.Int64
+	maxConns       int32
+	minConns       int32
+	healthy        atomic.Bool
+	dialTimeout    time.Duration
+	maxIdleTime    time.Duration
+	maxLifetime    time.Duration
+	minIdle        int32
+	handler        protocol.Handler
+	tlsConfig      *tls.Config
+	latency        atomic.Int64 // nanoseconds
+	rtt            atomic.Int64 // nanoseconds
+	lastHealthy    atomic.Value // time.Time
+	breaker        health2.Breaker
+	ctx            context.Context
+	cancel         context.CancelFunc
+	mu             sync.RWMutex
+	weight         int
+	waitTimeout    time.Duration
+	replicationLag atomic.Int64 // nanoseconds
+	draining       atomic.Bool
+	roleCheckChan  chan struct{}
+
+	// replicating tracks whether a replica has a WAL receiver attached, and
+	// replicatingSince when that run of streaming began — see reattach.go.
+	replicating        atomic.Bool
+	replicatingSince   atomic.Int64
 	totalRequests      atomic.Int64
 	totalErrors        atomic.Int64
 	errorRate          atomic.Uint64 // bits of float64
@@ -582,21 +587,39 @@ func (p *Server) Admin() *AdminSession { return p.admin }
 // authenticated a connection first, and it runs as the operator's admin user
 // rather than as whichever client last used the connection.
 func (p *Server) deepCheckAdmin(ctx context.Context) bool {
-	var inRecovery bool
-	if err := p.admin.QueryRow(ctx, "SELECT pg_is_in_recovery()").Scan(&inRecovery); err != nil {
+	var (
+		status    replicationStatus
+		replaySec float64
+	)
+	// This used to ask only for pg_is_in_recovery() and never touch replication
+	// lag, so with admin_dsn set — the recommended setup — ReplicationLag() was
+	// pinned at zero for the life of the process. Every lag gate downstream
+	// silently passed: the balancer's staleness filter, its cost penalty, and
+	// the failover manager's choice of which replica to promote.
+	if err := p.admin.QueryRow(ctx, replicationStatusQuery).
+		Scan(&status.inRecovery, &replaySec, &status.caughtUp, &status.streaming); err != nil {
 		p.SetHealthy(false)
 		return false
 	}
 	p.SetHealthy(true)
 
-	newRole := RolePrimary
-	if inRecovery {
-		newRole = RoleReplica
-	}
-	if p.Role() != newRole {
+	status.replayAge = time.Duration(replaySec * float64(time.Second))
+	p.replicationLag.Store(status.lag().Nanoseconds())
+	p.setReplicating(!status.inRecovery || status.streaming)
+
+	if newRole := status.role(); p.Role() != newRole {
 		slog.Info("Backend role changed", "address", p.address, "from", p.Role(), "to", newRole)
 		p.setRole(newRole)
 	}
+
+	// A replica with no WAL receiver is not replicating, however healthy it
+	// looks. Worth a line of its own: it is the state that serves stale reads
+	// without erroring.
+	if status.inRecovery && !status.streaming {
+		slog.Warn("Replica is not streaming from a primary; its data is going stale",
+			"address", p.address, "replay_age", status.lag().Round(time.Second))
+	}
+
 	return true
 }
 

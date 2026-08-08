@@ -66,6 +66,10 @@ type Backend interface {
 	// ReplicationLag returns the current replication lag.
 	ReplicationLag() time.Duration
 
+	// IsReplicating reports whether the backend is fit to serve reads. A
+	// primary always is; a replica only while it has a WAL receiver attached.
+	IsReplicating() bool
+
 	// LastHealthy returns the time when the backend last became healthy.
 	LastHealthy() time.Time
 

@@ -56,6 +56,7 @@ func (m *mockIntegrationBackend) RTT() time.Duration                      { retu
 func (m *mockIntegrationBackend) ReportLatency(time.Duration)             {}
 func (m *mockIntegrationBackend) ReportRTT(time.Duration)                 {}
 func (m *mockIntegrationBackend) ReplicationLag() time.Duration           { return 0 }
+func (m *mockIntegrationBackend) IsReplicating() bool                     { return true }
 func (m *mockIntegrationBackend) LastHealthy() time.Time                  { return time.Now() }
 func (m *mockIntegrationBackend) IsDraining() bool                        { return false }
 func (m *mockIntegrationBackend) SetDraining(bool)                        {}

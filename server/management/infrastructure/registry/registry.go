@@ -326,7 +326,7 @@ func failoverOptions(cfg *config.Options) orchestration2.Options {
 		FailureThreshold:     f.FailureThreshold,
 		FollowPrimary:        f.FollowPrimary,
 		FollowPrimaryTimeout: f.FollowPrimaryTimeout,
-		AutoReattach:         f.AutoReattach,
+		AutoReattach:         *f.AutoReattach,
 		AutoReattachInterval: f.AutoReattachInterval,
 	}
 }
