@@ -10,6 +10,7 @@ import { useReplicationStreams } from '../hooks/useReplicationStreams'
 import { useTerminateStream } from '../hooks/useTerminateStream'
 import { ConnectConsumerCard } from './ConnectConsumerCard'
 import { StreamsTable } from './StreamsTable'
+import { SlotsTable } from './SlotsTable'
 
 export function StreamsContainer() {
   const isAdmin = useAuthStore((state) => state.role === 'admin')
@@ -19,6 +20,7 @@ export function StreamsContainer() {
   const [target, setTarget] = useState<ReplicationStream | null>(null)
 
   const streams = data?.streams ?? []
+  const slots = data?.slots ?? []
   const used = data?.used ?? 0
   const budget = data?.budget ?? 0
   const usage = budget > 0 ? (used / budget) * 100 : 0
@@ -94,6 +96,19 @@ export function StreamsContainer() {
           <StreamsTable streams={streams} onTerminate={setTarget} isAdmin={isAdmin} />
         )}
       </Card>
+
+      {slots.length > 0 && (
+        <Card p={0}>
+          <Group justify="space-between" p="sm">
+            <Text fw={700}>Replication slots</Text>
+            <Text size="xs" c="dimmed">
+              Read from the primary. Shown apart from streams because PostgreSQL sees the proxy's
+              address, not the consumer's.
+            </Text>
+          </Group>
+          <SlotsTable slots={slots} />
+        </Card>
+      )}
 
       {target && (
         <ConfirmDangerModal

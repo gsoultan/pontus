@@ -338,6 +338,9 @@ message ListReplicationStreamsRequest {
 
 message ListReplicationStreamsResponse {
   repeated .api.proto.domain.ReplicationStream streams = 1;
+  // Slots read from the primary. Present even with no attached consumer: an
+  // abandoned slot still holds WAL, which is the failure worth seeing.
+  repeated .api.proto.domain.ReplicationSlot slots = 4;
   // Budget the operator set aside for streams, and how much is in use, so the
   // dashboard can say "3 of 4" without recomputing it from the node list.
   int32 used = 2;

@@ -3260,6 +3260,9 @@ func (x *ListReplicationStreamsRequest) GetProxyId() string {
 type ListReplicationStreamsResponse struct {
 	state   protoimpl.MessageState      `protogen:"open.v1"`
 	Streams []*domain.ReplicationStream `protobuf:"bytes,1,rep,name=streams,proto3" json:"streams,omitempty"`
+	// Slots read from the primary. Present even with no attached consumer: an
+	// abandoned slot still holds WAL, which is the failure worth seeing.
+	Slots []*domain.ReplicationSlot `protobuf:"bytes,4,rep,name=slots,proto3" json:"slots,omitempty"`
 	// Budget the operator set aside for streams, and how much is in use, so the
 	// dashboard can say "3 of 4" without recomputing it from the node list.
 	Used          int32 `protobuf:"varint,2,opt,name=used,proto3" json:"used,omitempty"`
@@ -3301,6 +3304,13 @@ func (*ListReplicationStreamsResponse) Descriptor() ([]byte, []int) {
 func (x *ListReplicationStreamsResponse) GetStreams() []*domain.ReplicationStream {
 	if x != nil {
 		return x.Streams
+	}
+	return nil
+}
+
+func (x *ListReplicationStreamsResponse) GetSlots() []*domain.ReplicationSlot {
+	if x != nil {
+		return x.Slots
 	}
 	return nil
 }
@@ -4775,9 +4785,10 @@ const file_api_proto_endpoints_management_proto_rawDesc = "" +
 	"\x1dListReplicationStreamsRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +
-	"\bproxy_id\x18\x02 \x01(\tR\aproxyId\"\x8b\x01\n" +
+	"\bproxy_id\x18\x02 \x01(\tR\aproxyId\"\xc4\x01\n" +
 	"\x1eListReplicationStreamsResponse\x12=\n" +
-	"\astreams\x18\x01 \x03(\v2#.api.proto.domain.ReplicationStreamR\astreams\x12\x12\n" +
+	"\astreams\x18\x01 \x03(\v2#.api.proto.domain.ReplicationStreamR\astreams\x127\n" +
+	"\x05slots\x18\x04 \x03(\v2!.api.proto.domain.ReplicationSlotR\x05slots\x12\x12\n" +
 	"\x04used\x18\x02 \x01(\x05R\x04used\x12\x16\n" +
 	"\x06budget\x18\x03 \x01(\x05R\x06budget\"z\n" +
 	"!TerminateReplicationStreamRequest\x12\x1d\n" +
@@ -4975,52 +4986,54 @@ var file_api_proto_endpoints_management_proto_goTypes = []any{
 	(*timestamppb.Timestamp)(nil),              // 94: google.protobuf.Timestamp
 	(*domain.LogEntry)(nil),                    // 95: api.proto.domain.LogEntry
 	(*domain.ReplicationStream)(nil),           // 96: api.proto.domain.ReplicationStream
-	(*domain.QueryInsight)(nil),                // 97: api.proto.domain.QueryInsight
-	(*domain.LockInsight)(nil),                 // 98: api.proto.domain.LockInsight
-	(*domain.ReplicationInsight)(nil),          // 99: api.proto.domain.ReplicationInsight
+	(*domain.ReplicationSlot)(nil),             // 97: api.proto.domain.ReplicationSlot
+	(*domain.QueryInsight)(nil),                // 98: api.proto.domain.QueryInsight
+	(*domain.LockInsight)(nil),                 // 99: api.proto.domain.LockInsight
+	(*domain.ReplicationInsight)(nil),          // 100: api.proto.domain.ReplicationInsight
 }
 var file_api_proto_endpoints_management_proto_depIdxs = []int32{
-	81, // 0: api.proto.endpoints.ListProjectsResponse.projects:type_name -> api.proto.domain.Project
-	81, // 1: api.proto.endpoints.CreateProjectRequest.project:type_name -> api.proto.domain.Project
-	81, // 2: api.proto.endpoints.CreateProjectResponse.project:type_name -> api.proto.domain.Project
-	82, // 3: api.proto.endpoints.AddProxyRequest.proxy:type_name -> api.proto.domain.ProxyConfig
-	82, // 4: api.proto.endpoints.AddProxyResponse.proxy:type_name -> api.proto.domain.ProxyConfig
-	82, // 5: api.proto.endpoints.UpdateProxyRequest.proxy:type_name -> api.proto.domain.ProxyConfig
-	83, // 6: api.proto.endpoints.GetStatusResponse.backends:type_name -> api.proto.domain.BackendStatus
-	84, // 7: api.proto.endpoints.GetStatusResponse.top_queries:type_name -> api.proto.domain.TopQuery
-	85, // 8: api.proto.endpoints.GetStatusResponse.system_metrics:type_name -> api.proto.domain.SystemMetrics
-	86, // 9: api.proto.endpoints.GetStatusResponse.cache_stats:type_name -> api.proto.domain.CacheStats
-	87, // 10: api.proto.endpoints.GetStatusResponse.history:type_name -> api.proto.domain.MetricSnapshot
-	88, // 11: api.proto.endpoints.GetStatusResponse.topology:type_name -> api.proto.domain.Topology
-	89, // 12: api.proto.endpoints.GetStatusResponse.adaptive_status:type_name -> api.proto.domain.AdaptiveStatus
-	90, // 13: api.proto.endpoints.GetStatusResponse.performance_suggestions:type_name -> api.proto.domain.PerformanceSuggestion
-	91, // 14: api.proto.endpoints.AddBackendRequest.config:type_name -> api.proto.domain.BackendConfig
-	91, // 15: api.proto.endpoints.UpdateBackendRequest.config:type_name -> api.proto.domain.BackendConfig
-	78, // 16: api.proto.endpoints.SetClusterConfigRequest.parameters:type_name -> api.proto.endpoints.SetClusterConfigRequest.ParametersEntry
-	79, // 17: api.proto.endpoints.GetClusterConfigResponse.parameters:type_name -> api.proto.endpoints.GetClusterConfigResponse.ParametersEntry
-	92, // 18: api.proto.endpoints.ExplainQueryResponse.recommendations:type_name -> api.proto.domain.Recommendation
-	80, // 19: api.proto.endpoints.TuneDatabaseResponse.nodes:type_name -> api.proto.endpoints.TuneDatabaseResponse.NodeResult
-	93, // 20: api.proto.endpoints.ApplyTuningRequest.suggestion:type_name -> api.proto.domain.TuningSuggestion
-	94, // 21: api.proto.endpoints.GetMetricsHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
-	94, // 22: api.proto.endpoints.GetMetricsHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
-	87, // 23: api.proto.endpoints.GetMetricsHistoryResponse.history:type_name -> api.proto.domain.MetricSnapshot
-	94, // 24: api.proto.endpoints.GetTopQueriesHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
-	94, // 25: api.proto.endpoints.GetTopQueriesHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
-	84, // 26: api.proto.endpoints.GetTopQueriesHistoryResponse.top_queries:type_name -> api.proto.domain.TopQuery
-	94, // 27: api.proto.endpoints.GetLogsRequest.start_time:type_name -> google.protobuf.Timestamp
-	94, // 28: api.proto.endpoints.GetLogsRequest.end_time:type_name -> google.protobuf.Timestamp
-	95, // 29: api.proto.endpoints.GetLogsResponse.logs:type_name -> api.proto.domain.LogEntry
-	96, // 30: api.proto.endpoints.ListReplicationStreamsResponse.streams:type_name -> api.proto.domain.ReplicationStream
-	97, // 31: api.proto.endpoints.GetBackendPostgresInsightsResponse.top_queries:type_name -> api.proto.domain.QueryInsight
-	98, // 32: api.proto.endpoints.GetBackendPostgresInsightsResponse.active_locks:type_name -> api.proto.domain.LockInsight
-	99, // 33: api.proto.endpoints.GetBackendPostgresInsightsResponse.replication_status:type_name -> api.proto.domain.ReplicationInsight
-	93, // 34: api.proto.endpoints.GetAgentInfoResponse.tuning_suggestions:type_name -> api.proto.domain.TuningSuggestion
-	93, // 35: api.proto.endpoints.TuneDatabaseResponse.NodeResult.suggestions:type_name -> api.proto.domain.TuningSuggestion
-	36, // [36:36] is the sub-list for method output_type
-	36, // [36:36] is the sub-list for method input_type
-	36, // [36:36] is the sub-list for extension type_name
-	36, // [36:36] is the sub-list for extension extendee
-	0,  // [0:36] is the sub-list for field type_name
+	81,  // 0: api.proto.endpoints.ListProjectsResponse.projects:type_name -> api.proto.domain.Project
+	81,  // 1: api.proto.endpoints.CreateProjectRequest.project:type_name -> api.proto.domain.Project
+	81,  // 2: api.proto.endpoints.CreateProjectResponse.project:type_name -> api.proto.domain.Project
+	82,  // 3: api.proto.endpoints.AddProxyRequest.proxy:type_name -> api.proto.domain.ProxyConfig
+	82,  // 4: api.proto.endpoints.AddProxyResponse.proxy:type_name -> api.proto.domain.ProxyConfig
+	82,  // 5: api.proto.endpoints.UpdateProxyRequest.proxy:type_name -> api.proto.domain.ProxyConfig
+	83,  // 6: api.proto.endpoints.GetStatusResponse.backends:type_name -> api.proto.domain.BackendStatus
+	84,  // 7: api.proto.endpoints.GetStatusResponse.top_queries:type_name -> api.proto.domain.TopQuery
+	85,  // 8: api.proto.endpoints.GetStatusResponse.system_metrics:type_name -> api.proto.domain.SystemMetrics
+	86,  // 9: api.proto.endpoints.GetStatusResponse.cache_stats:type_name -> api.proto.domain.CacheStats
+	87,  // 10: api.proto.endpoints.GetStatusResponse.history:type_name -> api.proto.domain.MetricSnapshot
+	88,  // 11: api.proto.endpoints.GetStatusResponse.topology:type_name -> api.proto.domain.Topology
+	89,  // 12: api.proto.endpoints.GetStatusResponse.adaptive_status:type_name -> api.proto.domain.AdaptiveStatus
+	90,  // 13: api.proto.endpoints.GetStatusResponse.performance_suggestions:type_name -> api.proto.domain.PerformanceSuggestion
+	91,  // 14: api.proto.endpoints.AddBackendRequest.config:type_name -> api.proto.domain.BackendConfig
+	91,  // 15: api.proto.endpoints.UpdateBackendRequest.config:type_name -> api.proto.domain.BackendConfig
+	78,  // 16: api.proto.endpoints.SetClusterConfigRequest.parameters:type_name -> api.proto.endpoints.SetClusterConfigRequest.ParametersEntry
+	79,  // 17: api.proto.endpoints.GetClusterConfigResponse.parameters:type_name -> api.proto.endpoints.GetClusterConfigResponse.ParametersEntry
+	92,  // 18: api.proto.endpoints.ExplainQueryResponse.recommendations:type_name -> api.proto.domain.Recommendation
+	80,  // 19: api.proto.endpoints.TuneDatabaseResponse.nodes:type_name -> api.proto.endpoints.TuneDatabaseResponse.NodeResult
+	93,  // 20: api.proto.endpoints.ApplyTuningRequest.suggestion:type_name -> api.proto.domain.TuningSuggestion
+	94,  // 21: api.proto.endpoints.GetMetricsHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
+	94,  // 22: api.proto.endpoints.GetMetricsHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
+	87,  // 23: api.proto.endpoints.GetMetricsHistoryResponse.history:type_name -> api.proto.domain.MetricSnapshot
+	94,  // 24: api.proto.endpoints.GetTopQueriesHistoryRequest.start_time:type_name -> google.protobuf.Timestamp
+	94,  // 25: api.proto.endpoints.GetTopQueriesHistoryRequest.end_time:type_name -> google.protobuf.Timestamp
+	84,  // 26: api.proto.endpoints.GetTopQueriesHistoryResponse.top_queries:type_name -> api.proto.domain.TopQuery
+	94,  // 27: api.proto.endpoints.GetLogsRequest.start_time:type_name -> google.protobuf.Timestamp
+	94,  // 28: api.proto.endpoints.GetLogsRequest.end_time:type_name -> google.protobuf.Timestamp
+	95,  // 29: api.proto.endpoints.GetLogsResponse.logs:type_name -> api.proto.domain.LogEntry
+	96,  // 30: api.proto.endpoints.ListReplicationStreamsResponse.streams:type_name -> api.proto.domain.ReplicationStream
+	97,  // 31: api.proto.endpoints.ListReplicationStreamsResponse.slots:type_name -> api.proto.domain.ReplicationSlot
+	98,  // 32: api.proto.endpoints.GetBackendPostgresInsightsResponse.top_queries:type_name -> api.proto.domain.QueryInsight
+	99,  // 33: api.proto.endpoints.GetBackendPostgresInsightsResponse.active_locks:type_name -> api.proto.domain.LockInsight
+	100, // 34: api.proto.endpoints.GetBackendPostgresInsightsResponse.replication_status:type_name -> api.proto.domain.ReplicationInsight
+	93,  // 35: api.proto.endpoints.GetAgentInfoResponse.tuning_suggestions:type_name -> api.proto.domain.TuningSuggestion
+	93,  // 36: api.proto.endpoints.TuneDatabaseResponse.NodeResult.suggestions:type_name -> api.proto.domain.TuningSuggestion
+	37,  // [37:37] is the sub-list for method output_type
+	37,  // [37:37] is the sub-list for method input_type
+	37,  // [37:37] is the sub-list for extension type_name
+	37,  // [37:37] is the sub-list for extension extendee
+	0,   // [0:37] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_endpoints_management_proto_init() }

@@ -40,6 +40,26 @@ message BackendStatus {
   int32 max_stream_conns = 25;
 }
 
+// ReplicationSlot is one row of pg_replication_slots.
+//
+// Reported separately from ReplicationStream on purpose: PostgreSQL sees the
+// proxy's address in pg_stat_replication, not the consumer's, so a proxied
+// stream cannot be correlated to a slot without parsing the replication
+// command exchange. Slots are authoritative about retained WAL; streams are
+// authoritative about who is connected.
+message ReplicationSlot {
+  string name = 1;
+  string plugin = 2;
+  // "logical" or "physical".
+  string slot_type = 3;
+  bool active = 4;
+  string database = 5;
+  string confirmed_lsn = 6;
+  // WAL held by this slot. An inactive slot that keeps growing is what fills
+  // the disk, so this is the number worth alerting on.
+  int64 retained_bytes = 7;
+}
+
 // ReplicationStream is one CDC or physical replication consumer.
 //
 // A stream is pinned to the node holding its slot: it is not balanced and it

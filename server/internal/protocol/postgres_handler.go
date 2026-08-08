@@ -692,6 +692,12 @@ func (p *PostgresHandler) GetReplicationLag(ctx context.Context, conn net.Conn) 
 
 // CreateReplicationSlot creates a physical replication slot.
 func (p *PostgresHandler) CreateReplicationSlot(ctx context.Context, conn net.Conn, slotName string) error {
+	// The statement is assembled as text because the simple query protocol has
+	// no bind parameters, so the name is whitelisted rather than escaped. It
+	// arrives from the management API and was previously interpolated raw.
+	if err := ValidateSlotName(slotName); err != nil {
+		return err
+	}
 	query := fmt.Sprintf("SELECT pg_create_physical_replication_slot('%s')", slotName)
 	payload := make([]byte, 1+4+len(query)+1)
 	payload[0] = 'Q'
@@ -1082,4 +1088,22 @@ func (p *PostgresHandler) StartReplication(ctx context.Context, client, server n
 		return fmt.Errorf("forward replication startup: %w", err)
 	}
 	return relayAuth(client, server)
+}
+
+// CreateLogicalReplicationSlot creates a logical slot with the given output
+// plugin, so a CDC consumer has something to attach to.
+//
+// Separate from the physical variant because the two are not interchangeable:
+// a logical slot decodes changes through a plugin and can only be created on a
+// primary, while a physical slot just pins WAL for a standby.
+func (p *PostgresHandler) CreateLogicalReplicationSlot(ctx context.Context, conn net.Conn, slotName, plugin string) error {
+	if err := ValidateSlotName(slotName); err != nil {
+		return err
+	}
+	if err := ValidateOutputPlugin(plugin); err != nil {
+		return err
+	}
+
+	query := fmt.Sprintf("SELECT pg_create_logical_replication_slot('%s', '%s')", slotName, plugin)
+	return p.Execute(ctx, conn, query)
 }

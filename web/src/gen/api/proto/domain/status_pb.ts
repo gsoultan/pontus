@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/proto/domain/status.proto.
  */
 export const file_api_proto_domain_status: GenFile = /*@__PURE__*/
-  fileDesc("Ch1hcGkvcHJvdG8vZG9tYWluL3N0YXR1cy5wcm90bxIQYXBpLnByb3RvLmRvbWFpbiKOBQoNQmFja2VuZFN0YXR1cxIPCgdhZGRyZXNzGAEgASgJEgwKBHpvbmUYDyABKAkSDwoHaGVhbHRoeRgCIAEoCBIUCgxhY3RpdmVfY29ubnMYAyABKAMSLgoKbGFzdF9jaGVjaxgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDAoEcm9sZRgFIAEoCRISCgpsYXRlbmN5X21zGAYgASgDEhoKEnJlcGxpY2F0aW9uX2xhZ19tcxgHIAEoAxITCgtpc19kcmFpbmluZxgIIAEoCBIOCgZ3ZWlnaHQYCSABKAUSEQoJbWF4X2Nvbm5zGAogASgFEhkKEWN1cnJlbnRfbWF4X2Nvbm5zGBAgASgFEhIKCmlkbGVfY29ubnMYCyABKAUSFwoPd2FpdF9xdWV1ZV9zaXplGAwgASgDEhYKDnRvdGFsX3JlcXVlc3RzGA0gASgDEhQKDHRvdGFsX2Vycm9ycxgOIAEoAxIOCgZydHRfbXMYESABKAMSGAoQbWFuYWdlZF9ieV9hZ2VudBgSIAEoCBIVCg1hZ2VudF9hZGRyZXNzGBMgASgJEjsKDGFnZW50X2NvbmZpZxgUIAEoCzIlLmFwaS5wcm90by5kb21haW4uQWdlbnREYXRhYmFzZUNvbmZpZxI1CgpkYl9tZXRyaWNzGBUgASgLMiEuYXBpLnByb3RvLmRvbWFpbi5EYXRhYmFzZU1ldHJpY3MSGQoRaW5zdGFsbGVkX3ZlcnNpb24YFiABKAkSGwoTcmVjb21tZW5kZWRfdmVyc2lvbhgXIAEoCRIUCgxzdHJlYW1fY29ubnMYGCABKAUSGAoQbWF4X3N0cmVhbV9jb25ucxgZIAEoBSKVAgoRUmVwbGljYXRpb25TdHJlYW0SCgoCaWQYASABKAkSEQoJc2xvdF9uYW1lGAIgASgJEhMKC2NsaWVudF9hZGRyGAMgASgJEhQKDGJhY2tlbmRfYWRkchgEIAEoCRIQCghkYXRhYmFzZRgFIAEoCRIMCgR1c2VyGAYgASgJEgwKBGtpbmQYByABKAkSDgoGcGx1Z2luGAggASgJEi4KCnN0YXJ0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhEKCWxhZ19ieXRlcxgKIAEoAxIOCgZsYWdfbXMYCyABKAMSFQoNY29uZmlybWVkX2xzbhgMIAEoCRIOCgZhY3RpdmUYDSABKAgidwoOQWRhcHRpdmVTdGF0dXMSFAoMaXNfdGhyb3R0bGVkGAEgASgIEhcKD3Rocm90dGxlX3JlYXNvbhgCIAEoCRIbChNjdXJyZW50X21heF93YWl0ZXJzGAMgASgFEhkKEWFjdGl2ZV9nb3JvdXRpbmVzGAQgASgFIloKFVBlcmZvcm1hbmNlU3VnZ2VzdGlvbhINCgV0aXRsZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRINCgVsZXZlbBgDIAEoCRIOCgZhY3Rpb24YBCABKAkiaAoIVG9wb2xvZ3kSLQoFbm9kZXMYASADKAsyHi5hcGkucHJvdG8uZG9tYWluLlRvcG9sb2d5Tm9kZRItCgVlZGdlcxgCIAMoCzIeLmFwaS5wcm90by5kb21haW4uVG9wb2xvZ3lFZGdlIlgKDFRvcG9sb2d5Tm9kZRIKCgJpZBgBIAEoCRINCgVsYWJlbBgCIAEoCRIMCgR0eXBlGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIPCgdhZGRyZXNzGAUgASgJIkUKDFRvcG9sb2d5RWRnZRIMCgRmcm9tGAEgASgJEgoKAnRvGAIgASgJEg0KBWxhYmVsGAMgASgJEgwKBHR5cGUYBCABKAkihAEKDk1ldHJpY1NuYXBzaG90Ei0KCXRpbWVzdGFtcBgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGwoTcmVxdWVzdHNfcGVyX3NlY29uZBgCIAEoAhISCgplcnJvcl9yYXRlGAMgASgCEhIKCmxhdGVuY3lfbXMYBCABKAIiUgoKQ2FjaGVTdGF0cxIMCgRoaXRzGAEgASgDEg4KBm1pc3NlcxgCIAEoAxITCgtpdGVtc19jb3VudBgDIAEoAxIRCgloaXRfcmF0aW8YBCABKAJCLVorZ2l0aHViLmNvbS9nc291bHRhbi9wb250dXMvYXBpL3Byb3RvL2RvbWFpbmIGcHJvdG8z", [file_google_protobuf_timestamp, file_api_proto_domain_project, file_api_proto_domain_metrics]);
+  fileDesc("Ch1hcGkvcHJvdG8vZG9tYWluL3N0YXR1cy5wcm90bxIQYXBpLnByb3RvLmRvbWFpbiKOBQoNQmFja2VuZFN0YXR1cxIPCgdhZGRyZXNzGAEgASgJEgwKBHpvbmUYDyABKAkSDwoHaGVhbHRoeRgCIAEoCBIUCgxhY3RpdmVfY29ubnMYAyABKAMSLgoKbGFzdF9jaGVjaxgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDAoEcm9sZRgFIAEoCRISCgpsYXRlbmN5X21zGAYgASgDEhoKEnJlcGxpY2F0aW9uX2xhZ19tcxgHIAEoAxITCgtpc19kcmFpbmluZxgIIAEoCBIOCgZ3ZWlnaHQYCSABKAUSEQoJbWF4X2Nvbm5zGAogASgFEhkKEWN1cnJlbnRfbWF4X2Nvbm5zGBAgASgFEhIKCmlkbGVfY29ubnMYCyABKAUSFwoPd2FpdF9xdWV1ZV9zaXplGAwgASgDEhYKDnRvdGFsX3JlcXVlc3RzGA0gASgDEhQKDHRvdGFsX2Vycm9ycxgOIAEoAxIOCgZydHRfbXMYESABKAMSGAoQbWFuYWdlZF9ieV9hZ2VudBgSIAEoCBIVCg1hZ2VudF9hZGRyZXNzGBMgASgJEjsKDGFnZW50X2NvbmZpZxgUIAEoCzIlLmFwaS5wcm90by5kb21haW4uQWdlbnREYXRhYmFzZUNvbmZpZxI1CgpkYl9tZXRyaWNzGBUgASgLMiEuYXBpLnByb3RvLmRvbWFpbi5EYXRhYmFzZU1ldHJpY3MSGQoRaW5zdGFsbGVkX3ZlcnNpb24YFiABKAkSGwoTcmVjb21tZW5kZWRfdmVyc2lvbhgXIAEoCRIUCgxzdHJlYW1fY29ubnMYGCABKAUSGAoQbWF4X3N0cmVhbV9jb25ucxgZIAEoBSKTAQoPUmVwbGljYXRpb25TbG90EgwKBG5hbWUYASABKAkSDgoGcGx1Z2luGAIgASgJEhEKCXNsb3RfdHlwZRgDIAEoCRIOCgZhY3RpdmUYBCABKAgSEAoIZGF0YWJhc2UYBSABKAkSFQoNY29uZmlybWVkX2xzbhgGIAEoCRIWCg5yZXRhaW5lZF9ieXRlcxgHIAEoAyKVAgoRUmVwbGljYXRpb25TdHJlYW0SCgoCaWQYASABKAkSEQoJc2xvdF9uYW1lGAIgASgJEhMKC2NsaWVudF9hZGRyGAMgASgJEhQKDGJhY2tlbmRfYWRkchgEIAEoCRIQCghkYXRhYmFzZRgFIAEoCRIMCgR1c2VyGAYgASgJEgwKBGtpbmQYByABKAkSDgoGcGx1Z2luGAggASgJEi4KCnN0YXJ0ZWRfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhEKCWxhZ19ieXRlcxgKIAEoAxIOCgZsYWdfbXMYCyABKAMSFQoNY29uZmlybWVkX2xzbhgMIAEoCRIOCgZhY3RpdmUYDSABKAgidwoOQWRhcHRpdmVTdGF0dXMSFAoMaXNfdGhyb3R0bGVkGAEgASgIEhcKD3Rocm90dGxlX3JlYXNvbhgCIAEoCRIbChNjdXJyZW50X21heF93YWl0ZXJzGAMgASgFEhkKEWFjdGl2ZV9nb3JvdXRpbmVzGAQgASgFIloKFVBlcmZvcm1hbmNlU3VnZ2VzdGlvbhINCgV0aXRsZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRINCgVsZXZlbBgDIAEoCRIOCgZhY3Rpb24YBCABKAkiaAoIVG9wb2xvZ3kSLQoFbm9kZXMYASADKAsyHi5hcGkucHJvdG8uZG9tYWluLlRvcG9sb2d5Tm9kZRItCgVlZGdlcxgCIAMoCzIeLmFwaS5wcm90by5kb21haW4uVG9wb2xvZ3lFZGdlIlgKDFRvcG9sb2d5Tm9kZRIKCgJpZBgBIAEoCRINCgVsYWJlbBgCIAEoCRIMCgR0eXBlGAMgASgJEg4KBnN0YXR1cxgEIAEoCRIPCgdhZGRyZXNzGAUgASgJIkUKDFRvcG9sb2d5RWRnZRIMCgRmcm9tGAEgASgJEgoKAnRvGAIgASgJEg0KBWxhYmVsGAMgASgJEgwKBHR5cGUYBCABKAkihAEKDk1ldHJpY1NuYXBzaG90Ei0KCXRpbWVzdGFtcBgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGwoTcmVxdWVzdHNfcGVyX3NlY29uZBgCIAEoAhISCgplcnJvcl9yYXRlGAMgASgCEhIKCmxhdGVuY3lfbXMYBCABKAIiUgoKQ2FjaGVTdGF0cxIMCgRoaXRzGAEgASgDEg4KBm1pc3NlcxgCIAEoAxITCgtpdGVtc19jb3VudBgDIAEoAxIRCgloaXRfcmF0aW8YBCABKAJCLVorZ2l0aHViLmNvbS9nc291bHRhbi9wb250dXMvYXBpL3Byb3RvL2RvbWFpbmIGcHJvdG8z", [file_google_protobuf_timestamp, file_api_proto_domain_project, file_api_proto_domain_metrics]);
 
 /**
  * @generated from message api.proto.domain.BackendStatus
@@ -161,6 +161,66 @@ export const BackendStatusSchema: GenMessage<BackendStatus> = /*@__PURE__*/
   messageDesc(file_api_proto_domain_status, 0);
 
 /**
+ * ReplicationSlot is one row of pg_replication_slots.
+ *
+ * Reported separately from ReplicationStream on purpose: PostgreSQL sees the
+ * proxy's address in pg_stat_replication, not the consumer's, so a proxied
+ * stream cannot be correlated to a slot without parsing the replication
+ * command exchange. Slots are authoritative about retained WAL; streams are
+ * authoritative about who is connected.
+ *
+ * @generated from message api.proto.domain.ReplicationSlot
+ */
+export type ReplicationSlot = Message<"api.proto.domain.ReplicationSlot"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string plugin = 2;
+   */
+  plugin: string;
+
+  /**
+   * "logical" or "physical".
+   *
+   * @generated from field: string slot_type = 3;
+   */
+  slotType: string;
+
+  /**
+   * @generated from field: bool active = 4;
+   */
+  active: boolean;
+
+  /**
+   * @generated from field: string database = 5;
+   */
+  database: string;
+
+  /**
+   * @generated from field: string confirmed_lsn = 6;
+   */
+  confirmedLsn: string;
+
+  /**
+   * WAL held by this slot. An inactive slot that keeps growing is what fills
+   * the disk, so this is the number worth alerting on.
+   *
+   * @generated from field: int64 retained_bytes = 7;
+   */
+  retainedBytes: bigint;
+};
+
+/**
+ * Describes the message api.proto.domain.ReplicationSlot.
+ * Use `create(ReplicationSlotSchema)` to create a new message.
+ */
+export const ReplicationSlotSchema: GenMessage<ReplicationSlot> = /*@__PURE__*/
+  messageDesc(file_api_proto_domain_status, 1);
+
+/**
  * ReplicationStream is one CDC or physical replication consumer.
  *
  * A stream is pinned to the node holding its slot: it is not balanced and it
@@ -251,7 +311,7 @@ export type ReplicationStream = Message<"api.proto.domain.ReplicationStream"> & 
  * Use `create(ReplicationStreamSchema)` to create a new message.
  */
 export const ReplicationStreamSchema: GenMessage<ReplicationStream> = /*@__PURE__*/
-  messageDesc(file_api_proto_domain_status, 1);
+  messageDesc(file_api_proto_domain_status, 2);
 
 /**
  * @generated from message api.proto.domain.AdaptiveStatus
@@ -283,7 +343,7 @@ export type AdaptiveStatus = Message<"api.proto.domain.AdaptiveStatus"> & {
  * Use `create(AdaptiveStatusSchema)` to create a new message.
  */
 export const AdaptiveStatusSchema: GenMessage<AdaptiveStatus> = /*@__PURE__*/
-  messageDesc(file_api_proto_domain_status, 2);
+  messageDesc(file_api_proto_domain_status, 3);
 
 /**
  * @generated from message api.proto.domain.PerformanceSuggestion
@@ -317,7 +377,7 @@ export type PerformanceSuggestion = Message<"api.proto.domain.PerformanceSuggest
  * Use `create(PerformanceSuggestionSchema)` to create a new message.
  */
 export const PerformanceSuggestionSchema: GenMessage<PerformanceSuggestion> = /*@__PURE__*/
-  messageDesc(file_api_proto_domain_status, 3);
+  messageDesc(file_api_proto_domain_status, 4);
 
 /**
  * @generated from message api.proto.domain.Topology
@@ -339,7 +399,7 @@ export type Topology = Message<"api.proto.domain.Topology"> & {
  * Use `create(TopologySchema)` to create a new message.
  */
 export const TopologySchema: GenMessage<Topology> = /*@__PURE__*/
-  messageDesc(file_api_proto_domain_status, 4);
+  messageDesc(file_api_proto_domain_status, 5);
 
 /**
  * @generated from message api.proto.domain.TopologyNode
@@ -380,7 +440,7 @@ export type TopologyNode = Message<"api.proto.domain.TopologyNode"> & {
  * Use `create(TopologyNodeSchema)` to create a new message.
  */
 export const TopologyNodeSchema: GenMessage<TopologyNode> = /*@__PURE__*/
-  messageDesc(file_api_proto_domain_status, 5);
+  messageDesc(file_api_proto_domain_status, 6);
 
 /**
  * @generated from message api.proto.domain.TopologyEdge
@@ -412,7 +472,7 @@ export type TopologyEdge = Message<"api.proto.domain.TopologyEdge"> & {
  * Use `create(TopologyEdgeSchema)` to create a new message.
  */
 export const TopologyEdgeSchema: GenMessage<TopologyEdge> = /*@__PURE__*/
-  messageDesc(file_api_proto_domain_status, 6);
+  messageDesc(file_api_proto_domain_status, 7);
 
 /**
  * @generated from message api.proto.domain.MetricSnapshot
@@ -444,7 +504,7 @@ export type MetricSnapshot = Message<"api.proto.domain.MetricSnapshot"> & {
  * Use `create(MetricSnapshotSchema)` to create a new message.
  */
 export const MetricSnapshotSchema: GenMessage<MetricSnapshot> = /*@__PURE__*/
-  messageDesc(file_api_proto_domain_status, 7);
+  messageDesc(file_api_proto_domain_status, 8);
 
 /**
  * @generated from message api.proto.domain.CacheStats
@@ -476,5 +536,5 @@ export type CacheStats = Message<"api.proto.domain.CacheStats"> & {
  * Use `create(CacheStatsSchema)` to create a new message.
  */
 export const CacheStatsSchema: GenMessage<CacheStats> = /*@__PURE__*/
-  messageDesc(file_api_proto_domain_status, 8);
+  messageDesc(file_api_proto_domain_status, 9);
 

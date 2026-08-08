@@ -262,6 +262,108 @@ func (x *BackendStatus) GetMaxStreamConns() int32 {
 	return 0
 }
 
+// ReplicationSlot is one row of pg_replication_slots.
+//
+// Reported separately from ReplicationStream on purpose: PostgreSQL sees the
+// proxy's address in pg_stat_replication, not the consumer's, so a proxied
+// stream cannot be correlated to a slot without parsing the replication
+// command exchange. Slots are authoritative about retained WAL; streams are
+// authoritative about who is connected.
+type ReplicationSlot struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Name   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Plugin string                 `protobuf:"bytes,2,opt,name=plugin,proto3" json:"plugin,omitempty"`
+	// "logical" or "physical".
+	SlotType     string `protobuf:"bytes,3,opt,name=slot_type,json=slotType,proto3" json:"slot_type,omitempty"`
+	Active       bool   `protobuf:"varint,4,opt,name=active,proto3" json:"active,omitempty"`
+	Database     string `protobuf:"bytes,5,opt,name=database,proto3" json:"database,omitempty"`
+	ConfirmedLsn string `protobuf:"bytes,6,opt,name=confirmed_lsn,json=confirmedLsn,proto3" json:"confirmed_lsn,omitempty"`
+	// WAL held by this slot. An inactive slot that keeps growing is what fills
+	// the disk, so this is the number worth alerting on.
+	RetainedBytes int64 `protobuf:"varint,7,opt,name=retained_bytes,json=retainedBytes,proto3" json:"retained_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReplicationSlot) Reset() {
+	*x = ReplicationSlot{}
+	mi := &file_api_proto_domain_status_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplicationSlot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplicationSlot) ProtoMessage() {}
+
+func (x *ReplicationSlot) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_domain_status_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplicationSlot.ProtoReflect.Descriptor instead.
+func (*ReplicationSlot) Descriptor() ([]byte, []int) {
+	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ReplicationSlot) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ReplicationSlot) GetPlugin() string {
+	if x != nil {
+		return x.Plugin
+	}
+	return ""
+}
+
+func (x *ReplicationSlot) GetSlotType() string {
+	if x != nil {
+		return x.SlotType
+	}
+	return ""
+}
+
+func (x *ReplicationSlot) GetActive() bool {
+	if x != nil {
+		return x.Active
+	}
+	return false
+}
+
+func (x *ReplicationSlot) GetDatabase() string {
+	if x != nil {
+		return x.Database
+	}
+	return ""
+}
+
+func (x *ReplicationSlot) GetConfirmedLsn() string {
+	if x != nil {
+		return x.ConfirmedLsn
+	}
+	return ""
+}
+
+func (x *ReplicationSlot) GetRetainedBytes() int64 {
+	if x != nil {
+		return x.RetainedBytes
+	}
+	return 0
+}
+
 // ReplicationStream is one CDC or physical replication consumer.
 //
 // A stream is pinned to the node holding its slot: it is not balanced and it
@@ -293,7 +395,7 @@ type ReplicationStream struct {
 
 func (x *ReplicationStream) Reset() {
 	*x = ReplicationStream{}
-	mi := &file_api_proto_domain_status_proto_msgTypes[1]
+	mi := &file_api_proto_domain_status_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -305,7 +407,7 @@ func (x *ReplicationStream) String() string {
 func (*ReplicationStream) ProtoMessage() {}
 
 func (x *ReplicationStream) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_domain_status_proto_msgTypes[1]
+	mi := &file_api_proto_domain_status_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -318,7 +420,7 @@ func (x *ReplicationStream) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplicationStream.ProtoReflect.Descriptor instead.
 func (*ReplicationStream) Descriptor() ([]byte, []int) {
-	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{1}
+	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ReplicationStream) GetId() string {
@@ -424,7 +526,7 @@ type AdaptiveStatus struct {
 
 func (x *AdaptiveStatus) Reset() {
 	*x = AdaptiveStatus{}
-	mi := &file_api_proto_domain_status_proto_msgTypes[2]
+	mi := &file_api_proto_domain_status_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -436,7 +538,7 @@ func (x *AdaptiveStatus) String() string {
 func (*AdaptiveStatus) ProtoMessage() {}
 
 func (x *AdaptiveStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_domain_status_proto_msgTypes[2]
+	mi := &file_api_proto_domain_status_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -449,7 +551,7 @@ func (x *AdaptiveStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdaptiveStatus.ProtoReflect.Descriptor instead.
 func (*AdaptiveStatus) Descriptor() ([]byte, []int) {
-	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{2}
+	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *AdaptiveStatus) GetIsThrottled() bool {
@@ -492,7 +594,7 @@ type PerformanceSuggestion struct {
 
 func (x *PerformanceSuggestion) Reset() {
 	*x = PerformanceSuggestion{}
-	mi := &file_api_proto_domain_status_proto_msgTypes[3]
+	mi := &file_api_proto_domain_status_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -504,7 +606,7 @@ func (x *PerformanceSuggestion) String() string {
 func (*PerformanceSuggestion) ProtoMessage() {}
 
 func (x *PerformanceSuggestion) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_domain_status_proto_msgTypes[3]
+	mi := &file_api_proto_domain_status_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -517,7 +619,7 @@ func (x *PerformanceSuggestion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerformanceSuggestion.ProtoReflect.Descriptor instead.
 func (*PerformanceSuggestion) Descriptor() ([]byte, []int) {
-	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{3}
+	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PerformanceSuggestion) GetTitle() string {
@@ -558,7 +660,7 @@ type Topology struct {
 
 func (x *Topology) Reset() {
 	*x = Topology{}
-	mi := &file_api_proto_domain_status_proto_msgTypes[4]
+	mi := &file_api_proto_domain_status_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -570,7 +672,7 @@ func (x *Topology) String() string {
 func (*Topology) ProtoMessage() {}
 
 func (x *Topology) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_domain_status_proto_msgTypes[4]
+	mi := &file_api_proto_domain_status_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -583,7 +685,7 @@ func (x *Topology) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Topology.ProtoReflect.Descriptor instead.
 func (*Topology) Descriptor() ([]byte, []int) {
-	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{4}
+	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Topology) GetNodes() []*TopologyNode {
@@ -613,7 +715,7 @@ type TopologyNode struct {
 
 func (x *TopologyNode) Reset() {
 	*x = TopologyNode{}
-	mi := &file_api_proto_domain_status_proto_msgTypes[5]
+	mi := &file_api_proto_domain_status_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -625,7 +727,7 @@ func (x *TopologyNode) String() string {
 func (*TopologyNode) ProtoMessage() {}
 
 func (x *TopologyNode) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_domain_status_proto_msgTypes[5]
+	mi := &file_api_proto_domain_status_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -638,7 +740,7 @@ func (x *TopologyNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TopologyNode.ProtoReflect.Descriptor instead.
 func (*TopologyNode) Descriptor() ([]byte, []int) {
-	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{5}
+	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *TopologyNode) GetId() string {
@@ -688,7 +790,7 @@ type TopologyEdge struct {
 
 func (x *TopologyEdge) Reset() {
 	*x = TopologyEdge{}
-	mi := &file_api_proto_domain_status_proto_msgTypes[6]
+	mi := &file_api_proto_domain_status_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -700,7 +802,7 @@ func (x *TopologyEdge) String() string {
 func (*TopologyEdge) ProtoMessage() {}
 
 func (x *TopologyEdge) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_domain_status_proto_msgTypes[6]
+	mi := &file_api_proto_domain_status_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -713,7 +815,7 @@ func (x *TopologyEdge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TopologyEdge.ProtoReflect.Descriptor instead.
 func (*TopologyEdge) Descriptor() ([]byte, []int) {
-	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{6}
+	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *TopologyEdge) GetFrom() string {
@@ -756,7 +858,7 @@ type MetricSnapshot struct {
 
 func (x *MetricSnapshot) Reset() {
 	*x = MetricSnapshot{}
-	mi := &file_api_proto_domain_status_proto_msgTypes[7]
+	mi := &file_api_proto_domain_status_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -768,7 +870,7 @@ func (x *MetricSnapshot) String() string {
 func (*MetricSnapshot) ProtoMessage() {}
 
 func (x *MetricSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_domain_status_proto_msgTypes[7]
+	mi := &file_api_proto_domain_status_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -781,7 +883,7 @@ func (x *MetricSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricSnapshot.ProtoReflect.Descriptor instead.
 func (*MetricSnapshot) Descriptor() ([]byte, []int) {
-	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{7}
+	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *MetricSnapshot) GetTimestamp() *timestamppb.Timestamp {
@@ -824,7 +926,7 @@ type CacheStats struct {
 
 func (x *CacheStats) Reset() {
 	*x = CacheStats{}
-	mi := &file_api_proto_domain_status_proto_msgTypes[8]
+	mi := &file_api_proto_domain_status_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -836,7 +938,7 @@ func (x *CacheStats) String() string {
 func (*CacheStats) ProtoMessage() {}
 
 func (x *CacheStats) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_domain_status_proto_msgTypes[8]
+	mi := &file_api_proto_domain_status_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -849,7 +951,7 @@ func (x *CacheStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CacheStats.ProtoReflect.Descriptor instead.
 func (*CacheStats) Descriptor() ([]byte, []int) {
-	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{8}
+	return file_api_proto_domain_status_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CacheStats) GetHits() int64 {
@@ -916,7 +1018,15 @@ const file_api_proto_domain_status_proto_rawDesc = "" +
 	"\x11installed_version\x18\x16 \x01(\tR\x10installedVersion\x12/\n" +
 	"\x13recommended_version\x18\x17 \x01(\tR\x12recommendedVersion\x12!\n" +
 	"\fstream_conns\x18\x18 \x01(\x05R\vstreamConns\x12(\n" +
-	"\x10max_stream_conns\x18\x19 \x01(\x05R\x0emaxStreamConns\"\x8c\x03\n" +
+	"\x10max_stream_conns\x18\x19 \x01(\x05R\x0emaxStreamConns\"\xda\x01\n" +
+	"\x0fReplicationSlot\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06plugin\x18\x02 \x01(\tR\x06plugin\x12\x1b\n" +
+	"\tslot_type\x18\x03 \x01(\tR\bslotType\x12\x16\n" +
+	"\x06active\x18\x04 \x01(\bR\x06active\x12\x1a\n" +
+	"\bdatabase\x18\x05 \x01(\tR\bdatabase\x12#\n" +
+	"\rconfirmed_lsn\x18\x06 \x01(\tR\fconfirmedLsn\x12%\n" +
+	"\x0eretained_bytes\x18\a \x01(\x03R\rretainedBytes\"\x8c\x03\n" +
 	"\x11ReplicationStream\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tslot_name\x18\x02 \x01(\tR\bslotName\x12\x1f\n" +
@@ -985,29 +1095,30 @@ func file_api_proto_domain_status_proto_rawDescGZIP() []byte {
 	return file_api_proto_domain_status_proto_rawDescData
 }
 
-var file_api_proto_domain_status_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_api_proto_domain_status_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_api_proto_domain_status_proto_goTypes = []any{
 	(*BackendStatus)(nil),         // 0: api.proto.domain.BackendStatus
-	(*ReplicationStream)(nil),     // 1: api.proto.domain.ReplicationStream
-	(*AdaptiveStatus)(nil),        // 2: api.proto.domain.AdaptiveStatus
-	(*PerformanceSuggestion)(nil), // 3: api.proto.domain.PerformanceSuggestion
-	(*Topology)(nil),              // 4: api.proto.domain.Topology
-	(*TopologyNode)(nil),          // 5: api.proto.domain.TopologyNode
-	(*TopologyEdge)(nil),          // 6: api.proto.domain.TopologyEdge
-	(*MetricSnapshot)(nil),        // 7: api.proto.domain.MetricSnapshot
-	(*CacheStats)(nil),            // 8: api.proto.domain.CacheStats
-	(*timestamppb.Timestamp)(nil), // 9: google.protobuf.Timestamp
-	(*AgentDatabaseConfig)(nil),   // 10: api.proto.domain.AgentDatabaseConfig
-	(*DatabaseMetrics)(nil),       // 11: api.proto.domain.DatabaseMetrics
+	(*ReplicationSlot)(nil),       // 1: api.proto.domain.ReplicationSlot
+	(*ReplicationStream)(nil),     // 2: api.proto.domain.ReplicationStream
+	(*AdaptiveStatus)(nil),        // 3: api.proto.domain.AdaptiveStatus
+	(*PerformanceSuggestion)(nil), // 4: api.proto.domain.PerformanceSuggestion
+	(*Topology)(nil),              // 5: api.proto.domain.Topology
+	(*TopologyNode)(nil),          // 6: api.proto.domain.TopologyNode
+	(*TopologyEdge)(nil),          // 7: api.proto.domain.TopologyEdge
+	(*MetricSnapshot)(nil),        // 8: api.proto.domain.MetricSnapshot
+	(*CacheStats)(nil),            // 9: api.proto.domain.CacheStats
+	(*timestamppb.Timestamp)(nil), // 10: google.protobuf.Timestamp
+	(*AgentDatabaseConfig)(nil),   // 11: api.proto.domain.AgentDatabaseConfig
+	(*DatabaseMetrics)(nil),       // 12: api.proto.domain.DatabaseMetrics
 }
 var file_api_proto_domain_status_proto_depIdxs = []int32{
-	9,  // 0: api.proto.domain.BackendStatus.last_check:type_name -> google.protobuf.Timestamp
-	10, // 1: api.proto.domain.BackendStatus.agent_config:type_name -> api.proto.domain.AgentDatabaseConfig
-	11, // 2: api.proto.domain.BackendStatus.db_metrics:type_name -> api.proto.domain.DatabaseMetrics
-	9,  // 3: api.proto.domain.ReplicationStream.started_at:type_name -> google.protobuf.Timestamp
-	5,  // 4: api.proto.domain.Topology.nodes:type_name -> api.proto.domain.TopologyNode
-	6,  // 5: api.proto.domain.Topology.edges:type_name -> api.proto.domain.TopologyEdge
-	9,  // 6: api.proto.domain.MetricSnapshot.timestamp:type_name -> google.protobuf.Timestamp
+	10, // 0: api.proto.domain.BackendStatus.last_check:type_name -> google.protobuf.Timestamp
+	11, // 1: api.proto.domain.BackendStatus.agent_config:type_name -> api.proto.domain.AgentDatabaseConfig
+	12, // 2: api.proto.domain.BackendStatus.db_metrics:type_name -> api.proto.domain.DatabaseMetrics
+	10, // 3: api.proto.domain.ReplicationStream.started_at:type_name -> google.protobuf.Timestamp
+	6,  // 4: api.proto.domain.Topology.nodes:type_name -> api.proto.domain.TopologyNode
+	7,  // 5: api.proto.domain.Topology.edges:type_name -> api.proto.domain.TopologyEdge
+	10, // 6: api.proto.domain.MetricSnapshot.timestamp:type_name -> google.protobuf.Timestamp
 	7,  // [7:7] is the sub-list for method output_type
 	7,  // [7:7] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
@@ -1028,7 +1139,7 @@ func file_api_proto_domain_status_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_domain_status_proto_rawDesc), len(file_api_proto_domain_status_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

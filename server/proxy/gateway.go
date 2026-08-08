@@ -684,6 +684,11 @@ func (g *Gateway) Stop(ctx context.Context) error {
 }
 
 // CacheManager returns the internal cache manager.
+// Handler returns the protocol handler this gateway speaks. The control plane
+// needs it for protocol-specific administration such as creating a logical
+// replication slot.
+func (g *Gateway) Handler() protocol.Handler { return g.handler }
+
 func (g *Gateway) CacheManager() *cache.Manager {
 	return g.cacheManager
 }
