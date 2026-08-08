@@ -44,10 +44,10 @@ func appendField(dst []byte, tag byte, value string) []byte {
 	return append(dst, 0)
 }
 
-// ErrReplicationUnsupported reports that a client asked for a replication
-// connection, which the proxy declines to carry.
+// ErrReplicationRequested reports that the client asked for a replication
+// stream, so the handshake stopped and handed the decision back.
 //
-// It is a distinct error so the gateway can tell a refusal apart from a
-// handshake failure: the backend connection is untouched and still reusable,
-// and the client has already been told why.
-var ErrReplicationUnsupported = errors.New("replication connections are not proxied")
+// It is a distinct error rather than a failure: the backend connection is
+// untouched, the client has not been answered, and the gateway still has to
+// choose the node holding the slot before the startup packet can be forwarded.
+var ErrReplicationRequested = errors.New("replication stream requested")

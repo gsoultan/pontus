@@ -192,6 +192,11 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 
 	ps := state.NewProxy(prcfg, gateway, ln, backends, lb, monitor, failoverMgr, gateway.CacheManager(), ctx, cancel)
 
+	// Hand the gateway the registry so a CDC consumer is accounted for. Without
+	// it the data plane refuses replication rather than carrying an untracked
+	// stream that the dashboard cannot see and the budget cannot bound.
+	gateway.SetStreamRegistry(ps.Streams)
+
 	go func() {
 		if err := gateway.Serve(ctx, ln); err != nil && ctx.Err() == nil {
 			slog.Error("Proxy server error", "proxy", prcfg.Id, "error", err)

@@ -78,7 +78,7 @@ export function ConnectConsumerCard({ proxyAddress, database = 'your_database' }
             Replication slots are not copied to replicas, so a promoted node has no slot for your
             consumer. Pontus terminates the stream rather than reconnecting it — reconnecting
             would resume from the wrong position and lose changes silently. Your consumer resumes
-            from its own checkpoint.
+            from its own checkpoint, which is the only place the correct position is known.
           </Text>
         </Alert>
       </Stack>

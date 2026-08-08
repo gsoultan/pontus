@@ -60,6 +60,17 @@ type Gateway struct {
 	queryTimeout   time.Duration
 	chain          middleware.Chain
 	runtime        atomic.Pointer[runtimeConfig]
+
+	// streamCtx is cancelled to end every replication stream at once. Guarded
+	// by streamCtxMu because failover replaces it rather than reusing a
+	// cancelled one.
+	streamCtxMu  sync.Mutex
+	streamCtx    context.Context
+	streamCancel context.CancelFunc
+
+	// streams tracks live CDC consumers. Set by the control plane; nil means
+	// replication is refused rather than carried unaccounted.
+	streams        atomic.Pointer[StreamRegistry]
 	configMu       sync.RWMutex
 	config         *config.Options
 	shadowBackends []pool2.Backend
@@ -459,16 +470,19 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 	if err := g.handler.Handshake(ctx, client, server, sessionState); err != nil {
 		// A refused replication attempt is expected traffic, not a fault — the
 		// client has already been told why.
-		if errors.Is(err, protocol.ErrReplicationUnsupported) {
-			slog.Warn("Refused replication connection: CDC is not proxied yet",
-				"client", remoteAddr, "user", sessionState.User, "mode", sessionState.Replication)
-		} else {
-			slog.Error("Handshake error", "client", remoteAddr, "error", err)
-		}
 		// This connection never carried a startup packet, so it was never marked
 		// ready and the pool destroys it on release. That is enforced by the
-		// engine for every caller now, not by each one remembering to do it.
+		// engine for every caller, not by each one remembering to do it.
 		backend.Release(server)
+
+		// A replication stream is not a failure: it needs the node holding its
+		// slot rather than the balanced one, so it is carried on its own path.
+		if errors.Is(err, protocol.ErrReplicationRequested) {
+			g.handleReplication(ctx, client, sessionState, remoteAddr)
+			return
+		}
+
+		slog.Error("Handshake error", "client", remoteAddr, "error", err)
 		return
 	}
 
@@ -604,6 +618,10 @@ func (g *Gateway) acquireBackend(ctx context.Context, hint balancer2.Hint) (pool
 func (g *Gateway) triggerFailover() {
 	if g.inFailover.CompareAndSwap(false, true) {
 		slog.Warn("Primary lost, entering failover wait mode")
+
+		// Replication slots do not exist on the promoted node, so a stream
+		// cannot follow the write path. Ending it is the honest outcome.
+		g.terminateStreams("primary lost, failover started")
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()

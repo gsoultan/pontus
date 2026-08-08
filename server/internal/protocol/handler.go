@@ -15,6 +15,11 @@ type Handler interface {
 	MetricsCollector
 
 	// Handshake manages the initial auth and startup sequence between client and server.
+	// StartReplication completes the startup exchange for a replication stream
+	// on a connection the caller has already chosen. The node is not
+	// interchangeable: a slot lives on exactly one backend.
+	StartReplication(ctx context.Context, client, server net.Conn, state *SessionState) error
+
 	Handshake(ctx context.Context, client, server net.Conn, state *SessionState) error
 
 	// PeekTransactionState inspects data to track transaction boundaries.

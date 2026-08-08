@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -41,20 +42,16 @@ func (p *PostgresHandler) Handshake(ctx context.Context, client, server net.Conn
 		state.Database = state.User // PostgreSQL defaults the database to the user name
 	}
 
-	// Refuse replication before the startup packet reaches the backend.
+	// A replication stream cannot use this path.
 	//
-	// A replication session is a persistent CopyBoth stream, not a sequence of
-	// request/response exchanges, so the pooling loop would hand a half-read
-	// WAL feed to the next client served by that connection. Refusing here
-	// rather than after authentication also keeps the backend connection
-	// clean: it never enters replication mode, so it goes back to the pool
-	// reusable.
+	// It is a persistent CopyBoth feed, not a sequence of request/response
+	// exchanges, so the pooling loop would hand a half-read WAL stream to the
+	// next client served by that connection. Hand the decision back to the
+	// gateway before the startup packet reaches this backend: the stream has
+	// to go to the node holding the slot, which is not the balanced one.
 	if IsReplication(state.Replication) {
-		if err := WritePostgresError(client, "0A000",
-			"pontus does not proxy replication connections yet; connect the CDC consumer directly to the database"); err != nil {
-			return fmt.Errorf("%w: %w", ErrReplicationUnsupported, err)
-		}
-		return ErrReplicationUnsupported
+		state.StartupPacket = startup.raw
+		return ErrReplicationRequested
 	}
 
 	if _, err := server.Write(startup.raw); err != nil {
@@ -1069,4 +1066,20 @@ func (p *PostgresHandler) queryInt64(ctx context.Context, conn net.Conn, query s
 			i += 1 + msgLen
 		}
 	}
+}
+
+// StartReplication completes the startup exchange for a replication stream on a
+// connection the caller has already chosen.
+//
+// Split from Handshake because the node is not interchangeable: a replication
+// slot lives on one backend, so the gateway resolves that node first and only
+// then hands the original startup packet over.
+func (p *PostgresHandler) StartReplication(ctx context.Context, client, server net.Conn, state *SessionState) error {
+	if len(state.StartupPacket) == 0 {
+		return errors.New("replication startup packet was not retained")
+	}
+	if _, err := server.Write(state.StartupPacket); err != nil {
+		return fmt.Errorf("forward replication startup: %w", err)
+	}
+	return relayAuth(client, server)
 }

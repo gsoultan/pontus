@@ -2,6 +2,12 @@ package protocol
 
 // SessionState tracks session-level database configuration.
 type SessionState struct {
+	// StartupPacket is the client's raw StartupMessage, retained only when the
+	// connection turns out to be a replication stream. The CDC path has to
+	// forward the original bytes to the node holding the slot, and the packet
+	// has already been consumed from the client by the time that is known.
+	StartupPacket []byte
+
 	// Replication is the raw "replication" startup parameter. A non-empty,
 	// non-false value means the client asked for a replication stream, which
 	// cannot be pooled — see IsReplication.

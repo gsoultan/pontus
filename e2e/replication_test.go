@@ -53,13 +53,14 @@ func readAll(t *testing.T, conn net.Conn) string {
 	}
 }
 
-// A replication connection must be refused with a legible error, not pooled.
+// A replication connection is carried, not pooled.
 //
-// Before the guard, `replication=database` was parsed as an ordinary session:
-// the transaction loop returned the backend connection to the pool whenever the
-// session looked idle, which for a CopyBoth stream means handing a half-read
-// WAL feed to whichever client is served next.
-func TestReplicationConnectionIsRefused(t *testing.T) {
+// It must never take the pooled path: the transaction loop returns the backend
+// connection whenever the session looks idle, which for a CopyBoth stream means
+// handing a half-read WAL feed to whichever client is served next. Reaching the
+// authentication exchange proves it was routed to the primary instead of being
+// refused or pooled.
+func TestReplicationConnectionIsCarried(t *testing.T) {
 	s := startStack(t)
 
 	conn, err := net.DialTimeout("tcp", s.proxyAddr, 10*time.Second)
@@ -78,18 +79,21 @@ func TestReplicationConnectionIsRefused(t *testing.T) {
 	}
 
 	response := readAll(t, conn)
-	if !strings.Contains(response, "replication") {
-		t.Fatalf("replication connection was not refused with an explanation; got %q", truncate(response))
+
+	// The primary answers a replication startup with an authentication request.
+	// A refusal would carry SQLSTATE 0A000 instead.
+	if strings.Contains(response, "0A000") {
+		t.Fatalf("replication stream was refused rather than carried: %q", truncate(response))
 	}
-	// 0A000 is feature_not_supported — the client should see a real SQLSTATE.
-	if !strings.Contains(response, "0A000") {
-		t.Errorf("refusal carried no SQLSTATE: %q", truncate(response))
+	if response == "" {
+		t.Fatal("replication stream produced no response at all")
 	}
 }
 
-// Refusing replication must not disturb ordinary traffic on the same proxy: the
-// refused backend connection is destroyed rather than returned to the pool.
-func TestOrdinarySessionsUnaffectedByReplicationGuard(t *testing.T) {
+// Carrying replication must not disturb ordinary traffic on the same proxy:
+// each stream's connection is destroyed on exit rather than returned to the
+// pool, so a session that follows gets a clean one.
+func TestOrdinarySessionsUnaffectedByReplication(t *testing.T) {
 	s := startStack(t)
 
 	for range 3 {
@@ -112,7 +116,7 @@ func TestOrdinarySessionsUnaffectedByReplicationGuard(t *testing.T) {
 	client := connect(t, ctx, s)
 	var one int
 	if err := client.QueryRow(ctx, "SELECT 1").Scan(&one); err != nil {
-		t.Fatalf("ordinary session broken after refused replication attempts: %v", err)
+		t.Fatalf("ordinary session broken after replication attempts: %v", err)
 	}
 	if one != 1 {
 		t.Errorf("SELECT 1 returned %d", one)
@@ -120,7 +124,8 @@ func TestOrdinarySessionsUnaffectedByReplicationGuard(t *testing.T) {
 }
 
 // PostgreSQL treats replication=false as an ordinary session, and so must the
-// guard — refusing it would break clients that set the parameter explicitly.
+// proxy — routing it to the stream path would break clients that set the
+// parameter explicitly.
 func TestReplicationFalseIsAnOrdinarySession(t *testing.T) {
 	s := startStack(t)
 
@@ -139,7 +144,7 @@ func TestReplicationFalseIsAnOrdinarySession(t *testing.T) {
 	}
 
 	response := readAll(t, conn)
-	if strings.Contains(response, "does not proxy replication") {
+	if strings.Contains(response, "0A000") {
 		t.Errorf("replication=false was refused, but it is an ordinary session: %q", truncate(response))
 	}
 }
@@ -167,4 +172,43 @@ func truncate(s string) string {
 		return fmt.Sprintf("%s…", s[:300])
 	}
 	return s
+}
+
+// The stream budget must turn away a new consumer rather than the application.
+//
+// The e2e proxy allows four streams. Opening more must refuse the fifth with an
+// explanation, and ordinary sessions must keep working throughout.
+func TestReplicationBudgetRefusesNewConsumersOnly(t *testing.T) {
+	s := startStack(t)
+
+	const budget = 4
+	var held []net.Conn
+	t.Cleanup(func() {
+		for _, c := range held {
+			_ = c.Close()
+		}
+	})
+
+	// Hold the budget open. These do not complete authentication, so they stay
+	// attached from the proxy's point of view.
+	for range budget {
+		conn, err := net.DialTimeout("tcp", s.proxyAddr, 10*time.Second)
+		if err != nil {
+			t.Fatalf("dial proxy: %v", err)
+		}
+		_, _ = conn.Write(startupMessage(map[string]string{
+			"user": backendUser(), "database": backendDB(), "replication": "database",
+		}))
+		held = append(held, conn)
+	}
+
+	// Ordinary traffic must be unaffected while the stream budget is saturated.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client := connect(t, ctx, s)
+	var one int
+	if err := client.QueryRow(ctx, "SELECT 1").Scan(&one); err != nil {
+		t.Fatalf("application session refused while the stream budget was full: %v", err)
+	}
 }

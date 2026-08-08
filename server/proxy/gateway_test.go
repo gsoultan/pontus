@@ -192,3 +192,7 @@ func TestGateway_HandleClient_TransactionRelease(t *testing.T) {
 		t.Fatal("Connection was not released after idle transaction")
 	}
 }
+
+func (m *mockHandler) StartReplication(_ context.Context, _, _ net.Conn, _ *protocol2.SessionState) error {
+	return nil
+}
