@@ -44,7 +44,7 @@ func startAgent(t *testing.T) string {
 	binary := buildAgent(t)
 	addr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
 
-	logs := &strings.Builder{}
+	logs := &logSink{}
 	cmd := exec.Command(binary, "-addr", addr)
 	cmd.Stdout = logs
 	cmd.Stderr = logs
@@ -67,7 +67,7 @@ func startAgent(t *testing.T) string {
 
 // waitDial blocks until the agent accepts a connection, failing fast if the
 // process exits first rather than burning the whole timeout.
-func waitDial(t *testing.T, cmd *exec.Cmd, addr string, logs *strings.Builder) {
+func waitDial(t *testing.T, cmd *exec.Cmd, addr string, logs *logSink) {
 	t.Helper()
 
 	deadline := time.Now().Add(startupTimeout)

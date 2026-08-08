@@ -66,7 +66,7 @@ func envOr(key, fallback string) string {
 type stack struct {
 	cmd       *exec.Cmd
 	dataDir   string
-	logs      *strings.Builder
+	logs      *logSink
 	t         *testing.T
 	proxyAddr string
 	mgmtAddr  string
@@ -129,7 +129,7 @@ func startStackWith(t *testing.T, adjust func(string) string) *stack {
 		t.Fatalf("write config: %v", err)
 	}
 
-	logs := &strings.Builder{}
+	logs := &logSink{}
 	cmd := exec.Command(binary, "-config", configPath)
 	cmd.Dir = root
 	cmd.Stdout = logs
