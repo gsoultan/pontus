@@ -31,6 +31,12 @@ import (
 type runtimeConfig struct {
 	chain   middleware.Chain
 	pooling poolingMode
+
+	// localZone is the zone this proxy runs in. The balancer's cost function
+	// applies RemoteZonePenalty when it differs from a backend's zone, but only
+	// if the caller says where it is — every Hint left it empty, so local_zone
+	// was configured, merged, and never affected routing.
+	localZone string
 }
 
 // Gateway implements the proxy.Provider interface.
@@ -157,7 +163,7 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	}
 
 	// Publish atomically for the query path.
-	g.runtime.Store(&runtimeConfig{chain: g.chain, pooling: parsePoolingMode(cfg.PoolingMode)})
+	g.runtime.Store(&runtimeConfig{chain: g.chain, pooling: parsePoolingMode(cfg.PoolingMode), localZone: cfg.LocalZone})
 }
 
 // current returns the active runtime configuration. Never nil after
@@ -242,8 +248,9 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	// Ensure we have a server connection
 	if s.Server == nil {
 		backend, server, err := m.acquireBackend(ctx, balancer2.Hint{
-			ReadOnly: s.QueryInfo.ReadOnly,
-			Key:      s.RemoteAddr,
+			CallerZone: m.current().localZone,
+			ReadOnly:   s.QueryInfo.ReadOnly,
+			Key:        s.RemoteAddr,
 		})
 		if err != nil {
 			return err
@@ -256,8 +263,9 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 				backend.Release(server)
 				// Retry with primary
 				backend, server, err = m.acquireBackend(ctx, balancer2.Hint{
-					ReadOnly: false,
-					Key:      s.RemoteAddr,
+					CallerZone: m.current().localZone,
+					ReadOnly:   false,
+					Key:        s.RemoteAddr,
 				})
 				if err != nil {
 					return err
@@ -408,8 +416,9 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 
 	// For the initial handshake, we need a backend.
 	backend, server, err := g.acquireBackend(ctx, balancer2.Hint{
-		ReadOnly: false,
-		Key:      remoteAddr,
+		CallerZone: g.current().localZone,
+		ReadOnly:   false,
+		Key:        remoteAddr,
 	})
 	if err != nil {
 		slog.Error("Failed to acquire backend for handshake", "client", remoteAddr, "error", err)
@@ -584,7 +593,8 @@ func (g *Gateway) triggerFailover() {
 				select {
 				case <-ticker.C:
 					// Check if a primary is available
-					backend, err := g.balancer.Next(context.Background(), balancer2.Hint{ReadOnly: false})
+					backend, err := g.balancer.Next(context.Background(),
+						balancer2.Hint{ReadOnly: false, CallerZone: g.current().localZone})
 					if err == nil && backend.IsHealthy() && backend.Role() == pool2.RolePrimary {
 						slog.Info("New primary detected, resolving failover", "address", backend.Address())
 						g.inFailover.Store(false)

@@ -145,7 +145,8 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 	for i, b := range backends {
 		targets[i] = b
 	}
-	monitor := health.NewMonitor(targets, 10*time.Second, 2*time.Second)
+	healthInterval, healthTimeout := healthTiming(r.defaults)
+	monitor := health.NewMonitor(targets, healthInterval, healthTimeout)
 	go monitor.Start(ctx)
 
 	var provisioner orchestration2.Provisioner
@@ -266,6 +267,12 @@ func (r *Registry) DialTimeout() time.Duration {
 // "consistent" and sent everything else to round-robin, so a deployment asking
 // for p2c or least-conns silently got round-robin instead. An unknown name now
 // says so rather than pretending it was honoured.
+const (
+	defaultHealthInterval = 10 * time.Second
+	minHealthTimeout      = 500 * time.Millisecond
+	maxHealthTimeout      = 5 * time.Second
+)
+
 func newBalancer(name string, backends []pool2.Backend) balancer2.Balancer {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "", "round-robin", "roundrobin":
@@ -285,4 +292,31 @@ func newBalancer(name string, backends []pool2.Backend) balancer2.Balancer {
 			"configured", name)
 		return balancer2.NewRoundRobin(backends)
 	}
+}
+
+// healthTiming resolves the liveness probe cadence from configuration.
+//
+// health_interval was parsed, defaulted and merged while the monitor was
+// hardcoded to 10s, so an operator tightening it changed nothing. The timeout
+// is derived rather than configured separately: it only has to be short enough
+// that a probe cannot still be running when the next one starts, and a second
+// knob whose only valid range is "less than the interval" is a trap.
+func healthTiming(cfg *config.Options) (interval, timeout time.Duration) {
+	interval = defaultHealthInterval
+	if cfg != nil && cfg.HealthInterval > 0 {
+		interval = cfg.HealthInterval
+	}
+
+	timeout = interval / 5
+	if timeout < minHealthTimeout {
+		timeout = minHealthTimeout
+	}
+	if timeout > maxHealthTimeout {
+		timeout = maxHealthTimeout
+	}
+	// A probe must never outlive its own interval.
+	if timeout >= interval {
+		timeout = interval / 2
+	}
+	return interval, timeout
 }
