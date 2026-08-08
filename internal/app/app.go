@@ -315,10 +315,18 @@ func (a *App) bootstrapFromConfig() {
 	})
 
 	for _, b := range a.cfg.Backends {
+		// Carry every field. This dropped agent_addr, agent_token, zone and
+		// admin_dsn, so a backend configured in YAML lost its agent binding,
+		// its locality and Pontus's own credentials the moment the config was
+		// migrated into the store — silently, because the proxy still started.
 		pcfg.Proxies[0].Backends = append(pcfg.Proxies[0].Backends, new(domain.BackendConfig{
-			Address: b.Addr,
-			Role:    b.Role,
-			Weight:  int32(b.Weight),
+			Address:      b.Addr,
+			Role:         b.Role,
+			Weight:       int32(b.Weight),
+			Zone:         b.Zone,
+			AgentAddress: b.AgentAddr,
+			AgentToken:   b.AgentToken,
+			AdminDsn:     b.AdminDSN,
 		}))
 	}
 

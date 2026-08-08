@@ -28,7 +28,7 @@ func TestServerPool_AcquireRelease(t *testing.T) {
 	}()
 
 	h := protocol.NewPostgresHandler()
-	p, err := NewServer(addr, "", "127.0.0.1:9091", "test-token", RolePrimary, 1, 2, 1, 1*time.Second, h, nil, nil)
+	p, err := NewServer(addr, "", "127.0.0.1:9091", "test-token", RolePrimary, 1, 2, 1, 1*time.Second, h, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

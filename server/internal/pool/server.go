@@ -33,6 +33,10 @@ type Server struct {
 	roleMu  sync.RWMutex
 	role    Role
 	core    *pooling.Core[*Conn]
+
+	// admin is Pontus's own authenticated channel, used for the questions the
+	// control plane asks a database. Nil when no admin_dsn is configured.
+	admin *AdminSession
 	// checkedOut counts connections currently held by a caller. The engine's
 	// Stat samples its total and its shard counters independently, so an active
 	// count derived from them can read high while the background warm-up is in
@@ -81,7 +85,7 @@ var (
 )
 
 // NewServer creates a new Server for the given address and role.
-func NewServer(address string, zone string, agentAddr string, agentToken string, role Role, weight int, maxConns int32, minIdle int32, dialTimeout time.Duration, handler protocol.Handler, tlsConfig *tls.Config, monitor *system.Monitor) (*Server, error) {
+func NewServer(address string, zone string, agentAddr string, agentToken string, role Role, weight int, maxConns int32, minIdle int32, dialTimeout time.Duration, handler protocol.Handler, tlsConfig *tls.Config, monitor *system.Monitor, adminDSN string) (*Server, error) {
 	if agentAddr == "" {
 		return nil, fmt.Errorf("agent address is mandatory for backend %s", address)
 	}
@@ -109,6 +113,17 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 		waitTimeout: 5 * time.Second,
 		monitor:     monitor,
 	}
+
+	// Pontus's own channel to this backend. Optional: without it the health
+	// probe and role detection fall back to running on a pooled connection,
+	// which only works when a client has already authenticated one.
+	admin, err := NewAdminSession(adminDSN, dialTimeout)
+	if err != nil {
+		slog.Warn("Admin session unavailable; health checks and role detection "+
+			"will fall back to client connections",
+			"address", address, "error", err)
+	}
+	p.admin = admin
 
 	p.controller = NewAdaptivePoolController(p, monitor)
 
@@ -557,7 +572,39 @@ func (p *Server) reportMetrics() {
 	}
 }
 
+// Admin returns the administrative channel, or nil when none is configured.
+func (p *Server) Admin() *AdminSession { return p.admin }
+
+// deepCheckAdmin verifies liveness and re-detects the role over Pontus's own
+// session.
+//
+// Preferred over the pooled path because it does not depend on a client having
+// authenticated a connection first, and it runs as the operator's admin user
+// rather than as whichever client last used the connection.
+func (p *Server) deepCheckAdmin(ctx context.Context) bool {
+	var inRecovery bool
+	if err := p.admin.QueryRow(ctx, "SELECT pg_is_in_recovery()").Scan(&inRecovery); err != nil {
+		p.SetHealthy(false)
+		return false
+	}
+	p.SetHealthy(true)
+
+	newRole := RolePrimary
+	if inRecovery {
+		newRole = RoleReplica
+	}
+	if p.Role() != newRole {
+		slog.Info("Backend role changed", "address", p.address, "from", p.Role(), "to", newRole)
+		p.setRole(newRole)
+	}
+	return true
+}
+
 func (p *Server) deepCheck(ctx context.Context) bool {
+	if p.admin.Available() {
+		return p.deepCheckAdmin(ctx)
+	}
+
 	// Go through the pool rather than reaching into it: the engine owns whether
 	// this reuses an idle connection or dials a fresh one, and releasing through
 	// the handle keeps the accounting honest either way.

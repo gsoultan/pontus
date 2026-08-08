@@ -86,8 +86,11 @@ jobs:
       # backend is reachable, so it never blocks on infrastructure being down.
       - name: Start PostgreSQL
         run: |
+          # wal_level=logical lets the replication-slot tests run rather than
+          # skip; everything else works at the default.
           docker run -d --name pontus-e2e-pg -p 5433:5432 \
-            -e POSTGRES_PASSWORD=postgres postgres:17-alpine
+            -e POSTGRES_PASSWORD=postgres postgres:17-alpine \
+            -c wal_level=logical
           for i in $(seq 1 30); do
             docker exec pontus-e2e-pg pg_isready -U postgres && break
             sleep 2

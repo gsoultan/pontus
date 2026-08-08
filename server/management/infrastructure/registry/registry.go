@@ -130,7 +130,7 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 			backendAddr = net.JoinHostPort(host, "5432")
 		}
 
-		p, err := pool2.NewServer(backendAddr, bcfg.Zone, agentAddr, bcfg.AgentToken, role, weight, prcfg.MaxConns, 0, r.dialTimeout, handler, r.backendTLS, r.monitor)
+		p, err := pool2.NewServer(backendAddr, bcfg.Zone, agentAddr, bcfg.AgentToken, role, weight, prcfg.MaxConns, 0, r.dialTimeout, handler, r.backendTLS, r.monitor, bcfg.AdminDsn)
 		if err != nil {
 			slog.Error("Failed to create backend server", "address", backendAddr, "error", err)
 			continue

@@ -31,18 +31,14 @@ func TestCreateAndListLogicalSlot(t *testing.T) {
 	t.Cleanup(func() { dropSlot(t, slot) })
 
 	if code != http.StatusOK {
-		// Pontus forwards client credentials rather than holding its own, so it
-		// has no session to run an administrative statement in. The refusal
-		// must say so and name the statement to run by hand — an operator
-		// should not have to decode "EOF" against a healthy database.
 		message := fmt.Sprint(out["message"])
-		if !strings.Contains(message, "credentials of its own") {
-			t.Fatalf("CreateLogicalSlot failed without explaining why (%d): %v", code, out)
+		// Logical decoding is a server setting, not something the proxy can
+		// arrange. Skip rather than fail: the backend is simply not configured
+		// for it. Start PostgreSQL with -c wal_level=logical to run this.
+		if strings.Contains(message, "wal_level") {
+			t.Skipf("backend is not configured for logical decoding: %s", message)
 		}
-		if !strings.Contains(message, "pg_create_logical_replication_slot") {
-			t.Errorf("refusal did not name the statement to run manually: %v", message)
-		}
-		t.Skip("slot creation needs backend credentials Pontus does not hold; refusal is explicit")
+		t.Fatalf("CreateLogicalSlot failed (%d): %v", code, out)
 	}
 
 	// The inventory is read from the primary, so the slot must appear there.

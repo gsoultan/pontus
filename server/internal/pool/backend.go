@@ -33,6 +33,11 @@ type Backend interface {
 
 	// Address returns the network address of the backend.
 	Address() string
+
+	// Admin returns Pontus's own authenticated channel to this backend, or nil
+	// when no admin_dsn is configured. Client sessions carry the client's
+	// credentials, so administrative statements need a session of their own.
+	Admin() *AdminSession
 	// Zone returns the availability zone of the backend.
 	Zone() string
 	// ActiveConns returns the number of active connections.

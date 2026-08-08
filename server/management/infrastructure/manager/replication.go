@@ -89,39 +89,50 @@ func (m *Replication) slots(ctx context.Context, ps *state.Proxy) []*domain.Repl
 		return nil
 	}
 
-	handler, ok := ps.Gateway.Handler().(*protocol2.PostgresHandler)
-	if !ok {
+	admin := backend.Admin()
+	if !admin.Available() {
+		// No admin_dsn configured: the streams are still worth showing, and an
+		// empty inventory is not a reason to fail the call.
 		return nil
 	}
 
-	conn, err := backend.Acquire(ctx)
+	rows, err := admin.Query(ctx, `SELECT slot_name, coalesce(plugin,''), slot_type, active,
+		coalesce(database,''), coalesce(confirmed_flush_lsn::text,''),
+		coalesce(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)::bigint, 0)
+		FROM pg_replication_slots`)
 	if err != nil {
-		slog.Debug("Slot inventory unavailable", "backend", backend.Address(), "error", err)
+		slog.Debug("Slot inventory query failed", "backend", backend.Address(), "error", err)
 		return nil
 	}
-	defer backend.Release(conn)
+	defer rows.Close()
 
-	stats, err := handler.QuerySlotStats(ctx, conn)
-	if err != nil {
-		// Same constraint as slot creation: without credentials of its own,
-		// Pontus can only run this on a connection some client already
-		// authenticated. Best effort — the streams themselves are still worth
-		// showing, and an empty inventory is not a reason to fail the call.
-		slog.Debug("Slot inventory unavailable; Pontus has no administrative session",
-			"backend", backend.Address(), "error", err)
-		return nil
+	type slotRow struct {
+		name, plugin, slotType, database, lsn string
+		active                                bool
+		retained                              int64
+	}
+
+	var stats []slotRow
+	for rows.Next() {
+		var r slotRow
+		if err := rows.Scan(&r.name, &r.plugin, &r.slotType, &r.active,
+			&r.database, &r.lsn, &r.retained); err != nil {
+			slog.Debug("Slot row scan failed", "backend", backend.Address(), "error", err)
+			return nil
+		}
+		stats = append(stats, r)
 	}
 
 	out := make([]*domain.ReplicationSlot, 0, len(stats))
 	for _, st := range stats {
 		out = append(out, &domain.ReplicationSlot{
-			Name:          st.Name,
-			Plugin:        st.Plugin,
-			SlotType:      st.SlotType,
-			Active:        st.Active,
-			Database:      st.Database,
-			ConfirmedLsn:  st.ConfirmedLSN,
-			RetainedBytes: st.RetainedBytes,
+			Name:          st.name,
+			Plugin:        st.plugin,
+			SlotType:      st.slotType,
+			Active:        st.active,
+			Database:      st.database,
+			ConfirmedLsn:  st.lsn,
+			RetainedBytes: st.retained,
 		})
 	}
 	return out
@@ -169,32 +180,28 @@ func (m *Replication) CreateLogicalSlot(ctx context.Context, req *endpoints.Crea
 		plugin = "pgoutput" // in-core, present on every supported version
 	}
 
-	handler, ok := ps.Gateway.Handler().(*protocol2.PostgresHandler)
-	if !ok {
-		return nil, status.Error(codes.FailedPrecondition,
-			"logical replication slots are only supported for PostgreSQL")
-	}
-
-	conn, err := backend.Acquire(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unavailable, "acquire connection to %s: %v", backend.Address(), err)
-	}
-	defer backend.Release(conn)
-
-	if err := handler.CreateLogicalReplicationSlot(ctx, conn, req.SlotName, plugin); err != nil {
-		// Pontus forwards the client's startup packet rather than
-		// authenticating to the backend itself, so a pooled connection is a raw
-		// socket until some client has handshaked it. An administrative
-		// statement has no session of its own to run in, and the backend closes
-		// the connection — which surfaces as EOF.
-		//
-		// Making this legible rather than leaving an operator to decode "EOF"
-		// against a database that is plainly up.
+	admin := backend.Admin()
+	if !admin.Available() {
 		return nil, status.Errorf(codes.FailedPrecondition,
-			"could not create slot %s on %s: %v — Pontus has no credentials of its own for "+
-				"administrative statements; create the slot directly on the node with "+
-				"SELECT pg_create_logical_replication_slot('%s', '%s')",
-			req.SlotName, backend.Address(), err, req.SlotName, plugin)
+			"backend %s has no admin_dsn configured; Pontus needs a session of its own to create "+
+				"a replication slot, because a client session carries the client's credentials",
+			backend.Address())
+	}
+
+	// Validated as well as bound. These are values here, not identifiers, but
+	// PostgreSQL rejects anything outside its slot-name rules anyway and a
+	// local message is clearer than the server's.
+	if err := protocol2.ValidateSlotName(req.SlotName); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if err := protocol2.ValidateOutputPlugin(plugin); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	if err := admin.Exec(ctx,
+		"SELECT pg_create_logical_replication_slot($1, $2)", req.SlotName, plugin); err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"create slot %s on %s: %v", req.SlotName, backend.Address(), err)
 	}
 
 	return &endpoints.CreateLogicalSlotResponse{

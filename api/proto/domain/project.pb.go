@@ -191,9 +191,15 @@ type BackendConfig struct {
 	ManagedByAgent bool                   `protobuf:"varint,5,opt,name=managed_by_agent,json=managedByAgent,proto3" json:"managed_by_agent,omitempty"`
 	AgentAddress   string                 `protobuf:"bytes,6,opt,name=agent_address,json=agentAddress,proto3" json:"agent_address,omitempty"`
 	AgentToken     string                 `protobuf:"bytes,8,opt,name=agent_token,json=agentToken,proto3" json:"agent_token,omitempty"`
-	AgentConfig    *AgentDatabaseConfig   `protobuf:"bytes,7,opt,name=agent_config,json=agentConfig,proto3" json:"agent_config,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// admin_dsn is Pontus's own connection string for this backend. Client
+	// sessions forward the client's credentials, so the proxy has no session of
+	// its own for health probes, role detection, replication lag or slot
+	// management. Least privilege: CONNECT and pg_monitor, plus REPLICATION only
+	// if slot management is wanted.
+	AdminDsn      string               `protobuf:"bytes,9,opt,name=admin_dsn,json=adminDsn,proto3" json:"admin_dsn,omitempty"`
+	AgentConfig   *AgentDatabaseConfig `protobuf:"bytes,7,opt,name=agent_config,json=agentConfig,proto3" json:"agent_config,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BackendConfig) Reset() {
@@ -271,6 +277,13 @@ func (x *BackendConfig) GetAgentAddress() string {
 func (x *BackendConfig) GetAgentToken() string {
 	if x != nil {
 		return x.AgentToken
+	}
+	return ""
+}
+
+func (x *BackendConfig) GetAdminDsn() string {
+	if x != nil {
+		return x.AdminDsn
 	}
 	return ""
 }
@@ -384,7 +397,7 @@ const file_api_proto_domain_project_proto_rawDesc = "" +
 	"\aaddress\x18\x03 \x01(\tR\aaddress\x12;\n" +
 	"\bbackends\x18\x04 \x03(\v2\x1f.api.proto.domain.BackendConfigR\bbackends\x12\x1a\n" +
 	"\bbalancer\x18\x05 \x01(\tR\bbalancer\x12\x1b\n" +
-	"\tmax_conns\x18\x06 \x01(\x05R\bmaxConns\"\xa3\x02\n" +
+	"\tmax_conns\x18\x06 \x01(\x05R\bmaxConns\"\xc0\x02\n" +
 	"\rBackendConfig\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x12\n" +
 	"\x04zone\x18\x04 \x01(\tR\x04zone\x12\x12\n" +
@@ -393,7 +406,8 @@ const file_api_proto_domain_project_proto_rawDesc = "" +
 	"\x10managed_by_agent\x18\x05 \x01(\bR\x0emanagedByAgent\x12#\n" +
 	"\ragent_address\x18\x06 \x01(\tR\fagentAddress\x12\x1f\n" +
 	"\vagent_token\x18\b \x01(\tR\n" +
-	"agentToken\x12H\n" +
+	"agentToken\x12\x1b\n" +
+	"\tadmin_dsn\x18\t \x01(\tR\badminDsn\x12H\n" +
 	"\fagent_config\x18\a \x01(\v2%.api.proto.domain.AgentDatabaseConfigR\vagentConfig\"\xfd\x01\n" +
 	"\x13AgentDatabaseConfig\x12%\n" +
 	"\x0edata_directory\x18\x01 \x01(\tR\rdataDirectory\x12\x18\n" +

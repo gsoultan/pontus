@@ -19,7 +19,7 @@ func TestUnreadyConnectionIsNotPooled(t *testing.T) {
 	addr := listenAndHold(t)
 
 	h := protocol.NewPostgresHandler()
-	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, 4, 0, time.Second, h, nil, nil)
+	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, 4, 0, time.Second, h, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestReadyConnectionIsPooled(t *testing.T) {
 	addr := listenAndHold(t)
 
 	h := protocol.NewPostgresHandler()
-	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, 4, 0, time.Second, h, nil, nil)
+	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, 4, 0, time.Second, h, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestReadinessSurvivesRecycling(t *testing.T) {
 	addr := listenAndHold(t)
 
 	h := protocol.NewPostgresHandler()
-	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, 4, 0, time.Second, h, nil, nil)
+	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, 4, 0, time.Second, h, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

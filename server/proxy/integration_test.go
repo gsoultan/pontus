@@ -195,3 +195,7 @@ func TestFailoverIntegration(t *testing.T) {
 		t.Fatal("Timed out waiting for failover resolution")
 	}
 }
+
+// Admin reports no administrative channel: the failover path under test does
+// not use one.
+func (m *mockIntegrationBackend) Admin() *pool.AdminSession { return nil }

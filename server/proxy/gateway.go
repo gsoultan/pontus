@@ -155,7 +155,7 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 				backendAddr = net.JoinHostPort(host, "5432")
 			}
 
-			p, err := pool2.NewServer(backendAddr, bcfg.Zone, agentAddr, bcfg.AgentToken, pool2.Role(bcfg.Role), bcfg.Weight, cfg.MaxConns, cfg.MinIdle, cfg.DialTimeout, g.handler, g.backendTLS, g.monitor)
+			p, err := pool2.NewServer(backendAddr, bcfg.Zone, agentAddr, bcfg.AgentToken, pool2.Role(bcfg.Role), bcfg.Weight, cfg.MaxConns, cfg.MinIdle, cfg.DialTimeout, g.handler, g.backendTLS, g.monitor, bcfg.AdminDSN)
 			if err != nil {
 				slog.Error("Failed to create shadow backend", "address", backendAddr, "error", err)
 				continue

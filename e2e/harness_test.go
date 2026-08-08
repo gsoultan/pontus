@@ -6,7 +6,11 @@
 // must stay runnable on a machine that has none.
 //
 //	container run -d --name pontus-e2e-pg -p 5433:5432 \
-//	  -e POSTGRES_PASSWORD=postgres postgres:17-alpine
+//	  -e POSTGRES_PASSWORD=postgres postgres:17-alpine \
+//	  -c wal_level=logical
+//
+// wal_level=logical is needed only by the slot tests, which skip without it.
+//
 //	go test -tags e2e ./e2e/...
 package e2e
 
@@ -287,6 +291,12 @@ func repoRoot(t *testing.T) string {
 	return filepath.Dir(wd) // e2e/ lives one level below the module root
 }
 
+// adminDSN is the administrative connection string handed to the proxy.
+func adminDSN() string {
+	return fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
+		backendUser(), backendPass(), backendAddr(), backendDB())
+}
+
 func configYAML(dataDir, proxyAddr, mgmtAddr string) string {
 	return fmt.Sprintf(`proxy_addr: "%s"
 mgmt_addr: "%s"
@@ -307,6 +317,9 @@ backends:
     role: primary
     weight: 1
     zone: e2e
+    # Pontus's own session. Client sessions carry the client's credentials, so
+    # health probes, role detection and slot management need one of these.
+    admin_dsn: "%s"
 
 cache:
   enabled: true
@@ -317,5 +330,5 @@ rate_limit:
   enabled: true
   rps: 500
   burst: 1000
-`, proxyAddr, mgmtAddr, dataDir, backendAddr())
+`, proxyAddr, mgmtAddr, dataDir, backendAddr(), adminDSN())
 }

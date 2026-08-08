@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file api/proto/domain/project.proto.
  */
 export const file_api_proto_domain_project: GenFile = /*@__PURE__*/
-  fileDesc("Ch5hcGkvcHJvdG8vZG9tYWluL3Byb2plY3QucHJvdG8SEGFwaS5wcm90by5kb21haW4ilQEKB1Byb2plY3QSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIQCghwcm90b2NvbBgDIAEoCRIuCgdwcm94aWVzGAQgAygLMh0uYXBpLnByb3RvLmRvbWFpbi5Qcm94eUNvbmZpZxIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKQAQoLUHJveHlDb25maWcSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIPCgdhZGRyZXNzGAMgASgJEjEKCGJhY2tlbmRzGAQgAygLMh8uYXBpLnByb3RvLmRvbWFpbi5CYWNrZW5kQ29uZmlnEhAKCGJhbGFuY2VyGAUgASgJEhEKCW1heF9jb25ucxgGIAEoBSLPAQoNQmFja2VuZENvbmZpZxIPCgdhZGRyZXNzGAEgASgJEgwKBHpvbmUYBCABKAkSDAoEcm9sZRgCIAEoCRIOCgZ3ZWlnaHQYAyABKAUSGAoQbWFuYWdlZF9ieV9hZ2VudBgFIAEoCBIVCg1hZ2VudF9hZGRyZXNzGAYgASgJEhMKC2FnZW50X3Rva2VuGAggASgJEjsKDGFnZW50X2NvbmZpZxgHIAEoCzIlLmFwaS5wcm90by5kb21haW4uQWdlbnREYXRhYmFzZUNvbmZpZyKkAQoTQWdlbnREYXRhYmFzZUNvbmZpZxIWCg5kYXRhX2RpcmVjdG9yeRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgJEhgKEGluaXRpYWxfZGF0YWJhc2UYAyABKAkSFAoMaW5pdGlhbF91c2VyGAQgASgJEhgKEGluaXRpYWxfcGFzc3dvcmQYBSABKAkSGgoSaW5zdGFsbF9pZl9taXNzaW5nGAYgASgIQi1aK2dpdGh1Yi5jb20vZ3NvdWx0YW4vcG9udHVzL2FwaS9wcm90by9kb21haW5iBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("Ch5hcGkvcHJvdG8vZG9tYWluL3Byb2plY3QucHJvdG8SEGFwaS5wcm90by5kb21haW4ilQEKB1Byb2plY3QSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIQCghwcm90b2NvbBgDIAEoCRIuCgdwcm94aWVzGAQgAygLMh0uYXBpLnByb3RvLmRvbWFpbi5Qcm94eUNvbmZpZxIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKQAQoLUHJveHlDb25maWcSCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIPCgdhZGRyZXNzGAMgASgJEjEKCGJhY2tlbmRzGAQgAygLMh8uYXBpLnByb3RvLmRvbWFpbi5CYWNrZW5kQ29uZmlnEhAKCGJhbGFuY2VyGAUgASgJEhEKCW1heF9jb25ucxgGIAEoBSLiAQoNQmFja2VuZENvbmZpZxIPCgdhZGRyZXNzGAEgASgJEgwKBHpvbmUYBCABKAkSDAoEcm9sZRgCIAEoCRIOCgZ3ZWlnaHQYAyABKAUSGAoQbWFuYWdlZF9ieV9hZ2VudBgFIAEoCBIVCg1hZ2VudF9hZGRyZXNzGAYgASgJEhMKC2FnZW50X3Rva2VuGAggASgJEhEKCWFkbWluX2RzbhgJIAEoCRI7CgxhZ2VudF9jb25maWcYByABKAsyJS5hcGkucHJvdG8uZG9tYWluLkFnZW50RGF0YWJhc2VDb25maWcipAEKE0FnZW50RGF0YWJhc2VDb25maWcSFgoOZGF0YV9kaXJlY3RvcnkYASABKAkSDwoHdmVyc2lvbhgCIAEoCRIYChBpbml0aWFsX2RhdGFiYXNlGAMgASgJEhQKDGluaXRpYWxfdXNlchgEIAEoCRIYChBpbml0aWFsX3Bhc3N3b3JkGAUgASgJEhoKEmluc3RhbGxfaWZfbWlzc2luZxgGIAEoCEItWitnaXRodWIuY29tL2dzb3VsdGFuL3BvbnR1cy9hcGkvcHJvdG8vZG9tYWluYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message api.proto.domain.Project
@@ -135,6 +135,17 @@ export type BackendConfig = Message<"api.proto.domain.BackendConfig"> & {
    * @generated from field: string agent_token = 8;
    */
   agentToken: string;
+
+  /**
+   * admin_dsn is Pontus's own connection string for this backend. Client
+   * sessions forward the client's credentials, so the proxy has no session of
+   * its own for health probes, role detection, replication lag or slot
+   * management. Least privilege: CONNECT and pg_monitor, plus REPLICATION only
+   * if slot management is wanted.
+   *
+   * @generated from field: string admin_dsn = 9;
+   */
+  adminDsn: string;
 
   /**
    * @generated from field: api.proto.domain.AgentDatabaseConfig agent_config = 7;

@@ -196,3 +196,7 @@ func TestGateway_HandleClient_TransactionRelease(t *testing.T) {
 func (m *mockHandler) StartReplication(_ context.Context, _, _ net.Conn, _ *protocol2.SessionState) error {
 	return nil
 }
+
+// Admin reports no administrative channel: these tests exercise the pooled
+// path, which does not use one.
+func (m *mockBackend) Admin() *pool.AdminSession { return nil }

@@ -72,7 +72,7 @@ func (m *Backend) AddBackend(ctx context.Context, req *endpoints.AddBackendReque
 		req.Config.Address = backendAddr
 	}
 
-	backend, err := pool2.NewServer(backendAddr, req.Config.Zone, agentAddr, req.Config.AgentToken, role, weight, ps.Config.MaxConns, 0, m.registry.DialTimeout(), p.Handler, p.BackendTLS, m.registry.Monitor())
+	backend, err := pool2.NewServer(backendAddr, req.Config.Zone, agentAddr, req.Config.AgentToken, role, weight, ps.Config.MaxConns, 0, m.registry.DialTimeout(), p.Handler, p.BackendTLS, m.registry.Monitor(), req.Config.AdminDsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create backend: %w", err)
 	}

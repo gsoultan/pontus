@@ -50,7 +50,7 @@ func TestServerPool_ReleaseReturnsConnectionToPool(t *testing.T) {
 	addr := listenAndHold(t)
 
 	h := protocol.NewPostgresHandler()
-	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, 2, 0, time.Second, h, nil, nil)
+	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, 2, 0, time.Second, h, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestServerPool_MaxConnsIsHardCeiling(t *testing.T) {
 
 	const maxConns = 4
 	h := protocol.NewPostgresHandler()
-	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, maxConns, 0, time.Second, h, nil, nil)
+	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, maxConns, 0, time.Second, h, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestServerPool_MaxConnsIsHardCeiling(t *testing.T) {
 func TestServerPool_CircuitBreaker(t *testing.T) {
 	// No server listening -> dial will fail
 	h := protocol.NewPostgresHandler()
-	p, err := NewServer("127.0.0.1:1", "", "127.0.0.1:9093", "test-token", RolePrimary, 1, 2, 0, 100*time.Millisecond, h, nil, nil)
+	p, err := NewServer("127.0.0.1:1", "", "127.0.0.1:9093", "test-token", RolePrimary, 1, 2, 0, 100*time.Millisecond, h, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestServerPool_SetMaxConnsBoundsCheckouts(t *testing.T) {
 	addr := listenAndHold(t)
 
 	h := protocol.NewPostgresHandler()
-	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, 8, 0, time.Second, h, nil, nil)
+	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, 8, 0, time.Second, h, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestServerPool_ClearIdleConnsDropsPooled(t *testing.T) {
 	addr := listenAndHold(t)
 
 	h := protocol.NewPostgresHandler()
-	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, 4, 0, time.Second, h, nil, nil)
+	p, err := NewServer(addr, "", "127.0.0.1:9092", "test-token", RolePrimary, 1, 4, 0, time.Second, h, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

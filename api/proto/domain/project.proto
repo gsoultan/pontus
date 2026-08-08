@@ -31,6 +31,12 @@ message BackendConfig {
   bool managed_by_agent = 5;
   string agent_address = 6;
   string agent_token = 8;
+  // admin_dsn is Pontus's own connection string for this backend. Client
+  // sessions forward the client's credentials, so the proxy has no session of
+  // its own for health probes, role detection, replication lag or slot
+  // management. Least privilege: CONNECT and pg_monitor, plus REPLICATION only
+  // if slot management is wanted.
+  string admin_dsn = 9;
   AgentDatabaseConfig agent_config = 7;
 }
 
