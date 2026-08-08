@@ -24,9 +24,15 @@ type Options struct {
 	RateLimit      *RateLimit    `json:"rate_limit,omitzero" yaml:"rate_limit"`
 	Cache          *Cache        `json:"cache,omitzero" yaml:"cache"`
 	QueryTimeout   time.Duration `json:"query_timeout,omitzero" yaml:"query_timeout"`
-	PoolingMode    string        `json:"pooling_mode,omitzero" yaml:"pooling_mode"` // "transaction" or "statement"
-	ShadowBackends []Backend     `json:"shadow_backends,omitzero" yaml:"shadow_backends"`
-	AdminToken     string        `json:"admin_token,omitzero" yaml:"admin_token"`
+	// SlowQueryThreshold is the duration above which a query is logged
+	// individually. Below it, queries are recorded by the tracker and logged
+	// only at debug level: one INFO line per query with its full SQL text is
+	// the dominant log volume on a busy proxy and drowns the events worth
+	// reading. Zero takes the default.
+	SlowQueryThreshold time.Duration `json:"slow_query_threshold,omitzero" yaml:"slow_query_threshold"`
+	PoolingMode        string        `json:"pooling_mode,omitzero" yaml:"pooling_mode"` // "transaction" or "statement"
+	ShadowBackends     []Backend     `json:"shadow_backends,omitzero" yaml:"shadow_backends"`
+	AdminToken         string        `json:"admin_token,omitzero" yaml:"admin_token"`
 	// JWTSecret keys the management session tokens. The name is kept for
 	// config compatibility; tokens are PASETO v4.local, not JWT. Prefer the
 	// auth_key alias below. There is no default — startup fails without one.
@@ -118,6 +124,9 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.Cache != nil {
 		c.Cache = other.Cache
+	}
+	if other.SlowQueryThreshold > 0 {
+		c.SlowQueryThreshold = other.SlowQueryThreshold
 	}
 	if other.QueryTimeout > 0 {
 		c.QueryTimeout = other.QueryTimeout

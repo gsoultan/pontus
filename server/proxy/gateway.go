@@ -32,6 +32,9 @@ type runtimeConfig struct {
 	chain   middleware.Chain
 	pooling poolingMode
 
+	// slowQuery is the threshold above which a query is logged individually.
+	slowQuery time.Duration
+
 	// localZone is the zone this proxy runs in. The balancer's cost function
 	// applies RemoteZonePenalty when it differs from a backend's zone, but only
 	// if the caller says where it is — every Hint left it empty, so local_zone
@@ -163,11 +166,23 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	}
 
 	// Publish atomically for the query path.
-	g.runtime.Store(&runtimeConfig{chain: g.chain, pooling: parsePoolingMode(cfg.PoolingMode), localZone: cfg.LocalZone})
+	g.runtime.Store(&runtimeConfig{chain: g.chain, pooling: parsePoolingMode(cfg.PoolingMode), localZone: cfg.LocalZone, slowQuery: slowQueryThreshold(cfg)})
 }
 
 // current returns the active runtime configuration. Never nil after
 // NewGateway, which calls reconfigure before returning.
+// defaultSlowQueryThreshold is the point above which a query is worth a line of
+// its own. Chosen to be well clear of ordinary OLTP work while still catching
+// the queries an operator would want to see named.
+const defaultSlowQueryThreshold = 200 * time.Millisecond
+
+func slowQueryThreshold(cfg *config.Options) time.Duration {
+	if cfg != nil && cfg.SlowQueryThreshold > 0 {
+		return cfg.SlowQueryThreshold
+	}
+	return defaultSlowQueryThreshold
+}
+
 func (g *Gateway) current() *runtimeConfig {
 	if rc := g.runtime.Load(); rc != nil {
 		return rc
@@ -359,7 +374,22 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	// zero in a real deployment while the dashboard rendered them as fact.
 	observability2.DefaultTracker.Record(s.Normalized, duration, err)
 
-	slog.Info("Query executed",
+	// Log the queries worth reading, not every query.
+	//
+	// An INFO line per query carrying its full SQL text was the dominant log
+	// volume on a busy proxy — it drowned the events an operator actually
+	// looks for, inflated the log store, and put unbounded client-supplied
+	// text into a per-request record. Failures and slow queries still log
+	// individually; the rest are counted by the tracker and available at debug
+	// level, with Top Queries as the aggregate view.
+	level := slog.LevelDebug
+	switch {
+	case err != nil:
+		level = slog.LevelError
+	case duration >= m.current().slowQuery:
+		level = slog.LevelWarn
+	}
+	slog.Log(ctx, level, "Query executed",
 		"query", s.Normalized,
 		"duration_ms", duration.Milliseconds(),
 		"backend", s.Backend.Address(),
