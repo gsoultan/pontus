@@ -36,9 +36,25 @@ func (p *PostgresHandler) Handshake(ctx context.Context, client, server net.Conn
 		return err
 	}
 
-	state.User, state.Database = extractStartupParams(startup)
+	state.User, state.Database, state.Replication = extractStartupParams(startup)
 	if state.Database == "" {
 		state.Database = state.User // PostgreSQL defaults the database to the user name
+	}
+
+	// Refuse replication before the startup packet reaches the backend.
+	//
+	// A replication session is a persistent CopyBoth stream, not a sequence of
+	// request/response exchanges, so the pooling loop would hand a half-read
+	// WAL feed to the next client served by that connection. Refusing here
+	// rather than after authentication also keeps the backend connection
+	// clean: it never enters replication mode, so it goes back to the pool
+	// reusable.
+	if IsReplication(state.Replication) {
+		if err := WritePostgresError(client, "0A000",
+			"pontus does not proxy replication connections yet; connect the CDC consumer directly to the database"); err != nil {
+			return fmt.Errorf("%w: %w", ErrReplicationUnsupported, err)
+		}
+		return ErrReplicationUnsupported
 	}
 
 	if _, err := server.Write(startup.raw); err != nil {

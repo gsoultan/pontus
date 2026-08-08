@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 )
 
 // PostgreSQL startup-phase constants.
@@ -152,29 +153,34 @@ func relayAuth(client, server net.Conn) error {
 	}
 }
 
-// extractStartupParams pulls the "user" and "database" parameters out of a
-// StartupMessage body.
+// extractStartupParams pulls the "user", "database" and "replication"
+// parameters out of a StartupMessage body.
 //
 // The value is attacker-chosen and unauthenticated at this point — the backend
 // has not vetted it yet — so callers must treat it as a claim, and must not use
 // it as an unbounded map key.
-func extractStartupParams(pkt *startupPacket) (user, database string) {
+//
+// replication is what distinguishes a CDC consumer from an application client.
+// It has to be read here, before the connection reaches the pool: a replication
+// session is a persistent CopyBoth stream, and pooling one hands a half-read
+// stream to whichever client is served next.
+func extractStartupParams(pkt *startupPacket) (user, database, replication string) {
 	if len(pkt.raw) <= 8 {
-		return "", ""
+		return "", "", ""
 	}
 
 	payload := pkt.raw[8:]
 	for {
 		idx := indexZero(payload)
 		if idx <= 0 {
-			return user, database
+			return user, database, replication
 		}
 		key := string(payload[:idx])
 		payload = payload[idx+1:]
 
 		idx = indexZero(payload)
 		if idx < 0 {
-			return user, database
+			return user, database, replication
 		}
 		value := string(payload[:idx])
 		payload = payload[idx+1:]
@@ -184,7 +190,25 @@ func extractStartupParams(pkt *startupPacket) (user, database string) {
 			user = value
 		case "database":
 			database = value
+		case "replication":
+			replication = value
 		}
+	}
+}
+
+// IsReplication reports whether a startup parameter value requests a
+// replication connection.
+//
+// PostgreSQL accepts "true", "on", "yes", "1" and "database" (logical), and
+// treats "false"/"off"/"no"/"0" as an ordinary session. Anything unrecognised
+// is treated as replication: guessing "ordinary" on an unknown value is the
+// failure that corrupts a stream, so the safe default is to refuse.
+func IsReplication(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "false", "off", "no", "0":
+		return false
+	default:
+		return true
 	}
 }
 
