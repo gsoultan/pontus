@@ -54,7 +54,11 @@ Two things had to be fixed before that branch worked at all:
 ## Still open
 
 - No two-backend E2E topology, so promotion, replica routing and failover are only covered
-  by unit tests with mock backends. This is the highest-value gap in the suite.
+  by unit tests with mock backends. This is the highest-value gap in the suite. The harness
+  config (`e2e/harness_test.go`) declares one `role: primary` backend, and its `agent_addr`
+  points at a port with nothing listening.
+- The agent's own boundary *is* covered end to end now (`e2e/agent_test.go`): fail-closed
+  startup, token rejection, allowlist enforcement. No database needed, ~9s.
 - Management state (projects, users, settings) is not replicated by Raft between control
   plane nodes.
 - `StateVerifying` resets to `StateIdle` after a hardcoded 30s sleep and verifies nothing.
