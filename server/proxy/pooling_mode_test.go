@@ -79,6 +79,41 @@ func TestOnlyStatementModeRejectsTransactions(t *testing.T) {
 	}
 }
 
+// Both release sites must go through the same rule.
+//
+// The predicate was correct and session pooling still never held a connection:
+// executeRequest released on an idle transaction unconditionally while the
+// transaction loop honoured the mode, and executeRequest runs first. Testing
+// the helper in isolation proved nothing about it being the only thing that
+// releases, so this asserts the value-based form both sites now share.
+func TestShouldReleaseAtMatchesTheSessionStateForm(t *testing.T) {
+	states := []protocol.TransactionState{protocol.StateIdle, protocol.StateError}
+
+	for _, mode := range []poolingMode{poolTransaction, poolSession, poolStatement} {
+		for _, txState := range states {
+			for _, pinned := range []bool{false, true} {
+				viaState := mode.shouldRelease(&protocol.SessionState{TxState: txState}, pinned)
+				viaValue := mode.shouldReleaseAt(txState, pinned)
+				if viaState != viaValue {
+					t.Errorf("mode=%v txState=%v pinned=%v: shouldRelease=%v shouldReleaseAt=%v; "+
+						"the two release sites would disagree", mode, txState, pinned, viaState, viaValue)
+				}
+			}
+		}
+	}
+}
+
+// Session mode must differ from transaction mode at an idle transaction — the
+// exact condition executeRequest was releasing on regardless of mode.
+func TestSessionModeHoldsAtIdleTransaction(t *testing.T) {
+	if poolSession.shouldReleaseAt(protocol.StateIdle, false) {
+		t.Error("session pooling released at an idle transaction; it must hold until the client disconnects")
+	}
+	if !poolTransaction.shouldReleaseAt(protocol.StateIdle, false) {
+		t.Error("transaction pooling did not release at an idle transaction")
+	}
+}
+
 func TestPoolingModeString(t *testing.T) {
 	for mode, want := range map[poolingMode]string{
 		poolTransaction: "transaction",

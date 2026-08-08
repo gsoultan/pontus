@@ -374,3 +374,29 @@ func connectErr(ctx context.Context, s *stack) (*pgx.Conn, error) {
 	return pgx.Connect(ctx, fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
 		backendUser(), backendPass(), s.proxyAddr, backendDB()))
 }
+
+// setYAMLScalar rewrites a top-level scalar in the generated config, so a test
+// can exercise a setting the default config does not.
+func setYAMLScalar(config, key, value string) string {
+	lines := strings.Split(config, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, key+":") {
+			lines[i] = key + ": " + value
+			return strings.Join(lines, "\n")
+		}
+	}
+	return config + "\n" + key + ": " + value + "\n"
+}
+
+// setRateLimit rewrites the rate_limit block.
+func setRateLimit(config string, rps float64, burst int) string {
+	old := `rate_limit:
+  enabled: true
+  rps: 500
+  burst: 1000`
+	replacement := fmt.Sprintf(`rate_limit:
+  enabled: true
+  rps: %g
+  burst: %d`, rps, burst)
+	return strings.Replace(config, old, replacement, 1)
+}

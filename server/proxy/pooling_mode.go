@@ -62,7 +62,17 @@ func (m poolingMode) String() string {
 // and temp tables all bind state to one backend connection, and handing that
 // connection to another client loses it.
 func (m poolingMode) shouldRelease(state *protocol.SessionState, pinned bool) bool {
-	if state == nil || pinned {
+	if state == nil {
+		return false
+	}
+	return m.shouldReleaseAt(state.TxState, pinned)
+}
+
+// shouldReleaseAt is the same rule against a transaction state the caller
+// already has. Both release sites go through it so a mode cannot be honoured
+// in one place and ignored in the other.
+func (m poolingMode) shouldReleaseAt(txState protocol.TransactionState, pinned bool) bool {
+	if pinned {
 		return false
 	}
 	if m == poolSession {
@@ -72,7 +82,7 @@ func (m poolingMode) shouldRelease(state *protocol.SessionState, pinned bool) bo
 	// Transaction and statement modes both wait for the transaction to close.
 	// They differ in whether a transaction may be opened at all, which is
 	// enforced separately.
-	return state.TxState == protocol.StateIdle
+	return txState == protocol.StateIdle
 }
 
 // rejectsTransactions reports whether opening a transaction is an error in this

@@ -425,8 +425,15 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 		"client", s.RemoteAddr,
 	)
 
-	// If the transaction is idle, we can release the server connection back to the pool.
-	if state == protocol.StateIdle {
+	// Return the connection according to the configured pooling mode.
+	//
+	// This site released on an idle transaction unconditionally, which meant
+	// session pooling never held anything: the mode was honoured in the
+	// transaction loop and ignored here, and this runs first. Testing the
+	// predicate in isolation proved it correct and proved nothing about it
+	// being the only thing that releases.
+	if s.Server != nil &&
+		m.current().pooling.shouldReleaseAt(state, m.handler.IsPinned(s.State)) {
 		s.Backend.Release(s.Server)
 		s.Server = nil
 	}
