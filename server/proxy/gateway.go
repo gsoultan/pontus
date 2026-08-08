@@ -29,7 +29,8 @@ import (
 // handleClient reads it on every request and cannot take a lock without
 // holding it across connection I/O.
 type runtimeConfig struct {
-	chain middleware.Chain
+	chain   middleware.Chain
+	pooling poolingMode
 }
 
 // Gateway implements the proxy.Provider interface.
@@ -156,7 +157,7 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	}
 
 	// Publish atomically for the query path.
-	g.runtime.Store(&runtimeConfig{chain: g.chain})
+	g.runtime.Store(&runtimeConfig{chain: g.chain, pooling: parsePoolingMode(cfg.PoolingMode)})
 }
 
 // current returns the active runtime configuration. Never nil after
@@ -467,7 +468,23 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		session.QueryInfo = g.handler.ClassifyQuery(session.Data)
 
 		// Execute through middleware chain
-		if err := g.current().chain.Handle(qctx, session, g.executeRequest); err != nil {
+		rc := g.current()
+
+		// Statement pooling cannot hold a connection across statements, so a
+		// transaction spanning them would run on different backends. Refuse it
+		// rather than execute half of it somewhere else.
+		if rc.pooling.rejectsTransactions() && session.QueryInfo.InTransaction {
+			slog.Warn("Refused transaction under statement pooling",
+				"client", remoteAddr, "user", session.State.User)
+			if err := protocol.WritePostgresError(client, "0A000",
+				"statement pooling does not support transactions; use transaction or session pooling"); err != nil {
+				slog.Debug("Failed to report statement-pooling refusal", "client", remoteAddr, "error", err)
+			}
+			qcancel()
+			continue
+		}
+
+		if err := rc.chain.Handle(qctx, session, g.executeRequest); err != nil {
 			slog.Error("Request failed", "client", remoteAddr, "error", err)
 			qcancel()
 			if session.Server != nil {
@@ -477,9 +494,12 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 			return
 		}
 
-		// Transaction-level pooling: release connection if idle
-		// but only if the session is not pinned (LISTEN, Advisory Locks, etc.)
-		if session.State.TxState == protocol.StateIdle && session.Server != nil && !g.handler.IsPinned(session.State) {
+		// Return the connection according to the configured pooling mode.
+		// Session mode holds it until the client disconnects; transaction and
+		// statement modes wait for the transaction to close. A pinned session
+		// is never released, whatever the mode.
+		if session.Server != nil &&
+			rc.pooling.shouldRelease(session.State, g.handler.IsPinned(session.State)) {
 			session.Backend.Release(session.Server)
 			session.Server = nil
 			session.Backend = nil
