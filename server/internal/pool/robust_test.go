@@ -60,6 +60,9 @@ func TestServerPool_ReleaseReturnsConnectionToPool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Acquire: %v", err)
 	}
+	// Stand in for the gateway completing the startup exchange; without it the
+	// pool destroys the connection on release rather than recycling it.
+	markReadyForTest(c1)
 	if got := p.Stats().ActiveConns; got != 1 {
 		t.Errorf("ActiveConns while checked out = %d, want 1", got)
 	}
@@ -221,6 +224,7 @@ func TestServerPool_ClearIdleConnsDropsPooled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	markReadyForTest(c)
 	p.Release(c)
 
 	if got := p.Stats().IdleConns; got != 1 {
@@ -231,5 +235,14 @@ func TestServerPool_ClearIdleConnsDropsPooled(t *testing.T) {
 
 	if got := p.Stats().IdleConns; got != 0 {
 		t.Errorf("%d idle connections survived the role change", got)
+	}
+}
+
+// markReadyForTest stands in for the gateway completing the PostgreSQL startup
+// exchange. The pool only recycles a connection that reached that point, so a
+// test asserting on the idle set has to reach it too.
+func markReadyForTest(conn net.Conn) {
+	if c, ok := conn.(*Conn); ok {
+		c.MarkReady()
 	}
 }

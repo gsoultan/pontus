@@ -22,6 +22,7 @@ type Conn struct {
 	useCount  atomic.Int64
 	broken    atomic.Bool
 	dirty     atomic.Bool
+	ready     atomic.Bool
 
 	// stmts is the set of prepared statements the server has parsed on this
 	// connection. Guarded because Recyclable may clear it from the engine's
@@ -79,6 +80,20 @@ func (c *Conn) Broken() bool { return c.broken.Load() }
 
 // MarkBroken forces the connection to be destroyed on release.
 func (c *Conn) MarkBroken() { c.broken.Store(true) }
+
+// Ready reports whether this connection has completed a PostgreSQL startup
+// exchange and can therefore carry queries.
+//
+// The pool hands out a raw socket: the startup packet belongs to the client,
+// so the gateway forwards it during the handshake rather than the driver
+// sending one at dial time. Until that has happened the connection cannot
+// answer anything, including a health check's SELECT 1.
+func (c *Conn) Ready() bool { return c.ready.Load() }
+
+// MarkReady records that the startup exchange completed. Called by the gateway
+// once the handshake succeeds; a connection released without it is destroyed
+// rather than pooled.
+func (c *Conn) MarkReady() { c.ready.Store(true) }
 
 // Dirty reports whether the connection carries state the next caller must not
 // observe — an open transaction, most importantly.

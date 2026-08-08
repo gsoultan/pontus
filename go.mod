@@ -3,10 +3,10 @@ module github.com/gsoultan/pontus
 go 1.26.5
 
 require (
+	aidanwoods.dev/go-paseto v1.6.0
 	connectrpc.com/connect v1.19.2
 	github.com/go-kit/kit v0.13.0
 	github.com/go-sql-driver/mysql v1.10.0
-	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/gsoultan/gpool v0.4.0
 	github.com/hashicorp/raft v1.7.3
@@ -29,7 +29,6 @@ require (
 )
 
 require (
-	aidanwoods.dev/go-paseto v1.6.0 // indirect
 	aidanwoods.dev/go-result v0.3.1 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect

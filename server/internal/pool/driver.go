@@ -53,6 +53,15 @@ func (d *connDriver) Dead(conn *Conn) bool {
 	return conn == nil || conn.Conn == nil || conn.Broken()
 }
 
+// Ready implements pooling.ReadinessChecker.
+//
+// The pool dials a raw socket; the PostgreSQL startup exchange is the client's
+// own packet, forwarded by the gateway during the handshake. A connection
+// released before that completed cannot answer a query, so the engine destroys
+// it rather than returning it to the idle set where a health check would pick
+// it up and condemn the backend.
+func (d *connDriver) Ready(conn *Conn) bool { return conn.Ready() }
+
 // NeedsCleanup keeps the common release allocation-free. A connection returned
 // at a transaction boundary — which is the normal path, since the gateway only
 // releases when TxState is idle — pays nothing.

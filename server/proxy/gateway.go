@@ -418,24 +418,30 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 
 	// Initial handshake
 	if err := g.handler.Handshake(ctx, client, server, sessionState); err != nil {
-		// A refused replication attempt is expected traffic, not a fault: the
-		// client has already been told why, and the backend never saw the
-		// startup packet, so its connection goes back to the pool reusable.
+		// A refused replication attempt is expected traffic, not a fault — the
+		// client has already been told why.
 		if errors.Is(err, protocol.ErrReplicationUnsupported) {
 			slog.Warn("Refused replication connection: CDC is not proxied yet",
 				"client", remoteAddr, "user", sessionState.User, "mode", sessionState.Replication)
 		} else {
 			slog.Error("Handshake error", "client", remoteAddr, "error", err)
 		}
-		// Destroy rather than recycle. This connection was acquired but never
-		// carried a startup packet, and the pool has no way to tell a
-		// never-handshaked connection from a ready one — deepCheck would send
-		// SELECT 1 on it, fail, and mark the whole backend unhealthy.
+		// This connection never carried a startup packet, so it cannot answer a
+		// query. Marked broken explicitly rather than relying on the pool's
+		// readiness check, which only exists in gpool releases that carry
+		// ReadinessChecker — belt and braces, and correct on either.
 		if c, ok := server.(interface{ MarkBroken() }); ok {
 			c.MarkBroken()
 		}
 		backend.Release(server)
 		return
+	}
+
+	// The startup exchange completed, so this connection can carry queries and
+	// may be recycled. Until it is marked, the pool destroys it on release
+	// rather than handing an unusable socket to the next caller.
+	if c, ok := server.(interface{ MarkReady() }); ok {
+		c.MarkReady()
 	}
 
 	session := &middleware.Session{
