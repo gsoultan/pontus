@@ -37,6 +37,10 @@ func connectMode(t *testing.T, ctx context.Context, s *stack, mode pgx.QueryExec
 // If Pontus only inspects simple queries then metrics undercount real traffic:
 // every observability number the dashboard shows would be a fraction of what
 // actually ran.
+//
+// Counted at the chain boundary rather than at the backend, so a request the
+// cache serves still counts as a request served — otherwise enabling the cache
+// would appear to reduce throughput.
 func TestProtocolCoverage(t *testing.T) {
 	modes := []struct {
 		name string

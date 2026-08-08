@@ -27,6 +27,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -96,6 +98,12 @@ func requireBackend(t *testing.T) {
 
 // startStack builds the binary and runs it against a scratch data directory.
 func startStack(t *testing.T) *stack {
+	return startStackWith(t, nil)
+}
+
+// startStackWith runs a proxy whose generated config has been adjusted, so a
+// failure path can be exercised against a deliberately broken setup.
+func startStackWith(t *testing.T, adjust func(string) string) *stack {
 	t.Helper()
 	requireBackend(t)
 
@@ -113,7 +121,11 @@ func startStack(t *testing.T) *stack {
 	}
 
 	configPath := filepath.Join(dataDir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte(configYAML(dataDir, proxyAddr, mgmtAddr)), 0o600); err != nil {
+	config := configYAML(dataDir, proxyAddr, mgmtAddr)
+	if adjust != nil {
+		config = adjust(config)
+	}
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -332,4 +344,33 @@ rate_limit:
   rps: 500
   burst: 1000
 `, proxyAddr, mgmtAddr, dataDir, backendAddr(), adminDSN())
+}
+
+// replaceBackendAddr repoints the single configured backend.
+func replaceBackendAddr(config, addr string) string {
+	return strings.Replace(config,
+		fmt.Sprintf(`- addr: "%s"`, backendAddr()),
+		fmt.Sprintf(`- addr: "%s"`, addr), 1)
+}
+
+// dropTable removes a table directly on the backend, so a failed test does not
+// leave one behind on a shared database.
+func dropTable(t *testing.T, table string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := pgx.Connect(ctx, fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
+		backendUser(), backendPass(), backendAddr(), backendDB()))
+	if err != nil {
+		return
+	}
+	defer conn.Close(ctx)
+	_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS "+table)
+}
+
+// connectErr attempts a session and returns the error rather than failing.
+func connectErr(ctx context.Context, s *stack) (*pgx.Conn, error) {
+	return pgx.Connect(ctx, fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
+		backendUser(), backendPass(), s.proxyAddr, backendDB()))
 }

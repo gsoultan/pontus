@@ -342,11 +342,20 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 		}
 	}
 
+	// One buffer, shared.
+	//
+	// The collapser and the result cache both want the response bytes, and the
+	// conditions that enable collapsing — a read-only statement outside a
+	// transaction — are exactly the ones the cache stores under. Giving the
+	// collapser its own buffer left ResponseCapture empty, so the cache's Set
+	// never ran and every lookup missed: the cache was enabled, consulted on
+	// every query, and structurally incapable of holding anything.
 	var capture *bytes.Buffer
-	if call != nil {
-		capture = new(bytes.Buffer)
-	} else if s.ResponseCapture != nil {
+	switch {
+	case s.ResponseCapture != nil:
 		capture = s.ResponseCapture
+	case call != nil:
+		capture = new(bytes.Buffer)
 	}
 
 	state, isReadOnlyErr, rtt, err := m.proxyResponse(s.Client, s.Server, s.Buffer, capture, s.QueryInfo.ReadOnly)
@@ -383,11 +392,9 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	// Feed the tracker. Without this call nothing on the query path is ever
 	// observed: total requests, error rate, RPS and Top Queries all stayed at
 	// zero in a real deployment while the dashboard rendered them as fact.
-	observability2.DefaultTracker.Record(s.Normalized, duration, err)
-
-	// Per-backend counters. IncRequests and IncErrors existed with no callers,
-	// so every backend reported zero traffic and the dashboard had no way to
-	// show how a strategy was actually distributing load.
+	// Per-backend counters. Recorded here rather than at the chain boundary
+	// because they answer "how is the balancer distributing load", and a
+	// request served from cache never reached a backend.
 	if s.Backend != nil {
 		s.Backend.IncRequests()
 		if err != nil {
@@ -541,6 +548,7 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 
 		// Execute through middleware chain
 		rc := g.current()
+		queryStart := time.Now()
 
 		// Statement pooling cannot hold a connection across statements, so a
 		// transaction spanning them would run on different backends. Refuse it
@@ -556,7 +564,15 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 			continue
 		}
 
-		if err := rc.chain.Handle(qctx, session, g.executeRequest); err != nil {
+		chainErr := rc.chain.Handle(qctx, session, g.executeRequest)
+
+		// Counted at the chain boundary, so a request served from cache still
+		// counts as a request served. Recording inside executeRequest missed
+		// every cache hit, which under-reported throughput by exactly the
+		// amount the cache was helping.
+		observability2.DefaultTracker.Record(session.Normalized, time.Since(queryStart), chainErr)
+
+		if err := chainErr; err != nil {
 			slog.Error("Request failed", "client", remoteAddr, "error", err)
 			qcancel()
 			if session.Server != nil {

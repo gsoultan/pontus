@@ -175,6 +175,7 @@ func (m *Observability) GetStatus(ctx context.Context, req *endpoints.GetStatusR
 		Protocol:          p.Config.Protocol,
 		BalancerType:      ps.Balancer.Name(),
 		LocalZone:         localZoneOf(ps),
+		CacheStats:        cacheStatsOf(ps),
 		UptimeSeconds:     int64(observability2.DefaultTracker.Uptime().Seconds()),
 		RequestsPerSecond: float32(rps),
 		TotalRequests:     totalRequests,
@@ -576,4 +577,30 @@ func localZoneOf(ps *state.Proxy) string {
 		return ""
 	}
 	return ps.Gateway.LocalZone()
+}
+
+// cacheStatsOf reports result-cache effectiveness.
+//
+// The dashboard has rendered a card for this since it was written, guarded on
+// the field being present — and the field was never populated, so the card
+// never appeared. A cache whose hit rate nobody can see is a cache nobody can
+// tell is working.
+func cacheStatsOf(ps *state.Proxy) *domain.CacheStats {
+	if ps == nil || ps.CacheManager == nil {
+		return nil
+	}
+
+	hits, misses, count := ps.CacheManager.Stats()
+
+	var ratio float32
+	if total := hits + misses; total > 0 {
+		ratio = float32(hits) / float32(total)
+	}
+
+	return &domain.CacheStats{
+		Hits:       hits,
+		Misses:     misses,
+		ItemsCount: int64(count),
+		HitRatio:   ratio,
+	}
 }
