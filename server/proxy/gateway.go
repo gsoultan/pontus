@@ -427,6 +427,13 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		} else {
 			slog.Error("Handshake error", "client", remoteAddr, "error", err)
 		}
+		// Destroy rather than recycle. This connection was acquired but never
+		// carried a startup packet, and the pool has no way to tell a
+		// never-handshaked connection from a ready one — deepCheck would send
+		// SELECT 1 on it, fail, and mark the whole backend unhealthy.
+		if c, ok := server.(interface{ MarkBroken() }); ok {
+			c.MarkBroken()
+		}
 		backend.Release(server)
 		return
 	}
