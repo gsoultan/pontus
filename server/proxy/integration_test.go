@@ -140,7 +140,9 @@ func TestFailoverIntegration(t *testing.T) {
 
 	prov := &mockProvisioner{backends: backends}
 	consensus := &mockConsensus{}
-	fm := orchestration.NewFailoverManager(prov, consensus, func() []pool.Backend { return backends })
+	fm := orchestration.NewFailoverManager(prov, consensus,
+		func() []pool.Backend { return backends },
+		orchestration.Options{Enabled: true, FailureThreshold: 1})
 
 	gw := NewGateway(handler, lb, fm, &config.Options{}, nil)
 

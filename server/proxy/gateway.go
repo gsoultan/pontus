@@ -112,6 +112,10 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	if cfg.QueryTimeout > 0 {
 		g.queryTimeout = cfg.QueryTimeout
 	}
+	// How stale a replica may be before reads stop going to it. Applied on
+	// reload as well as at startup: an operator raising this during a
+	// replication backlog should not have to restart the proxy.
+	balancer2.SetMaxReplicaLag(cfg.FailoverOptions().MaxReplicaLag)
 	if cfg.RateLimit != nil && cfg.RateLimit.Enabled {
 		g.limiter = rate.NewLimiter(rate.Limit(cfg.RateLimit.RPS), cfg.RateLimit.Burst)
 		// Per-tenant limiters share the configured rate and live in a bounded,

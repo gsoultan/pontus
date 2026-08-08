@@ -17,6 +17,7 @@ type mockBackend struct {
 	weight      int
 	latency     time.Duration
 	lastHealthy time.Time
+	lag         time.Duration
 }
 
 func (m *mockBackend) Address() string    { return m.address }
@@ -40,7 +41,7 @@ func (m *mockBackend) Latency() time.Duration                        { return m.
 func (m *mockBackend) RTT() time.Duration                            { return 0 }
 func (m *mockBackend) ReportLatency(time.Duration)                   {}
 func (m *mockBackend) ReportRTT(time.Duration)                       {}
-func (m *mockBackend) ReplicationLag() time.Duration                 { return 0 }
+func (m *mockBackend) ReplicationLag() time.Duration                 { return m.lag }
 func (m *mockBackend) LastHealthy() time.Time                        { return m.lastHealthy }
 func (m *mockBackend) IsDraining() bool                              { return false }
 func (m *mockBackend) SetDraining(bool)                              {}

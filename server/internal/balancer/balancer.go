@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gsoultan/pontus/server/internal/pool"
@@ -39,10 +40,40 @@ type Balancer interface {
 }
 
 const (
-	SlowStartDuration    = 30 * time.Second
-	MaxAllowedReplicaLag = 10 * time.Second
-	RemoteZonePenalty    = 2.0 // Multiplier for backends in different zones
+	SlowStartDuration = 30 * time.Second
+	RemoteZonePenalty = 2.0 // Multiplier for backends in different zones
+
+	// DefaultMaxReplicaLag is used until configuration sets one.
+	DefaultMaxReplicaLag = 10 * time.Second
 )
+
+// maxReplicaLag is how far a replica may fall behind before reads stop going to
+// it — pgpool-II's delay_threshold.
+//
+// Package-level and atomic rather than a parameter: it is read on the query
+// path by FilterNodes and CalculateCost across five strategies and eleven call
+// sites, so threading it through would put a config struct in every balancer
+// signature for a value that changes only on reload. An atomic load is free
+// here and, unlike the plain variable it would otherwise be, it does not race
+// with a hot reload.
+var maxReplicaLag atomic.Int64
+
+func init() { maxReplicaLag.Store(int64(DefaultMaxReplicaLag)) }
+
+// SetMaxReplicaLag updates the threshold. Non-positive values restore the
+// default rather than disabling the gate, because a zero threshold would route
+// reads to every replica no matter how far behind it is.
+func SetMaxReplicaLag(d time.Duration) {
+	if d <= 0 {
+		d = DefaultMaxReplicaLag
+	}
+	maxReplicaLag.Store(int64(d))
+}
+
+// MaxReplicaLag returns the current threshold.
+func MaxReplicaLag() time.Duration {
+	return time.Duration(maxReplicaLag.Load())
+}
 
 // CalculateCost computes the cost of using a backend, incorporating latency, active connections, replication lag, slow start, and locality.
 func CalculateCost(b pool.Backend, callerZone string) float64 {
@@ -76,12 +107,13 @@ func CalculateCost(b pool.Backend, callerZone string) float64 {
 
 	// Replication Lag penalty for replicas
 	if b.Role() == pool.RoleReplica {
+		maxLag := MaxReplicaLag()
 		lag := b.ReplicationLag()
-		if lag > MaxAllowedReplicaLag {
+		if lag > maxLag {
 			cost *= 100 // Heavy penalty for high lag
 		} else if lag > 0 {
-			// Linear penalty for lag: 1x at 0s, 2x at MaxAllowedReplicaLag
-			factor := 1.0 + (float64(lag) / float64(MaxAllowedReplicaLag))
+			// Linear penalty for lag: 1x at 0s, 2x at the threshold
+			factor := 1.0 + (float64(lag) / float64(maxLag))
 			cost *= factor
 		}
 	}
@@ -111,9 +143,10 @@ func FilterNodes(nodes []pool.Backend, hint Hint) *[]pool.Backend {
 	targets := *p
 
 	if hint.ReadOnly {
+		maxLag := MaxReplicaLag()
 		// Prefer replicas for read-only, but exclude those with high lag or draining
 		for node := range slices.Values(nodes) {
-			if node.Role() == pool.RoleReplica && node.IsHealthy() && !node.IsDraining() && node.ReplicationLag() <= MaxAllowedReplicaLag {
+			if node.Role() == pool.RoleReplica && node.IsHealthy() && !node.IsDraining() && node.ReplicationLag() <= maxLag {
 				targets = append(targets, node)
 			}
 		}

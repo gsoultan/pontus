@@ -153,7 +153,8 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 	if protocolName == "postgres" {
 		provisioner = orchestration2.NewPostgresProvisioner(func() []pool2.Backend { return backends }, handler)
 	}
-	failoverMgr := orchestration2.NewFailoverManager(provisioner, nil, func() []pool2.Backend { return backends })
+	failoverMgr := orchestration2.NewFailoverManager(provisioner, nil,
+		func() []pool2.Backend { return backends }, failoverOptions(r.defaults))
 	go failoverMgr.Start(ctx)
 
 	proxyCfg := &config.Options{
@@ -311,6 +312,25 @@ func newBalancer(name string, backends []pool2.Backend) balancer2.Balancer {
 // is derived rather than configured separately: it only has to be short enough
 // that a probe cannot still be running when the next one starts, and a second
 // knob whose only valid range is "less than the interval" is a trap.
+// failoverOptions translates the config file's failover block into the data
+// plane's own options struct. Nothing under server/internal reads config
+// directly; this is where the two meet.
+func failoverOptions(cfg *config.Options) orchestration2.Options {
+	if cfg == nil {
+		cfg = &config.Options{}
+	}
+	f := cfg.FailoverOptions()
+
+	return orchestration2.Options{
+		Enabled:              f.Enabled,
+		FailureThreshold:     f.FailureThreshold,
+		FollowPrimary:        f.FollowPrimary,
+		FollowPrimaryTimeout: f.FollowPrimaryTimeout,
+		AutoReattach:         f.AutoReattach,
+		AutoReattachInterval: f.AutoReattachInterval,
+	}
+}
+
 func healthTiming(cfg *config.Options) (interval, timeout time.Duration) {
 	interval = defaultHealthInterval
 	if cfg != nil && cfg.HealthInterval > 0 {

@@ -23,6 +23,7 @@ type Options struct {
 	BackendTLS     *TLS          `json:"backend_tls,omitzero" yaml:"backend_tls"`
 	RateLimit      *RateLimit    `json:"rate_limit,omitzero" yaml:"rate_limit"`
 	Cache          *Cache        `json:"cache,omitzero" yaml:"cache"`
+	Failover       *Failover     `json:"failover,omitzero" yaml:"failover"`
 	QueryTimeout   time.Duration `json:"query_timeout,omitzero" yaml:"query_timeout"`
 	// SlowQueryThreshold is the duration above which a query is logged
 	// individually. Below it, queries are recorded by the tracker and logged
@@ -124,6 +125,9 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.Cache != nil {
 		c.Cache = other.Cache
+	}
+	if other.Failover != nil {
+		c.Failover = other.Failover
 	}
 	if other.SlowQueryThreshold > 0 {
 		c.SlowQueryThreshold = other.SlowQueryThreshold

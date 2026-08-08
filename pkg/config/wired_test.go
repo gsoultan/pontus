@@ -58,11 +58,13 @@ func TestNestedConfigFieldsAreConsumed(t *testing.T) {
 	root := moduleRoot(t)
 	sources := goSources(t, root)
 
-	nested := map[string]reflect.Type{
-		"RateLimit": reflect.TypeOf(RateLimit{}),
-		"Cache":     reflect.TypeOf(Cache{}),
-		"TLS":       reflect.TypeOf(TLS{}),
-		"Backend":   reflect.TypeOf(Backend{}),
+	// Derived from Options rather than listed by hand. A hardcoded list is a
+	// second thing to remember to update, and it silently stopped covering the
+	// failover block the moment that block was added — which is the same
+	// failure mode this whole file exists to catch.
+	nested := nestedStructs(reflect.TypeOf(Options{}))
+	if len(nested) < 4 {
+		t.Fatalf("found only %d nested config structs; the walk is not working", len(nested))
 	}
 
 	for name, typ := range nested {
@@ -164,4 +166,31 @@ func moduleRoot(t *testing.T) string {
 		t.Fatalf("go.mod not found at %s: %v", root, err)
 	}
 	return root
+}
+
+// nestedStructs collects every struct type reachable one level down from the
+// given config struct, keyed by the element type's name.
+//
+// Slices count: Backends is []Backend, and a field on Backend that nothing
+// reads is exactly as dead as a field on Cache that nothing reads.
+func nestedStructs(typ reflect.Type) map[string]reflect.Type {
+	out := map[string]reflect.Type{}
+
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+
+		ft := field.Type
+		for ft.Kind() == reflect.Pointer || ft.Kind() == reflect.Slice {
+			ft = ft.Elem()
+		}
+		if ft.Kind() != reflect.Struct || ft.PkgPath() != typ.PkgPath() {
+			continue
+		}
+		out[ft.Name()] = ft
+	}
+
+	return out
 }

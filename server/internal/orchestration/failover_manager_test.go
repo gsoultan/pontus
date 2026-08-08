@@ -2,12 +2,19 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/gsoultan/pontus/server/internal/pool"
 )
+
+// immediateFailover promotes on the first observation, which is what these
+// tests were written against. Production defaults require repeated failures.
+func immediateFailover() Options {
+	return Options{Enabled: true, FailureThreshold: 1}
+}
 
 type mockBackend struct {
 	pool.Backend
@@ -40,8 +47,11 @@ type mockProvisioner struct {
 	Provisioner
 	promoted string
 	demoted  []string
-	lag      time.Duration
-	mu       sync.Mutex
+	// repointed maps a replica address to the primary it was told to follow.
+	repointed     map[string]string
+	failDemoteFor string
+	lag           time.Duration
+	mu            sync.Mutex
 }
 
 func (m *mockProvisioner) PromoteToPrimary(ctx context.Context, addr string) error {
@@ -54,7 +64,14 @@ func (m *mockProvisioner) PromoteToPrimary(ctx context.Context, addr string) err
 func (m *mockProvisioner) DemoteToReplica(ctx context.Context, addr, primary string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.failDemoteFor == addr {
+		return errors.New("agent unreachable")
+	}
 	m.demoted = append(m.demoted, addr)
+	if m.repointed == nil {
+		m.repointed = map[string]string{}
+	}
+	m.repointed[addr] = primary
 	return nil
 }
 
@@ -79,7 +96,7 @@ func TestFailoverManager_AutomaticFailover(t *testing.T) {
 	provisioner := &mockProvisioner{}
 	consensus := &mockConsensus{leader: true}
 
-	mgr := NewFailoverManager(provisioner, consensus, func() []pool.Backend { return backends })
+	mgr := NewFailoverManager(provisioner, consensus, func() []pool.Backend { return backends }, immediateFailover())
 
 	// Manually call monitor instead of Start to avoid non-determinism in test
 	mgr.monitor(t.Context())
@@ -99,7 +116,7 @@ func TestFailoverManager_AutomaticFailback_SplitBrain(t *testing.T) {
 	provisioner := &mockProvisioner{}
 	consensus := &mockConsensus{leader: true}
 
-	mgr := NewFailoverManager(provisioner, consensus, func() []pool.Backend { return backends })
+	mgr := NewFailoverManager(provisioner, consensus, func() []pool.Backend { return backends }, immediateFailover())
 
 	mgr.monitor(t.Context())
 
@@ -127,7 +144,7 @@ func TestFailoverTellsTheProxyTheWriteNodeMoved(t *testing.T) {
 	provisioner := &mockProvisioner{}
 
 	mgr := NewFailoverManager(provisioner, &mockConsensus{leader: true},
-		func() []pool.Backend { return backends })
+		func() []pool.Backend { return backends }, immediateFailover())
 
 	if err := mgr.TriggerFailover(t.Context()); err != nil {
 		t.Fatalf("TriggerFailover: %v", err)
@@ -155,7 +172,7 @@ func TestSplitBrainWithoutConsensusDoesNotPanic(t *testing.T) {
 	provisioner := &mockProvisioner{}
 
 	// nil consensus, exactly as registry.go builds it.
-	mgr := NewFailoverManager(provisioner, nil, func() []pool.Backend { return backends })
+	mgr := NewFailoverManager(provisioner, nil, func() []pool.Backend { return backends }, immediateFailover())
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -185,7 +202,7 @@ func TestRecoveredPrimaryDoesNotStealBackTheWriteRole(t *testing.T) {
 
 	backends := []pool.Backend{old, replica}
 	provisioner := &mockProvisioner{}
-	mgr := NewFailoverManager(provisioner, nil, func() []pool.Backend { return backends })
+	mgr := NewFailoverManager(provisioner, nil, func() []pool.Backend { return backends }, immediateFailover())
 
 	// The primary dies and r1 is promoted.
 	mgr.monitor(t.Context())
@@ -212,5 +229,85 @@ func TestRecoveredPrimaryDoesNotStealBackTheWriteRole(t *testing.T) {
 	if demoted[0] != "p1" {
 		t.Errorf("demoted %q; the recovered old primary should lose to the node "+
 			"that was promoted, not the other way round", demoted[0])
+	}
+}
+
+// Promotion is irreversible — PostgreSQL starts a new timeline and the old
+// primary can no longer simply rejoin — so a single failed check must not be
+// enough to trigger one.
+func TestFailoverWaitsForRepeatedFailures(t *testing.T) {
+	dead := &mockBackend{address: "p1", role: pool.RolePrimary, healthy: false}
+	replica := &mockBackend{address: "r1", role: pool.RoleReplica, healthy: true}
+
+	backends := []pool.Backend{dead, replica}
+	provisioner := &mockProvisioner{}
+	mgr := NewFailoverManager(provisioner, nil, func() []pool.Backend { return backends },
+		Options{Enabled: true, FailureThreshold: 3})
+
+	for i := 1; i < 3; i++ {
+		mgr.monitor(t.Context())
+		provisioner.mu.Lock()
+		promoted := provisioner.promoted
+		provisioner.mu.Unlock()
+		if promoted != "" {
+			t.Fatalf("promoted after %d consecutive failures, threshold is 3", i)
+		}
+	}
+
+	mgr.monitor(t.Context())
+	provisioner.mu.Lock()
+	defer provisioner.mu.Unlock()
+	if provisioner.promoted != "r1" {
+		t.Errorf("no promotion after reaching the threshold; promoted = %q", provisioner.promoted)
+	}
+}
+
+// A blip must not accumulate toward the threshold across unrelated outages.
+func TestFailoverThresholdResetsWhenThePrimaryAnswers(t *testing.T) {
+	primary := &mockBackend{address: "p1", role: pool.RolePrimary, healthy: false}
+	replica := &mockBackend{address: "r1", role: pool.RoleReplica, healthy: true}
+
+	backends := []pool.Backend{primary, replica}
+	provisioner := &mockProvisioner{}
+	mgr := NewFailoverManager(provisioner, nil, func() []pool.Backend { return backends },
+		Options{Enabled: true, FailureThreshold: 3})
+
+	mgr.monitor(t.Context())
+	mgr.monitor(t.Context())
+
+	// The primary was only briefly unreachable.
+	primary.healthy = true
+	mgr.monitor(t.Context())
+
+	// It drops again — this must start counting from one, not from three.
+	primary.healthy = false
+	mgr.monitor(t.Context())
+
+	provisioner.mu.Lock()
+	defer provisioner.mu.Unlock()
+	if provisioner.promoted != "" {
+		t.Errorf("promoted %q on the first failure after a recovery; "+
+			"the counter carried over instead of resetting", provisioner.promoted)
+	}
+}
+
+// Automatic promotion is off by default, and must stay off when disabled.
+func TestFailoverDoesNotPromoteWhenDisabled(t *testing.T) {
+	dead := &mockBackend{address: "p1", role: pool.RolePrimary, healthy: false}
+	replica := &mockBackend{address: "r1", role: pool.RoleReplica, healthy: true}
+
+	backends := []pool.Backend{dead, replica}
+	provisioner := &mockProvisioner{}
+	mgr := NewFailoverManager(provisioner, nil, func() []pool.Backend { return backends },
+		Options{Enabled: false, FailureThreshold: 1})
+
+	for range 5 {
+		mgr.monitor(t.Context())
+	}
+
+	provisioner.mu.Lock()
+	defer provisioner.mu.Unlock()
+	if provisioner.promoted != "" {
+		t.Errorf("promoted %q with automatic failover disabled", provisioner.promoted)
 	}
 }

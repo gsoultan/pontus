@@ -37,14 +37,22 @@ type FailoverManager struct {
 	// to ask, because config order alone would hand the write role back to the
 	// node that just failed.
 	lastPromoted string
+
+	// missedPrimary counts consecutive checks that found no healthy primary.
+	// Promotion is irreversible, so it waits for opts.FailureThreshold of these
+	// rather than acting on a single observation.
+	missedPrimary int
+
+	opts Options
 }
 
-func NewFailoverManager(provisioner Provisioner, consensus Consensus, backends func() []pool.Backend) *FailoverManager {
+func NewFailoverManager(provisioner Provisioner, consensus Consensus, backends func() []pool.Backend, opts Options) *FailoverManager {
 	return &FailoverManager{
 		provisioner: provisioner,
 		consensus:   consensus,
 		backends:    backends,
 		state:       StateIdle,
+		opts:        opts.sane(),
 	}
 }
 
@@ -91,14 +99,40 @@ func (m *FailoverManager) monitor(ctx context.Context) {
 		}
 	}
 
-	// 1. Automatic Failover: No healthy primary
+	// 1. Automatic failover: no healthy primary.
+	//
+	// Gated on consecutive observations rather than one. Promotion cannot be
+	// undone — PostgreSQL starts a new timeline and the old primary can no
+	// longer simply rejoin — so a failover triggered by a dropped packet costs
+	// far more than one that lands a few seconds late. pgpool-II makes the same
+	// trade with health_check_max_retries.
 	if len(healthyPrimaries) == 0 {
-		slog.Warn("No healthy primary detected, triggering automatic failover")
-		if err := m.TriggerFailover(ctx); err != nil {
-			slog.Error("Automatic failover failed", "error", err)
+		m.mu.Lock()
+		m.missedPrimary++
+		missed := m.missedPrimary
+		m.mu.Unlock()
+
+		switch {
+		case !m.opts.Enabled:
+			slog.Warn("No healthy primary detected; automatic failover is disabled",
+				"consecutive_checks", missed)
+		case missed < m.opts.FailureThreshold:
+			slog.Warn("No healthy primary detected; waiting for confirmation before promoting",
+				"consecutive_checks", missed, "threshold", m.opts.FailureThreshold)
+		default:
+			slog.Warn("No healthy primary after repeated checks, triggering automatic failover",
+				"consecutive_checks", missed, "threshold", m.opts.FailureThreshold)
+			if err := m.TriggerFailover(ctx); err != nil {
+				slog.Error("Automatic failover failed", "error", err)
+			}
 		}
 		return
 	}
+
+	// A primary answered, so any earlier misses were a blip.
+	m.mu.Lock()
+	m.missedPrimary = 0
+	m.mu.Unlock()
 
 	// 2. Split-brain resolution.
 	//
@@ -243,8 +277,26 @@ func (m *FailoverManager) TriggerFailover(ctx context.Context) error {
 		}
 	}
 
+	// The promotion itself has landed and the write path is restored, so the
+	// counter resets here rather than waiting for the next healthy observation.
+	m.mu.Lock()
+	m.missedPrimary = 0
+	m.mu.Unlock()
+
 	slog.Info("Replica promoted successfully", "address", bestReplica.Address())
 	m.setState(StateVerifying)
+
+	// 5. Re-point the surviving replicas.
+	//
+	// Detached from the caller's context on purpose. Re-pointing a replica can
+	// mean a full base backup, and this runs from a 5s monitor tick or from a
+	// request-scoped context in the gateway — either would cancel the rebuild
+	// part-way and leave the replica in a worse state than before. The per-node
+	// timeout inside is what bounds it.
+	if m.opts.FollowPrimary {
+		go m.followNewPrimary(context.WithoutCancel(ctx),
+			bestReplica.Address(), m.opts.FollowPrimaryTimeout)
+	}
 
 	// Reset to idle after verification period (simulated)
 	go func() {
