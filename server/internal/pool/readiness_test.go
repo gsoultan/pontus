@@ -16,12 +16,6 @@ import (
 // connection, and the pool's own deepCheck picks it up, sends SELECT 1, gets
 // nothing, and marks the whole backend unhealthy.
 func TestUnreadyConnectionIsNotPooled(t *testing.T) {
-	// Requires a gpool release carrying pooling.ReadinessChecker; v0.4.0 pools
-	// the connection regardless. Until then the gateway marks the connection
-	// broken by hand on the refusal path, which the e2e suite covers. Remove
-	// this skip when the dependency is bumped.
-	t.Skip("needs gpool with ReadinessChecker (> v0.4.0); gateway marks broken explicitly meanwhile")
-
 	addr := listenAndHold(t)
 
 	h := protocol.NewPostgresHandler()

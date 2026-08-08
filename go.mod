@@ -8,7 +8,7 @@ require (
 	github.com/go-kit/kit v0.13.0
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/google/uuid v1.6.0
-	github.com/gsoultan/gpool v0.4.0
+	github.com/gsoultan/gpool v0.5.0
 	github.com/hashicorp/raft v1.7.3
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/kardianos/service v1.2.4

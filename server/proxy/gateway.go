@@ -426,13 +426,9 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		} else {
 			slog.Error("Handshake error", "client", remoteAddr, "error", err)
 		}
-		// This connection never carried a startup packet, so it cannot answer a
-		// query. Marked broken explicitly rather than relying on the pool's
-		// readiness check, which only exists in gpool releases that carry
-		// ReadinessChecker — belt and braces, and correct on either.
-		if c, ok := server.(interface{ MarkBroken() }); ok {
-			c.MarkBroken()
-		}
+		// This connection never carried a startup packet, so it was never marked
+		// ready and the pool destroys it on release. That is enforced by the
+		// engine for every caller now, not by each one remembering to do it.
 		backend.Release(server)
 		return
 	}
