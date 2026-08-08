@@ -20,7 +20,17 @@ type Checker interface {
 	Start(ctx context.Context)
 }
 
-// Monitor implements the Checker interface.
+// Monitor is a fast liveness probe: it opens a TCP connection and closes it.
+//
+// It can only mark a backend **down**, never back up. Reaching the port proves
+// the process is listening, not that it can serve a query — a database in
+// recovery, out of connections, or refusing auth all accept TCP happily.
+// Promotion back to healthy belongs to pool.Server.deepCheck, which runs an
+// actual query and re-detects the primary/replica role.
+//
+// Both used to write SetHealthy, at different depths and cadences, so this
+// probe could flip a node back to healthy in the gap between deep checks
+// purely because its socket was open.
 type Monitor struct {
 	mu       sync.RWMutex
 	backends []Target
@@ -79,10 +89,15 @@ func (m *Monitor) checkOne(ctx context.Context, b Target) {
 
 	d := net.Dialer{}
 	conn, err := d.DialContext(checkCtx, "tcp", b.Address())
-
-	b.SetHealthy(err == nil)
-
-	if err == nil {
-		conn.Close()
+	if err != nil {
+		// Unreachable is unambiguous, and catching it on this interval is the
+		// point of a shallow probe: it fails a node far sooner than the deep
+		// check would.
+		b.SetHealthy(false)
+		return
 	}
+
+	// Reachable proves nothing beyond "something is listening", so the node is
+	// left as it is and deepCheck decides whether it can serve traffic.
+	conn.Close()
 }
