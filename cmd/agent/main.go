@@ -16,6 +16,7 @@ import (
 	pkgservice "github.com/gsoultan/pontus/pkg/service"
 	"github.com/gsoultan/pontus/pkg/version"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/reflection"
 )
@@ -26,6 +27,8 @@ func main() {
 	insecure := flag.Bool("insecure", false,
 		"Serve without authentication. Every RPC becomes reachable by anyone who can reach the port, "+
 			"including InstallDatabase, PromoteNode and RemoveDatabase. Localhost-bound testing only.")
+	tlsCert := flag.String("tls-cert", "", "PEM certificate for serving TLS (with -tls-key)")
+	tlsKey := flag.String("tls-key", "", "PEM private key for serving TLS (with -tls-cert)")
 	svcCmd := flag.String("service", "", "Service command: install, uninstall, start, stop, status")
 	showVersion := flag.Bool("version", false, "Show version information")
 	flag.Parse()
@@ -45,7 +48,12 @@ func main() {
 	}
 
 	// Refuse before the service machinery starts, so this exits with a message
-	// and a non-zero status instead of becoming a hung process.
+	// and a non-zero status instead of becoming a hung process. runAgent checks
+	// the same things, but by then the error only reaches a log line while the
+	// process stays up.
+	if (*tlsCert == "") != (*tlsKey == "") {
+		log.Fatal("-tls-cert and -tls-key must be given together")
+	}
 	if *token == "" && !*insecure {
 		log.Fatal("agent token is required: pass -token or set PONTUS_AGENT_TOKEN " +
 			"(use -insecure only for localhost-bound testing)")
@@ -58,6 +66,9 @@ func main() {
 	if *insecure {
 		args = append(args, "-insecure")
 	}
+	if *tlsCert != "" && *tlsKey != "" {
+		args = append(args, "-tls-cert", *tlsCert, "-tls-key", *tlsKey)
+	}
 
 	cfg := pkgservice.Config{
 		Name:        "pontus-agent",
@@ -67,7 +78,7 @@ func main() {
 	}
 
 	mgr, err := pkgservice.NewManager(cfg, func() error {
-		return runAgent(ctx, *addr, *token, *insecure)
+		return runAgent(ctx, *addr, *token, *insecure, *tlsCert, *tlsKey)
 	}, func() error {
 		cancel()
 		return nil
@@ -128,7 +139,7 @@ func handleServiceCommand(mgr pkgservice.Manager, cmd string) error {
 	return err
 }
 
-func runAgent(ctx context.Context, addr string, token string, insecure bool) error {
+func runAgent(ctx context.Context, addr string, token string, insecure bool, tlsCert, tlsKey string) error {
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
@@ -156,6 +167,22 @@ func runAgent(ctx context.Context, addr string, token string, insecure bool) err
 	default:
 		return fmt.Errorf("agent token is required: pass -token or set PONTUS_AGENT_TOKEN " +
 			"(use -insecure only for localhost-bound testing)")
+	}
+
+	// Transport security. The token is mandatory, so without this it is sent in
+	// cleartext on every call to a service that installs software as root.
+	switch {
+	case tlsCert != "" && tlsKey != "":
+		creds, err := credentials.NewServerTLSFromFile(tlsCert, tlsKey)
+		if err != nil {
+			return fmt.Errorf("load agent TLS keypair: %w", err)
+		}
+		opts = append(opts, grpc.Creds(creds))
+	case tlsCert != "" || tlsKey != "":
+		return fmt.Errorf("-tls-cert and -tls-key must be given together")
+	default:
+		slog.Warn("Agent is serving without TLS; its token crosses the network in cleartext",
+			"addr", addr, "hint", "pass -tls-cert and -tls-key")
 	}
 
 	s := grpc.NewServer(opts...)

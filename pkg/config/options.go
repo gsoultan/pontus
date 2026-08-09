@@ -21,10 +21,15 @@ type Options struct {
 	HealthInterval time.Duration `json:"health_interval,omitzero" yaml:"health_interval"`
 	TLS            *TLS          `json:"tls,omitzero" yaml:"tls"`
 	BackendTLS     *TLS          `json:"backend_tls,omitzero" yaml:"backend_tls"`
-	RateLimit      *RateLimit    `json:"rate_limit,omitzero" yaml:"rate_limit"`
-	Cache          *Cache        `json:"cache,omitzero" yaml:"cache"`
-	Failover       *Failover     `json:"failover,omitzero" yaml:"failover"`
-	QueryTimeout   time.Duration `json:"query_timeout,omitzero" yaml:"query_timeout"`
+	// AgentTLS secures the sidecar connection. Deliberately separate from
+	// BackendTLS: the agent and the database are different peers with different
+	// names and usually different CAs, and sharing one config is what made this
+	// look configured when it was not.
+	AgentTLS     *TLS          `json:"agent_tls,omitzero" yaml:"agent_tls"`
+	RateLimit    *RateLimit    `json:"rate_limit,omitzero" yaml:"rate_limit"`
+	Cache        *Cache        `json:"cache,omitzero" yaml:"cache"`
+	Failover     *Failover     `json:"failover,omitzero" yaml:"failover"`
+	QueryTimeout time.Duration `json:"query_timeout,omitzero" yaml:"query_timeout"`
 	// SlowQueryThreshold is the duration above which a query is logged
 	// individually. Below it, queries are recorded by the tracker and logged
 	// only at debug level: one INFO line per query with its full SQL text is
@@ -119,6 +124,9 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.BackendTLS != nil {
 		c.BackendTLS = other.BackendTLS
+	}
+	if other.AgentTLS != nil {
+		c.AgentTLS = other.AgentTLS
 	}
 	if other.RateLimit != nil {
 		c.RateLimit = other.RateLimit

@@ -153,6 +153,7 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 	if protocolName == "postgres" {
 		provisioner = orchestration2.NewPostgresProvisioner(func() []pool2.Backend { return backends }, handler)
 	}
+	applyAgentTLS(r.defaults)
 	failoverMgr := orchestration2.NewFailoverManager(provisioner, nil,
 		func() []pool2.Backend { return backends }, failoverOptions(r.defaults))
 	go failoverMgr.Start(ctx)
@@ -312,6 +313,28 @@ func newBalancer(name string, backends []pool2.Backend) balancer2.Balancer {
 // is derived rather than configured separately: it only has to be short enough
 // that a probe cannot still be running when the next one starts, and a second
 // knob whose only valid range is "less than the interval" is a trap.
+// applyAgentTLS installs the sidecar's transport security.
+//
+// Set here rather than in internal/app because server/internal is not
+// importable from there, and this is already where configuration is translated
+// into data-plane settings. Kept apart from the database dialer's TLS: the
+// agent and the database are different peers with different names and usually
+// different CAs, and sharing one config is what made this look configured when
+// it was not. Without it the mandatory agent token crosses the network in
+// cleartext; orchestration warns once on first use.
+func applyAgentTLS(cfg *config.Options) {
+	if cfg == nil {
+		return
+	}
+	agentTLS, err := proxy.CreateTLSConfig(cfg.AgentTLS)
+	if err != nil {
+		slog.Error("agent_tls is configured but unusable; agent connections stay in cleartext",
+			"error", err)
+		return
+	}
+	orchestration2.SetAgentTLS(agentTLS)
+}
+
 // failoverOptions translates the config file's failover block into the data
 // plane's own options struct. Nothing under server/internal reads config
 // directly; this is where the two meet.

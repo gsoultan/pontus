@@ -7,6 +7,7 @@ import (
 	"github.com/gsoultan/pontus/api/proto/endpoints"
 	"github.com/gsoultan/pontus/api/proto/service"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
@@ -34,8 +35,15 @@ type agentClient struct {
 
 // NewAgentClient creates a new client for a Pontus Agent.
 func NewAgentClient(addr string, token string) (AgentClient, error) {
+	// Encrypted when configured, cleartext otherwise — with a warning, because
+	// the token guards root-level operations and rides on every call.
 	var opts []grpc.DialOption
-	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if cfg := AgentTLS(); cfg != nil {
+		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(cfg)))
+	} else {
+		warnIfCleartext(addr)
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
 
 	if token != "" {
 		opts = append(opts, grpc.WithUnaryInterceptor(tokenClientInterceptor(token)), grpc.WithStreamInterceptor(tokenStreamClientInterceptor(token)))
