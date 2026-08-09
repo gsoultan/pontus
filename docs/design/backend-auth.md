@@ -148,6 +148,36 @@ in the server log. So this stage is not fixing a live cross-user leak; it is the
 makes reuse *safe to introduce* in Stage 4. Without it, the moment Pontus starts pooling
 properly it starts handing one user's connection to another.
 
+### Remaining work, scoped 2026-08-09
+
+The keying itself is not yet done. It was attempted and backed out rather than landed
+half-wired; what follows is what the attempt established, so the next run starts from here.
+
+**Shape.** A `poolSet` on each `Server`, holding one `pooling.Core[*Conn]` per
+`identity{user, database}`, with `maxTotal` (`max_backend_conns`), `maxPools`, an idle TTL
+reaped on use, and LRU eviction of pools with no checked-out connections. `min_idle` is 0 for
+on-demand pools.
+
+**Blast radius.** `Server` touches its core in eight places — `Acquire`, `SetMaxConns`,
+`EvictIdle`, `Stat` (twice), the deep-check `Acquire`, `Close`, and `controller.go`'s
+`MaxConns()`. Seven external `.Acquire(` call sites, plus `Backend` gaining an identity-aware
+acquire and the mocks that implement it.
+
+**The trap that stopped it.** `Stats()` reports *cumulative* counters — `EmptyAcquireCount`,
+`AcquireDuration`. Summing those across pools is fine until a pool is evicted, at which point
+the totals go backwards. Eviction is not an edge case here, it is the capacity mechanism. So
+`Server` needs accumulators that survive eviction, folding a pool's counters in as it is
+closed. Decide that before writing the aggregation, not after.
+
+Also note `pooling.Stat` has unexported fields and cannot be assembled outside its package,
+so the aggregate needs its own type rather than a synthesised `pooling.Stat`.
+
+**Sequencing.** Nothing exercises per-identity pools until Stage 3 gives Pontus the ability to
+open a connection as a user; today every client already gets a fresh connection, so there is
+no sharing to segregate. The safety property — never hand a session another identity's
+connection — is already enforced at acquisition (below). Doing the keying immediately before
+or with Stage 3 means it ships exercised rather than only unit-tested.
+
 *Landed 2026-08-09 (first slice).* The acquire now happens **after** the client's startup
 packet is read, so the user and database are known before a connection is chosen, and the
 connection records the identity it authenticated as (`Conn.SetIdentity` / `BelongsTo`).
