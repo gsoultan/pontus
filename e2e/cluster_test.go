@@ -179,12 +179,34 @@ func connectSimple(t *testing.T, ctx context.Context, s *stack) *pgx.Conn {
 // can reach into a node the way an operator would.
 func containerRuntime(t *testing.T) string {
 	t.Helper()
-	for _, candidate := range []string{"docker", "podman", "container"} {
-		if path, err := exec.LookPath(candidate); err == nil {
+
+	// Being on PATH is not the same as working. Podman is frequently installed
+	// and not running, and picking it then produces "cannot connect to Podman"
+	// from every call — which reads as a Pontus failure and cost real time to
+	// track down. scripts/e2e-cluster.sh has always probed; this did not.
+	probes := []struct {
+		binary string
+		args   []string
+	}{
+		{"docker", []string{"info"}},
+		{"podman", []string{"info"}},
+		{"container", []string{"system", "status"}},
+	}
+
+	for _, probe := range probes {
+		path, err := exec.LookPath(probe.binary)
+		if err != nil {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		err = exec.CommandContext(ctx, path, probe.args...).Run()
+		cancel()
+		if err == nil {
 			return path
 		}
 	}
-	t.Skip("no container runtime on PATH; cannot manipulate the cluster")
+
+	t.Skip("no working container runtime; cannot manipulate the cluster")
 	return ""
 }
 

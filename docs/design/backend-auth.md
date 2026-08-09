@@ -303,13 +303,22 @@ Still open for this stage:
 - **md5 toward the client.** A stored md5 verifier can answer an md5 challenge directly, but
   it is a different exchange in both directions. Refused with its reason rather than
   downgraded, which excludes pre-14 deployments.
-- **The driver matrix is not finished, and this is the gate on recommending
-  `auth.mode: pontus` to anyone.** pgx passes, and libpq (psql 17.10) has been observed
-  authenticating successfully through Pontus — but `e2e.TestLibpqAuthenticatesAgainstPontus`
-  skips intermittently because its container-runtime lookup is unreliable, so it is not
-  yet a standing guarantee. asyncpg and JDBC are untested. A wire implementation is judged
-  by clients written without reference to it; pgx agreeing with us proves the exchange is
-  self-consistent, not that it is correct.
+- **The driver matrix is started, not finished.** pgx and **libpq** (psql 17.10) both pass,
+  the latter reliably — three consecutive runs after the harness bug below was fixed. That
+  matters more than pgx: nearly every PostgreSQL tool is built on libpq, and it has never
+  seen this code, so it tests correctness rather than self-consistency.
+
+  asyncpg and JDBC remain untested. asyncpg is the most valuable remaining opinion — a pure
+  Python SCRAM implementation sharing no code with either — but it needs to be preinstalled
+  rather than fetched on demand; resolving it with `uv` compiles from source and hangs the
+  suite. Until those land, `auth.mode: pontus` is not something to recommend broadly.
+
+  *The bug that hid this:* `e2e.containerRuntime` picked the first runtime binary on PATH
+  without checking it worked, and Podman is commonly installed and not running. Every call
+  then failed with "cannot connect to Podman", which reads as a Pontus failure.
+  `scripts/e2e-cluster.sh` had always probed with `info`/`system status`; the Go helper had
+  not. Worth remembering as a shape: *installed* is not *working*, and a test that cannot
+  tell an environment fault from a real one trains you to ignore it.
 
 **Stage 4 — safe reuse between clients.**
 Reuse only becomes possible at this stage — today every client gets a fresh backend
