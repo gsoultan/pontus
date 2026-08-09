@@ -31,6 +31,9 @@ references this task needs. Do not re-derive from source what is already written
 - How pgpool-II sequences failover and what its `auto_failback` actually means (re-attaching a
   standby, never returning the write role), plus the gap table against Pontus:
   `mem:pgpool_failover_model`.
+- The design for Pontus-side backend authentication — the one capability that closes A8, A9,
+  W2 and W4 together, including why a stored SCRAM verifier is not enough and how ClientKey
+  is recovered from the client's own proof: `docs/design/backend-auth.md`.
 - Open findings, highest severity first: `mem:findings`. **Read the "Dead code that silently
   disables a whole subsystem" section before reasoning about the cache, the balancer or TLS** —
   cache invalidation, the load-balancer cost function and client-facing TLS all look implemented
