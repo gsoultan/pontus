@@ -196,10 +196,48 @@ already in the query phase — did not exist: connections are not reused across 
 client's identity is only known *after* the startup packet is read, yet the connection is
 acquired before it, so the acquire has to move behind the read.
 
-**Stage 1 — `CredentialStore`.**
-`auth_query` and `auth_file`, with the bounded cache above. No behaviour change yet.
-Verify: lookups against a real `pg_authid`, cache eviction, negative caching, and that a
-non-superuser `auth_user` with the SECURITY DEFINER function works.
+**Stage 1 — `CredentialStore`. Landed 2026-08-09** (`server/internal/credentials`).
+
+`ParseVerifier` reads `pg_authid.rolpassword`: SCRAM-SHA-256, md5, or no password. A
+plaintext value is refused rather than guessed at — guessing means authenticating with
+something that is not a credential — and a password beginning "md5" is not mistaken for a
+hash. `Verifier.String()` redacts, because the SCRAM keys verify a client's proof and yield
+its ClientKey, which is password-equivalent and reaches logs by accident.
+
+`QueryStore` binds the user name as a parameter, never interpolates it: the name arrives in a
+startup packet, so string-building the query would be SQL injection reachable before
+authentication. `FileStore` refuses a group- or world-readable file and rejects a whole file
+on one bad line, since a half-applied credential file locks out whichever roles followed it.
+
+`Cache` is bounded, expiring, and caches misses — all three are security properties, not
+optimisations. The key is a client-chosen user name, so an unbounded map is a remote memory
+exhaustion; and without negative caching an attacker walking a username list turns each cheap
+TCP connection into a query against the primary, with Pontus as the amplifier. Transport
+failures are deliberately *not* cached: one blip would otherwise lock a deployment out for
+the whole TTL.
+
+No behaviour change to the data plane, and no config surface yet — that arrives in Stage 2
+with the code that reads it, so the wiring test cannot start passing on a setting nothing
+consumes.
+
+*Verified against a live PostgreSQL, not just unit tests:* the default query parses a real
+SCRAM verifier, an unknown role is reported as such, and the SECURITY DEFINER recipe below
+works from a non-superuser role that provably **cannot** read `pg_authid` directly.
+
+```sql
+CREATE OR REPLACE FUNCTION pontus_auth_lookup(IN wanted text,
+    OUT rolname text, OUT verifier text)
+RETURNS record AS $$
+  SELECT rolname::text, coalesce(rolpassword, '')::text
+    FROM pg_authid WHERE rolname = wanted
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+REVOKE EXECUTE ON FUNCTION pontus_auth_lookup(text) FROM PUBLIC;
+CREATE ROLE pontus_auth LOGIN PASSWORD '...';
+GRANT EXECUTE ON FUNCTION pontus_auth_lookup(text) TO pontus_auth;
+```
+
+with `auth_query: SELECT rolname, verifier FROM pontus_auth_lookup($1)`.
 
 **Stage 2 — Pontus authenticates the client.**
 Replace relaying with a real server-side implementation of `trust`, `md5` and
