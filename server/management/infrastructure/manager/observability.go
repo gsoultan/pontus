@@ -70,13 +70,19 @@ func (m *Observability) GetStatus(ctx context.Context, req *endpoints.GetStatusR
 			LatencyMs:        node.Latency().Milliseconds(),
 			ReplicationLagMs: node.ReplicationLag().Milliseconds(),
 			IsDraining:       node.IsDraining(),
-			Weight:           int32(node.Weight()),
-			MaxConns:         stats.MaxConns,
-			IdleConns:        stats.IdleConns,
-			WaitQueueSize:    stats.WaitQueueSize,
-			TotalRequests:    stats.TotalRequests,
-			TotalErrors:      stats.TotalErrors,
-			CurrentMaxConns:  stats.MaxConns,
+			// Both reported, because they differ in the case an operator asks
+			// about: a replica that has reconnected is streaming but not yet
+			// eligible while it serves out the reattach dwell, and without the
+			// pair that looks like a routing fault.
+			Streaming:       node.IsReplicating() || node.Role() == pool.RolePrimary,
+			ReadEligible:    node.IsHealthy() && !node.IsDraining() && node.IsReplicating(),
+			Weight:          int32(node.Weight()),
+			MaxConns:        stats.MaxConns,
+			IdleConns:       stats.IdleConns,
+			WaitQueueSize:   stats.WaitQueueSize,
+			TotalRequests:   stats.TotalRequests,
+			TotalErrors:     stats.TotalErrors,
+			CurrentMaxConns: stats.MaxConns,
 			// Streams are counted apart from active_conns: they hold a permit
 			// for hours and never return to the idle set, so folding them in
 			// would overstate the headroom the pool actually has.

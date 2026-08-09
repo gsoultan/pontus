@@ -33,6 +33,7 @@ import {
   IconSearch,
   IconCloudUpload,
 } from "@tabler/icons-react";
+import { ReplicaHealth } from "./ReplicaHealth"
 import type { BackendStatus } from "../../gen/api/proto/domain/status_pb";
 
 interface BackendCardProps {
@@ -53,13 +54,6 @@ interface BackendCardProps {
 function utilization(active: number, max: number): number | null {
   if (!Number.isFinite(max) || max <= 0) return null;
   return Math.min(100, (active / max) * 100);
-}
-
-function lagLabel(lagMs: number): { color: string; text: string } {
-  if (lagMs <= 0) return { color: "successGreen", text: "In sync" };
-  if (lagMs < 1000) return { color: "successGreen", text: `${lagMs}ms` };
-  if (lagMs < 10_000) return { color: "orange", text: `${(lagMs / 1000).toFixed(1)}s` };
-  return { color: "red", text: `${(lagMs / 1000).toFixed(0)}s` };
 }
 
 export function BackendCard({
@@ -84,7 +78,6 @@ export function BackendCard({
   const sessionConns = Math.max(0, Number(backend.activeConns) - streamConns);
   const sessionUsage = utilization(sessionConns, Number(backend.currentMaxConns));
   const streamUsage = utilization(streamConns, Number(backend.currentMaxConns));
-  const lag = lagLabel(Number(backend.replicationLagMs));
   const dbUsage = backend.dbMetrics
     ? utilization(Number(backend.dbMetrics.activeBackends), Number(backend.dbMetrics.maxBackends))
     : null;
@@ -275,12 +268,11 @@ export function BackendCard({
               <IconNetwork size={16} color="var(--mantine-color-dimmed)" />
             </Group>
           </Paper>
-          {isReplica && (
-            <Paper p="sm" radius="md" withBorder bg="light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-8))">
-              <Text size="xs" fw={600} c="dimmed" mb={4}>Repl. lag</Text>
-              <Text fw={700} size="lg" c={lag.color}>{lag.text}</Text>
-            </Paper>
-          )}
+          {/* Lag alone was misleading: a replica cut off from its primary
+              reports zero, because it replayed everything it received and then
+              stopped receiving. ReplicaHealth shows the streaming state that
+              makes the number meaningful. */}
+          {isReplica && <ReplicaHealth backend={backend} />}
         </SimpleGrid>
 
         <Box>

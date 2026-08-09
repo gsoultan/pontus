@@ -38,6 +38,22 @@ message BackendStatus {
   // that this part of the capacity is not coming back.
   int32 stream_conns = 24;
   int32 max_stream_conns = 25;
+
+  // Whether a replica currently has a WAL receiver attached to a primary.
+  //
+  // Reported separately from healthy because it is the state that looks
+  // healthiest and is worst: the node is up and answering, and every row it
+  // returns is older than the last. Always true for a primary, which has no
+  // upstream to stream from.
+  bool streaming = 26;
+
+  // Whether this backend is currently allowed to serve reads, after the lag
+  // threshold and the reattach dwell.
+  //
+  // Distinct from streaming: a replica that has just reconnected is streaming
+  // but not yet eligible while it serves out the dwell. Without both, that
+  // looks like a routing fault rather than a deliberate wait.
+  bool read_eligible = 27;
 }
 
 // ReplicationSlot is one row of pg_replication_slots.

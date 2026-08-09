@@ -53,8 +53,22 @@ type BackendStatus struct {
 	// that this part of the capacity is not coming back.
 	StreamConns    int32 `protobuf:"varint,24,opt,name=stream_conns,json=streamConns,proto3" json:"stream_conns,omitempty"`
 	MaxStreamConns int32 `protobuf:"varint,25,opt,name=max_stream_conns,json=maxStreamConns,proto3" json:"max_stream_conns,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Whether a replica currently has a WAL receiver attached to a primary.
+	//
+	// Reported separately from healthy because it is the state that looks
+	// healthiest and is worst: the node is up and answering, and every row it
+	// returns is older than the last. Always true for a primary, which has no
+	// upstream to stream from.
+	Streaming bool `protobuf:"varint,26,opt,name=streaming,proto3" json:"streaming,omitempty"`
+	// Whether this backend is currently allowed to serve reads, after the lag
+	// threshold and the reattach dwell.
+	//
+	// Distinct from streaming: a replica that has just reconnected is streaming
+	// but not yet eligible while it serves out the dwell. Without both, that
+	// looks like a routing fault rather than a deliberate wait.
+	ReadEligible  bool `protobuf:"varint,27,opt,name=read_eligible,json=readEligible,proto3" json:"read_eligible,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BackendStatus) Reset() {
@@ -260,6 +274,20 @@ func (x *BackendStatus) GetMaxStreamConns() int32 {
 		return x.MaxStreamConns
 	}
 	return 0
+}
+
+func (x *BackendStatus) GetStreaming() bool {
+	if x != nil {
+		return x.Streaming
+	}
+	return false
+}
+
+func (x *BackendStatus) GetReadEligible() bool {
+	if x != nil {
+		return x.ReadEligible
+	}
+	return false
 }
 
 // ReplicationSlot is one row of pg_replication_slots.
@@ -986,7 +1014,7 @@ var File_api_proto_domain_status_proto protoreflect.FileDescriptor
 
 const file_api_proto_domain_status_proto_rawDesc = "" +
 	"\n" +
-	"\x1dapi/proto/domain/status.proto\x12\x10api.proto.domain\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1eapi/proto/domain/project.proto\x1a\x1eapi/proto/domain/metrics.proto\"\xc6\a\n" +
+	"\x1dapi/proto/domain/status.proto\x12\x10api.proto.domain\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1eapi/proto/domain/project.proto\x1a\x1eapi/proto/domain/metrics.proto\"\x89\b\n" +
 	"\rBackendStatus\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x12\n" +
 	"\x04zone\x18\x0f \x01(\tR\x04zone\x12\x18\n" +
@@ -1018,7 +1046,9 @@ const file_api_proto_domain_status_proto_rawDesc = "" +
 	"\x11installed_version\x18\x16 \x01(\tR\x10installedVersion\x12/\n" +
 	"\x13recommended_version\x18\x17 \x01(\tR\x12recommendedVersion\x12!\n" +
 	"\fstream_conns\x18\x18 \x01(\x05R\vstreamConns\x12(\n" +
-	"\x10max_stream_conns\x18\x19 \x01(\x05R\x0emaxStreamConns\"\xda\x01\n" +
+	"\x10max_stream_conns\x18\x19 \x01(\x05R\x0emaxStreamConns\x12\x1c\n" +
+	"\tstreaming\x18\x1a \x01(\bR\tstreaming\x12#\n" +
+	"\rread_eligible\x18\x1b \x01(\bR\freadEligible\"\xda\x01\n" +
 	"\x0fReplicationSlot\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06plugin\x18\x02 \x01(\tR\x06plugin\x12\x1b\n" +
