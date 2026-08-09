@@ -186,6 +186,10 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 
 	gateway := proxy.NewGateway(handler, lb, failoverMgr, proxyCfg, r.backendTLS)
 
+	// Nil keeps passthrough, which is the default. Set only when the operator
+	// asked for it and a credential source actually resolved.
+	gateway.SetCredentialStore(buildCredentialStore(r.defaults, backends))
+
 	ln, err := net.Listen("tcp", prcfg.Address)
 	if err != nil {
 		cancel()

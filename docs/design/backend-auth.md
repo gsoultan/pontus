@@ -286,12 +286,22 @@ authentication exchange has been consumed, and a backend will not accept a start
 auth reply never arrives. So the client-facing switch cannot land before the backend-facing
 side exists.
 
-Both halves now exist and are tested against a live server. What is left is the swap in
-`handleClient`: read startup (already done), authenticate the client with `ScramServer`,
-then open the backend with `AuthenticateBackend` and relay its ParameterStatus,
-BackendKeyData and ReadyForQuery to the client. That is one change, and it is the one that
-changes client-visible behaviour, so it wants the full driver matrix — psql, pgx, JDBC,
-asyncpg — behind it.
+**The swap landed 2026-08-09**, behind `auth.mode: pontus` (default `passthrough`).
+`openSession` authenticates the client with `ScramServer` *before* acquiring a backend —
+an unauthenticated client must not be able to make Pontus open a database connection, or
+anyone who can reach the port can exhaust the pool without proving who they are — then opens
+the backend with `AuthenticateBackend` and completes the client's startup from the
+parameters the backend reported.
+
+Verified with a real pgx driver: it authenticates against Pontus, Pontus opens its own
+backend connection with the recovered ClientKey, and the session serves ten statements. A
+wrong password and an unknown role are refused *identically*, so the error does not
+enumerate real accounts. Passthrough with no auth block behaves exactly as before.
+
+Still open for this stage: md5 toward the client (a stored md5 verifier can answer an md5
+challenge directly, but it is a different exchange in both directions and is refused with
+its reason rather than downgraded), and the rest of the driver matrix — JDBC and asyncpg,
+which are where a wire implementation is really judged.
 
 **Stage 4 — safe reuse between clients.**
 Reuse only becomes possible at this stage — today every client gets a fresh backend

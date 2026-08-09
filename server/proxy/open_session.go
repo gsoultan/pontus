@@ -43,6 +43,15 @@ func (g *Gateway) openSession(
 		if err != nil {
 			return nil, nil, err
 		}
+
+		// Authenticate the client before a backend is chosen. An unauthenticated
+		// client should not be able to make Pontus open a database connection at
+		// all — otherwise anyone who can reach the port can consume the pool.
+		if g.credentials != nil {
+			if err := g.authenticateClient(ctx, client, req, state); err != nil {
+				return nil, nil, err
+			}
+		}
 	}
 
 	backend, server, err := g.acquireBackend(ctx, balancer2.Hint{
@@ -55,9 +64,14 @@ func (g *Gateway) openSession(
 		return nil, nil, err
 	}
 
-	if identityFirst {
+	switch {
+	case identityFirst && g.credentials != nil && req != nil:
+		// Pontus authenticated the client itself, so the backend gets its own
+		// exchange rather than a forwarded packet.
+		err = g.openAuthenticatedBackend(client, server, req, state)
+	case identityFirst:
 		err = reader.CompleteHandshake(ctx, client, server, req, state)
-	} else {
+	default:
 		err = g.handler.Handshake(ctx, client, server, state)
 	}
 	if err != nil {

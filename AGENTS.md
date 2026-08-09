@@ -195,6 +195,41 @@ reports *zero* — it replayed everything it received and then stopped receiving
 with the streaming state (`pontus_replica_streaming`, `BackendStatus.streaming`) or the
 worst case reads as the best one.
 
+## Client authentication
+
+```yaml
+auth:
+  mode: pontus            # default "passthrough"
+  auth_query: "..."       # empty uses pg_authid directly (needs superuser)
+  auth_file: /etc/pontus/userlist.txt
+  cache_ttl: 5m
+  negative_cache_ttl: 30s
+  cache_size: 1024
+```
+
+`passthrough` relays the client's own startup exchange to one backend. That exchange happens
+once, on one connection, which is why a session cannot be moved between backends and
+connections cannot be shared — findings A8 and W2/W4.
+
+`pontus` makes Pontus the SCRAM server. Verifying a client's proof also *recovers* its
+ClientKey, which is what a backend connection needs, so Pontus can open connections as that
+user without ever holding a password. Opt-in because it changes client-visible
+authentication and needs a credential source.
+
+Rules that must not regress:
+
+- Authenticate **before** acquiring a backend. Otherwise an unauthenticated client can make
+  Pontus open database connections and exhaust the pool.
+- A wrong password and an unknown role are refused **identically**. Distinguishing them
+  enumerates real accounts to anyone who can open a socket.
+- Never advertise `SCRAM-SHA-256-PLUS`, and refuse channel binding in both directions.
+  Pontus terminates the client's TLS and cannot reproduce that binding to a backend, so
+  accepting it strips exactly the protection the client asked for.
+- A ClientKey is password-equivalent. Session lifetime only; never logged, never persisted.
+  `Verifier.String()` redacts for the same reason.
+- Prefer a `SECURITY DEFINER` function over granting the admin role superuser — the recipe
+  is in `docs/design/backend-auth.md` and is covered by a live test.
+
 ## Definition of done
 
 Satisfy each item for the surface you touched, or say why it doesn't apply.

@@ -77,6 +77,12 @@ func (a *AdminSession) Available() bool {
 
 // QueryRow runs a query returning a single row. Parameters are bound by the
 // driver, so identifiers are the only thing callers must still validate.
+// QueryRowContext matches database/sql's name, so an AdminSession can be handed
+// to anything expecting that shape — the credential store, in particular.
+func (a *AdminSession) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return a.QueryRow(ctx, query, args...)
+}
+
 func (a *AdminSession) QueryRow(ctx context.Context, query string, args ...any) *sql.Row {
 	return a.db.QueryRowContext(ctx, query, args...)
 }

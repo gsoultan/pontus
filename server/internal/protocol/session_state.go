@@ -1,5 +1,7 @@
 package protocol
 
+import "github.com/gsoultan/pontus/server/internal/credentials"
+
 // SessionState tracks session-level database configuration.
 type SessionState struct {
 	// StartupPacket is the client's raw StartupMessage, retained only when the
@@ -14,8 +16,17 @@ type SessionState struct {
 	Replication string
 	Vars        map[string]string
 	Stmts       map[string]string // name -> query
-	TxState     TransactionState
-	User        string
+
+	// ClientKey is recovered when Pontus authenticates the client, and is what
+	// its backend connections authenticate with. Password-equivalent for this
+	// user: it lives for the session and is never logged or persisted.
+	ClientKey []byte
+
+	// Verifier is the stored SCRAM verifier for this role, kept so a backend can
+	// be authenticated in return via its ServerKey.
+	Verifier *credentials.SCRAMVerifier
+	TxState  TransactionState
+	User     string
 	// Database is the database named in the client's startup packet. It is part
 	// of a cache key's identity: the same SQL against a different database is a
 	// different result.

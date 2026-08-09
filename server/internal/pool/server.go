@@ -270,6 +270,16 @@ func (p *Server) Release(conn net.Conn) error {
 	return nil
 }
 
+// AdminSession returns Pontus's own privileged channel to this backend, or nil
+// when no admin_dsn is configured. It is what the credential store reads
+// verifiers over.
+func (p *Server) AdminSession() *AdminSession {
+	if p.admin == nil || !p.admin.Available() {
+		return nil
+	}
+	return p.admin
+}
+
 // IsHealthy returns the current health status.
 func (p *Server) IsHealthy() bool {
 	return p.healthy.Load()

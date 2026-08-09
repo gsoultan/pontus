@@ -17,6 +17,7 @@ import (
 	observability2 "github.com/gsoultan/pontus/pkg/observability"
 	balancer2 "github.com/gsoultan/pontus/server/internal/balancer"
 	"github.com/gsoultan/pontus/server/internal/cache"
+	"github.com/gsoultan/pontus/server/internal/credentials"
 	pool2 "github.com/gsoultan/pontus/server/internal/pool"
 	"github.com/gsoultan/pontus/server/internal/protocol"
 	"github.com/gsoultan/pontus/server/proxy/middleware"
@@ -76,6 +77,10 @@ type Gateway struct {
 	shadowBackends []pool2.Backend
 	monitor        *system.Monitor
 	backendTLS     *tls.Config
+
+	// credentials is set when Pontus authenticates clients itself. Nil means
+	// passthrough: the client's own exchange is relayed to one backend.
+	credentials credentials.Store
 
 	// ctx bounds gateway-owned background work (the cache janitor) so it stops
 	// with the gateway rather than outliving it.
