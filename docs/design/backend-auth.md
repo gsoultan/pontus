@@ -79,10 +79,37 @@ A connection authenticated as `alice` cannot be handed to `bob`. Pools become ke
 **(backend, database, user)** rather than by backend address alone (`pool.NewServer` takes
 only an address today).
 
-This is what actually closes W2, and it has a capacity consequence worth stating up front:
-idle connections no longer amortise across users. `max_conns` becomes a per-(user, database)
-ceiling with a global cap above it, or a busy multi-tenant deployment will exhaust the
-database's `max_connections`.
+This is what actually closes W2.
+
+### Decided: `max_conns` is per-pool
+
+**`max_conns` becomes a per-(backend, database, user) ceiling** — pgbouncer's
+`default_pool_size`. That is the decision; the rest of this section is what it forces.
+
+The number of pools is driven by the **username in the startup packet**, which is
+client-supplied. A per-pool ceiling with nothing above it therefore has no upper bound on
+total connections: it is a map keyed by attacker-controlled input, the same shape as the
+tenant rate-limiter that had to be bounded, except each entry costs a real connection on the
+database. So per-pool requires two things above it, and they are part of the decision rather
+than optional extras:
+
+- **`max_backend_conns`** — a ceiling on connections to one backend across every pool
+  (pgbouncer's `max_db_connections`). This is the number that keeps Pontus inside the
+  database's own `max_connections`, and it must be enforced, not advisory.
+- **A bound on the pool map itself**, with idle pools reaped on a TTL. A user who connects
+  once must not hold a pool for the life of the process.
+
+When `max_backend_conns` is reached, evict the least-recently-used **idle** pool rather than
+refusing the new session. Refusing means a new user cannot connect while idle connections sit
+unused for users who have gone away; eviction degrades in the right direction. Only when
+nothing is idle does a new session wait, and then fail with a message naming the ceiling it
+hit — never a silent hang.
+
+**`min_idle` does not survive this unchanged.** Per-pool warm connections multiply by the
+number of pools: `min_idle: 5` across forty users is two hundred idle connections against a
+database that probably allows a hundred. `min_idle` must apply only to pools an operator has
+declared, and default to **0** for pools created on demand by a user connecting. A warm-start
+knob that quietly becomes a capacity bomb is worse than no warm start.
 
 ## Credential sources
 
@@ -155,9 +182,9 @@ authentication is worse than one that declines to start.
 
 ## Open questions
 
-1. **Capacity.** Per-(user, database) pools multiply idle connections. Does `max_conns`
-   become per-pool with a global ceiling, or does the global ceiling stay and pools borrow
-   from it?
+1. ~~Capacity.~~ **Decided:** `max_conns` is per-pool, with `max_backend_conns` above it,
+   LRU eviction of idle pools, and `min_idle` defaulting to 0 for on-demand pools. See
+   "Decided: `max_conns` is per-pool" above.
 2. **`ClientKey` lifetime.** Held for the client session only, or cached per user to allow
    opening connections after that client disconnects? The second is more useful for warming
    pools and strictly worse for blast radius. Default should be session-scoped.
