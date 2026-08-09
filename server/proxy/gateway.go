@@ -457,7 +457,11 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	// being the only thing that releases.
 	if s.Server != nil &&
 		m.current().pooling.shouldReleaseAt(state, m.handler.IsPinned(s.State)) {
-		s.Backend.Release(s.Server)
+		if m.resetOnRelease() {
+			releaseToPool(s.Backend, s.Server)
+		} else {
+			s.Backend.Release(s.Server)
+		}
 		s.Server = nil
 	}
 
@@ -559,9 +563,7 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		n, err := client.Read(buf)
 		if err != nil {
 			qcancel()
-			if session.Server != nil {
-				session.Backend.Release(session.Server)
-			}
+			releaseToPool(session.Backend, session.Server)
 			if n > 0 || err != net.ErrClosed {
 				slog.Debug("Client read error or close", "client", remoteAddr, "error", err)
 			}
@@ -569,6 +571,22 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		}
 
 		session.Data = buf[:n]
+
+		// A client saying goodbye must not take the backend connection with it —
+		// but only when Pontus can authenticate the next borrower itself.
+		//
+		// Under passthrough the connection carries the client's own startup
+		// exchange and there is no way to re-run one for somebody else: the next
+		// client's startup packet would arrive on a connection already past that
+		// phase. So passthrough forwards the goodbye and gives the connection up,
+		// which is why it cannot pool. Reuse is a property of Pontus-side
+		// authentication, not of the release path.
+		if g.credentials != nil && g.handler.IsTerminate(session.Data) {
+			qcancel()
+			releaseToPool(session.Backend, session.Server)
+			session.Server = nil
+			return
+		}
 
 		// Session state is tracked in executeRequest, once the message has actually
 		// been written to a backend.
@@ -619,7 +637,11 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		// is never released, whatever the mode.
 		if session.Server != nil &&
 			rc.pooling.shouldRelease(session.State, g.handler.IsPinned(session.State)) {
-			session.Backend.Release(session.Server)
+			if g.resetOnRelease() {
+				releaseToPool(session.Backend, session.Server)
+			} else {
+				session.Backend.Release(session.Server)
+			}
 			session.Server = nil
 			session.Backend = nil
 		}

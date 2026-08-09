@@ -6,7 +6,28 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
-- **W2 + W4. Pontus does not pool.** *Re-confirmed 2026-08-09:* three sequential client
+- **W2 + W4 [FIXED 2026-08-09, under `auth.mode: pontus`]. Pontus now pools.** Eight
+  sequential clients share one backend connection — same PID, same `backend_start` — where
+  before, four sessions produced four connections.
+
+  Three things had to be true at once, which is why no single earlier fix moved it: the
+  client's Terminate is no longer forwarded (it closed a connection the pool was about to
+  reuse); a connection carries the identity it authenticated as, so it is only offered to the
+  same user and database; and a reused connection is not given a second startup exchange —
+  the backend is past that phase and reads a StartupMessage as a malformed command.
+
+  **Reuse is a property of Pontus-side authentication, not of the release path.** Under
+  passthrough the connection carries the client's own startup exchange and there is no way to
+  run one for somebody else, so passthrough still gives the connection up at session end.
+  Scoping this wrongly broke the extended protocol in passthrough and the E2E suite caught it.
+
+  A pooled connection is reset with `DISCARD ALL` on every release, so no prepared statement,
+  SET variable or temp table crosses between clients. Consequence worth knowing: under
+  transaction pooling a client's own `SET` does **not** survive its next transaction boundary.
+  That is the documented semantics of transaction pooling and pgbouncer behaves identically —
+  an earlier attempt at this reset was reverted after misreading that as a regression.
+
+- **W2 + W4 (original note). Pontus does not pool.** *Re-confirmed 2026-08-09:* three sequential client
   sessions returned three different backend PIDs **and three different `backend_start`s**,
   and the server log shows a connect/authorize/disconnect per session. Connections are not
   reused across clients.

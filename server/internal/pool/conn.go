@@ -28,7 +28,11 @@ type Conn struct {
 	identityMu sync.RWMutex
 	user       string
 	database   string
-	ready      atomic.Bool
+
+	// startupParams is what the backend reported during this connection's one
+	// startup exchange, replayed to any later client that borrows it.
+	startupParams map[string]string
+	ready         atomic.Bool
 
 	// stmts is the set of prepared statements the server has parsed on this
 	// connection. Guarded because Recyclable may clear it from the engine's
@@ -135,6 +139,25 @@ func (c *Conn) BelongsTo(user, database string) bool {
 	return got == user && gotDB == database
 }
 
+// SetStartupParams records what the backend reported during startup.
+//
+// A reused connection cannot be asked again — its startup happened once — but
+// the next client still expects ParameterStatus for server_version and the
+// rest. Keeping them is what lets a connection be handed on without a second
+// startup exchange, which the backend would reject.
+func (c *Conn) SetStartupParams(params map[string]string) {
+	c.identityMu.Lock()
+	defer c.identityMu.Unlock()
+	c.startupParams = params
+}
+
+// StartupParams returns the parameters from this connection's startup.
+func (c *Conn) StartupParams() map[string]string {
+	c.identityMu.RLock()
+	defer c.identityMu.RUnlock()
+	return c.startupParams
+}
+
 // Dirty reports whether the connection carries state the next caller must not
 // observe — an open transaction, most importantly.
 func (c *Conn) Dirty() bool { return c.dirty.Load() }
@@ -146,6 +169,14 @@ func (c *Conn) Dirty() bool { return c.dirty.Load() }
 func (c *Conn) MarkDirty() { c.dirty.Store(true) }
 
 func (c *Conn) markClean() { c.dirty.Store(false) }
+
+// forgetStatements clears the record of what this connection has parsed, after
+// the server has actually discarded them.
+func (c *Conn) forgetStatements() {
+	c.stmtMu.Lock()
+	defer c.stmtMu.Unlock()
+	c.stmts = nil
+}
 
 // HasStatement reports whether this connection already carries a prepared
 // statement by that name, implementing protocol.StatementHolder.

@@ -133,3 +133,33 @@ func noteSplitUnavailable(backend pool2.Backend) {
 			"fix", "Pontus-side backend authentication (auth_query)")
 	})
 }
+
+// releaseToPool returns a connection, marking it for reset before reuse.
+//
+// Every release is a potential handoff to a different client, so every release
+// resets. In transaction pooling the connection goes back between transactions;
+// in session pooling it only goes back when the client leaves. Either way, the
+// next borrower must not inherit prepared statements, SET variables or temp
+// tables.
+//
+// The consequence is worth stating because it surprises people: under
+// transaction pooling a client's own SET does **not** survive its next
+// transaction boundary. That is the documented semantics of transaction pooling
+// — pgbouncer behaves identically — and a session that needs SET to persist
+// wants session pooling. An earlier attempt at this reset was reverted after
+// reading that behaviour as a regression; it was not.
+func releaseToPool(backend pool2.Backend, server net.Conn) {
+	if backend == nil || server == nil {
+		return
+	}
+	if carrier, ok := server.(interface{ MarkDirty() }); ok {
+		carrier.MarkDirty()
+	}
+	backend.Release(server)
+}
+
+// resetOnRelease reports whether a reset is worth its round trip.
+//
+// Under passthrough a connection is never handed to another client, so the
+// reset would cost a DISCARD ALL per transaction and protect nobody.
+func (g *Gateway) resetOnRelease() bool { return g.credentials != nil }

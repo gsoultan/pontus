@@ -94,6 +94,26 @@ func (d *connDriver) Recyclable(ctx context.Context, conn *Conn) bool {
 		return false
 	}
 
+	// ROLLBACK ends a transaction and nothing else. Prepared statements, SET
+	// variables, temp tables, LISTEN registrations and session advisory locks
+	// all survive it, and every one of them is visible to whichever client
+	// borrows this connection next — now that connections really are borrowed.
+	//
+	// This is deliberately not run at every transaction boundary. An earlier
+	// attempt did exactly that and wiped a client's own SET halfway through its
+	// own session. The reset belongs where a connection leaves one client for
+	// good, which is what MarkDirty at session end marks.
+	if err := d.handler.Execute(ctx, conn, resetQuery); err != nil {
+		return false
+	}
+
+	// DISCARD ALL deallocated them on the server, so the record of what this
+	// connection carries has to agree.
+	conn.forgetStatements()
 	conn.markClean()
 	return true
 }
+
+// resetQuery returns a pooled connection to a state the next client can
+// inherit. pgbouncer calls this server_reset_query and defaults to the same.
+const resetQuery = "DISCARD ALL"

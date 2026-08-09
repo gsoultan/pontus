@@ -194,6 +194,12 @@ func (m *MySQLHandler) extractQuery(data []byte) string {
 	return ""
 }
 
+// IsTerminate reports COM_QUIT.
+func (m *MySQLHandler) IsTerminate(data []byte) bool {
+	const comQuit = 0x01
+	return len(data) >= 5 && data[4] == comQuit
+}
+
 // Cacheable allows only COM_QUERY, the text protocol's whole-query command.
 //
 // COM_STMT_PREPARE and COM_STMT_EXECUTE are steps in a prepared-statement

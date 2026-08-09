@@ -8,6 +8,14 @@ type QueryClassifier interface {
 	// NormalizeQuery strips values from the query for metrics grouping.
 	NormalizeQuery(data []byte) string
 
+	// IsTerminate reports whether this message ends the client's session.
+	//
+	// It must not be forwarded. The backend connection belongs to Pontus, not to
+	// the client that borrowed it: passing the client's goodbye through closes a
+	// connection the pool was about to reuse, which is why every client session
+	// used to cost a fresh one.
+	IsTerminate(data []byte) bool
+
 	// Cacheable reports whether a response to this message may be stored and
 	// replayed to another client.
 	//

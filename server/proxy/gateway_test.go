@@ -47,6 +47,10 @@ func (m *mockHandler) Cacheable(data []byte) bool {
 	return len(data) > 0 && data[0] == 'Q'
 }
 
+func (m *mockHandler) IsTerminate(data []byte) bool {
+	return len(data) > 0 && data[0] == 'X'
+}
+
 func (m *mockHandler) TrackPreparedStatement(state *protocol2.SessionState, data []byte) {}
 
 func (m *mockHandler) ReplayPreparedStatements(ctx context.Context, conn net.Conn, state *protocol2.SessionState) error {

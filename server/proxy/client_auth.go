@@ -60,6 +60,18 @@ func (g *Gateway) openAuthenticatedBackend(
 	req *protocol.StartupRequest,
 	state *protocol.SessionState,
 ) error {
+	// A connection that has already completed a startup exchange must not be
+	// given another: the backend is past that phase and would read a
+	// StartupMessage as a malformed command. Acquisition has already guaranteed
+	// it belongs to this user and database, so it is ready to carry queries as
+	// it stands — this is the case that makes pooling worth anything.
+	if carrier, ok := server.(interface {
+		Ready() bool
+		StartupParams() map[string]string
+	}); ok && carrier.Ready() {
+		return protocol.CompleteClientStartup(client, carrier.StartupParams())
+	}
+
 	if err := protocol.AuthenticateBackend(server, req.User, req.Database,
 		state.ClientKey, state.Verifier, nil); err != nil {
 		return err
@@ -68,6 +80,11 @@ func (g *Gateway) openAuthenticatedBackend(
 	params, err := protocol.WaitForReady(server)
 	if err != nil {
 		return err
+	}
+
+	// Keep them for whoever borrows this connection next.
+	if carrier, ok := server.(interface{ SetStartupParams(map[string]string) }); ok {
+		carrier.SetStartupParams(params)
 	}
 
 	// The client is waiting for the parameters and the ReadyForQuery that a

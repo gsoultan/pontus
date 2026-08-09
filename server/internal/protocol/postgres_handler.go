@@ -362,6 +362,11 @@ func (p *PostgresHandler) extractQueryBytes(data []byte) []byte {
 	return nil
 }
 
+// IsTerminate reports a client's Terminate message.
+func (p *PostgresHandler) IsTerminate(data []byte) bool {
+	return len(data) > 0 && data[0] == 'X'
+}
+
 // Cacheable allows only the simple query protocol.
 //
 // 'Q' carries a whole query and receives a whole result, so its response can be
