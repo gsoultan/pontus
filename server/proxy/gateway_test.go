@@ -42,6 +42,11 @@ func (m *mockHandler) TrackSessionState(state *protocol2.SessionState, data []by
 
 func (m *mockHandler) NormalizeQuery(data []byte) string { return string(data) }
 
+// Cacheable mirrors the PostgreSQL rule: only the simple query protocol.
+func (m *mockHandler) Cacheable(data []byte) bool {
+	return len(data) > 0 && data[0] == 'Q'
+}
+
 func (m *mockHandler) TrackPreparedStatement(state *protocol2.SessionState, data []byte) {}
 
 func (m *mockHandler) ReplayPreparedStatements(ctx context.Context, conn net.Conn, state *protocol2.SessionState) error {

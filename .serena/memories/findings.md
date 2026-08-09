@@ -6,23 +6,16 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
-- **W2 + W4 — the "does not pool" half is STALE (re-measured 2026-08-09).** Eight sequential
-  client sessions through the proxy returned the same backend PID *and the same
-  `backend_start`*, which is the same physical connection rather than a recycled PID.
-  Connections **are** reused across client sessions. The original note below predates the
-  gpool migration; do not act on it.
+- **W2 + W4. Pontus does not pool.** *Re-confirmed 2026-08-09:* three sequential client
+  sessions returned three different backend PIDs **and three different `backend_start`s**,
+  and the server log shows a connect/authorize/disconnect per session. Connections are not
+  reused across clients.
 
-  What this makes live instead: reuse happens with **no identity check**, so a connection
-  authenticated as one user is handed to the next client. That is the cross-user data path
-  Stage 0 of `docs/design/backend-auth.md` exists to close.
-
-  **Open, and blocking Stage 0:** `PostgresHandler.Handshake` forwards the client's startup
-  packet to the server unconditionally (`postgres_handler.go:57`) with no readiness check, so
-  a reused connection should receive a StartupMessage while already in the query phase — and
-  it demonstrably does not break. Understand that before restructuring the handshake, because
-  Stage 0 changes this exact path.
-
-- **W2 + W4 (original note, superseded above). Pontus does not pool.** The client's Terminate is forwarded to the backend, so
+  A probe on 2026-08-09 briefly appeared to show the opposite — the same PID and
+  `backend_start` eight times — and that reading was **wrong**: the harness config has the
+  result cache enabled and the probe asked the identical question each time, so it was
+  reading a cached row, not the backend. Any probe of connection identity must disable the
+  cache and vary the SQL. The client's Terminate is forwarded to the backend, so
   every client session ends its backend connection: `SELECT pg_backend_pid()` over four
   sequential sessions returned 278, 279, 280, 281. And `handleClient` calls `Handshake` on
   every acquired connection, so a *reused* one gets a startup packet it is already past.
@@ -96,22 +89,29 @@ Everything else is open. None of the open items are precedent to copy.
   broken; `e2e.TestSessionSurvivesManyQueriesWithAReplica` fails with `conn closed` on query 1
   against the old path.
 
-- **A9 [OPEN, severe, repro]. A pooled server connection is never reset between clients.**
-  There is no `DISCARD ALL` anywhere in the tree. `driver.Recyclable` sends only `ROLLBACK`,
-  which ends a transaction and nothing else — prepared statements, `SET` variables, temp
-  tables, `LISTEN` registrations and session advisory locks all survive it. Worse, it only runs
-  when `Dirty()` is true, and `MarkDirty`'s own comment says the normal path never sets it.
-  Effect: the first client to run a query succeeds, every later client running the same SQL
-  gets `26000 prepared statement "stmtcache_…" does not exist`. Reproduced through the proxy
-  and clean directly against PostgreSQL (8/8), single backend, in both transaction and session
-  pooling. This breaks pgx, JDBC and asyncpg alike — they all use prepared statements.
+- **A9 [FIXED 2026-08-09]. The result cache answered extended-protocol messages.**
 
-  A first attempt at the fix (`DISCARD ALL` on release, gated on a state flag) was **reverted**:
-  it exposed a second defect — `ReplaySessionState` does not reapply session variables, so a
-  client's own `SET` stopped surviving its own session once the reset actually cleared it. That
-  had been masked by connections never being reset. Same family as A8: a connection is handed
-  between clients carrying state, because nothing owns its lifecycle. pgbouncer's
-  `server_reset_query` is the reference for the reset half.
+  Diagnosis corrected. The first version of this note blamed connection reuse and a missing
+  `DISCARD ALL`; connections are not reused across clients (see W2 above), and the reverted
+  reset was aimed at the wrong thing.
+
+  PostgreSQL's extended protocol splits one query into Parse, Bind and Execute. The reply to
+  a Parse is ParseComplete — not a result set. But a Parse carries the SQL text, so it
+  normalised and classified as a cacheable read, and the second client to run the same
+  statement was answered with the first client's stored *result* where its ParseComplete
+  belonged. The connection desynchronised and the client's next Bind referenced a statement
+  the server had never parsed: `26000 prepared statement "stmtcache_…" does not exist`.
+
+  This broke pgx, JDBC and asyncpg — every mainstream driver prepares by default. The first
+  client always succeeded, so a single client or a single run looked healthy.
+
+  Fixed by `QueryClassifier.Cacheable`: PostgreSQL allows only `'Q'`, MySQL only `COM_QUERY`.
+  Caching still works for the simple protocol — the regression test asserts hits as well as
+  correctness. `e2e.TestPreparedStatementsWorkWithTheCacheEnabled` fails with 26000 against
+  the old path.
+
+  **Method note:** cache-on reproduced it 14/15; cache-off was 8/8 clean. Toggling the cache
+  is the first thing to try on any "it works once then stops" symptom here.
 
 - **B12. The agent token travels in plaintext by default** — `insecure.NewCredentials()` when
   `tlsConfig == nil`, and one `tls.Config` is shared by the agent client and the DB dialer.

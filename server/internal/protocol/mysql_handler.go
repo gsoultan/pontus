@@ -194,6 +194,21 @@ func (m *MySQLHandler) extractQuery(data []byte) string {
 	return ""
 }
 
+// Cacheable allows only COM_QUERY, the text protocol's whole-query command.
+//
+// COM_STMT_PREPARE and COM_STMT_EXECUTE are steps in a prepared-statement
+// exchange whose replies are not result sets, for the same reason PostgreSQL's
+// extended protocol is excluded: a cached result written in place of a prepare
+// acknowledgement leaves both sides disagreeing about where they are.
+func (m *MySQLHandler) Cacheable(data []byte) bool {
+	const comQuery = 0x03
+	// 3-byte payload length, 1-byte sequence id, then the command byte.
+	if len(data) < 5 {
+		return false
+	}
+	return data[4] == comQuery
+}
+
 // TrackSessionState intercepts SET commands.
 func (m *MySQLHandler) TrackSessionState(state *SessionState, data []byte) {
 	if len(data) < 5 {

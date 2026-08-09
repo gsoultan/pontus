@@ -34,6 +34,16 @@ func (m *Cache) Handle(ctx context.Context, s *Session, next HandlerFunc) error 
 		return next(ctx, s)
 	}
 
+	// Only a whole request/response exchange may be cached. An extended-protocol
+	// Parse carries a SELECT, so it normalises and classifies as a cacheable
+	// read — and answering it with a stored result set instead of ParseComplete
+	// desynchronises the connection. The client then Binds a statement the
+	// server never parsed and gets SQLSTATE 26000, which is what every
+	// prepared-statement client saw from its second connection onward.
+	if !m.handler.Cacheable(s.Data) {
+		return next(ctx, s)
+	}
+
 	// A write is never served from cache, and it evicts what it invalidates.
 	if !s.QueryInfo.ReadOnly {
 		err := next(ctx, s)

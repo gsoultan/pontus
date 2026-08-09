@@ -7,4 +7,15 @@ type QueryClassifier interface {
 
 	// NormalizeQuery strips values from the query for metrics grouping.
 	NormalizeQuery(data []byte) string
+
+	// Cacheable reports whether a response to this message may be stored and
+	// replayed to another client.
+	//
+	// Only a self-contained request/response exchange qualifies. PostgreSQL's
+	// extended protocol splits one query across Parse, Bind and Execute, and the
+	// reply to a Parse is ParseComplete — not a result set. Serving a stored
+	// result set in its place desynchronises the connection: the client then
+	// Binds a statement the server never parsed and gets
+	// "prepared statement ... does not exist" (SQLSTATE 26000).
+	Cacheable(data []byte) bool
 }

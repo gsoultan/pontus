@@ -21,8 +21,9 @@ Three consequences, all measured rather than inferred:
 - **W2/W4** — connections that *are* reusable were authenticated as whoever happened to open
   them. Reuse across clients works today only because deployments use one set of credentials.
   It is a cross-user data path.
-- **A9** — reuse between clients also carries prepared statements and session state forward,
-  because nothing owns a connection's lifecycle enough to reset it.
+- ~~**A9**~~ — **not part of this family.** It was diagnosed as connection reuse carrying
+  state forward; it was the result cache answering extended-protocol messages, and it is
+  fixed independently (2026-08-09). Connections are *not* reused across clients today.
 
 One capability fixes all three: **Pontus must be able to open a backend connection as a given
 user, without that user's client being present.**
@@ -141,16 +142,17 @@ Each stage lands on its own, with its own verification, and leaves the system wo
 No new auth yet; connections are still only usable by the session that opened them. Fixes the
 cross-user reuse in W2. Verify: a connection opened by one user is never handed to another.
 
-*Premise confirmed 2026-08-09:* eight sequential client sessions returned the same backend
-PID **and the same `backend_start`** — the same physical connection, not a recycled PID. Reuse
-across clients is real and carries no identity check, so this stage has something to fix.
+*Premise, measured 2026-08-09:* connections are **not** reused across clients today — three
+sessions, three PIDs, three `backend_start`s, and a connect/authorize/disconnect per session
+in the server log. So this stage is not fixing a live cross-user leak; it is the keying that
+makes reuse *safe to introduce* in Stage 4. Without it, the moment Pontus starts pooling
+properly it starts handing one user's connection to another.
 
-*Blocked on one unknown.* `Handshake` forwards the client's startup packet to the server
-unconditionally, with no readiness check, so a reused connection should receive a
-StartupMessage while already in the query phase — and demonstrably does not break. Stage 0
-restructures this exact path (the identity is only known *after* the startup packet is read,
-yet the connection is acquired before it), so that has to be understood first. Do not begin
-by moving the acquire.
+*Unblocked.* The apparent puzzle — a reused connection receiving a StartupMessage while
+already in the query phase — did not exist: connections are not reused across clients, so
+`Handshake` always forwards onto a fresh socket. The real work of this stage stands: the
+client's identity is only known *after* the startup packet is read, yet the connection is
+acquired before it, so the acquire has to move behind the read.
 
 **Stage 1 — `CredentialStore`.**
 `auth_query` and `auth_file`, with the bounded cache above. No behaviour change yet.
@@ -168,12 +170,14 @@ Startup packet plus authentication as the user, using the md5 verifier or the re
 `ClientKey`. This is the stage that removes A8's cause. Verify:
 `e2e.TestReadsReachTheReplica` is un-skipped and passes — a read reaches a real standby.
 
-**Stage 4 — safe reuse between clients (A9).**
-Now that Pontus owns the lifecycle: `DISCARD ALL` on release, clear the tracked statement
-set, and fix `ReplaySessionState` so a client's own `SET` survives. These must land together
-— the earlier attempt reverted precisely because resetting without working replay broke
-`SET` within a single session. Verify: the second client to run the same SQL succeeds
-(currently `26000`), and a client's own `SET` survives its session.
+**Stage 4 — safe reuse between clients.**
+Reuse only becomes possible at this stage — today every client gets a fresh backend
+connection, which is why nothing leaks between them yet. Once connections are shared:
+`DISCARD ALL` on release, clear the tracked statement set, and fix `ReplaySessionState` so a
+client's own `SET` survives. These must land together — the earlier attempt was reverted
+because resetting without working replay broke `SET` within a single session. Verify: a
+connection handed to a second client carries none of the first's prepared statements,
+session variables or temp tables, and a client's own `SET` still survives its session.
 
 **Stage 5 — remove the containment.**
 `acquireForSession`'s fallback and its warning become unnecessary. Verify: the read/write

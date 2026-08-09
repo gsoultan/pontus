@@ -334,6 +334,17 @@ func (p *PostgresHandler) extractQueryBytes(data []byte) []byte {
 	return nil
 }
 
+// Cacheable allows only the simple query protocol.
+//
+// 'Q' carries a whole query and receives a whole result, so its response can be
+// replayed. Parse ('P'), Bind ('B') and Execute ('E') are steps in an exchange
+// whose replies are ParseComplete, BindComplete and a result respectively; a
+// cached result set written in place of any of them leaves the client and the
+// server disagreeing about where they are in the protocol.
+func (p *PostgresHandler) Cacheable(data []byte) bool {
+	return len(data) > 0 && data[0] == 'Q'
+}
+
 // TrackSessionState intercepts SET commands.
 func (p *PostgresHandler) TrackSessionState(state *SessionState, data []byte) {
 	if len(data) < 6 || data[0] != 'Q' {
