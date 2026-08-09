@@ -22,7 +22,13 @@ type Conn struct {
 	useCount  atomic.Int64
 	broken    atomic.Bool
 	dirty     atomic.Bool
-	ready     atomic.Bool
+
+	// identityMu guards the user and database this connection authenticated as.
+	// Written once at handshake, read on every acquisition.
+	identityMu sync.RWMutex
+	user       string
+	database   string
+	ready      atomic.Bool
 
 	// stmts is the set of prepared statements the server has parsed on this
 	// connection. Guarded because Recyclable may clear it from the engine's
@@ -94,6 +100,40 @@ func (c *Conn) Ready() bool { return c.ready.Load() }
 // once the handshake succeeds; a connection released without it is destroyed
 // rather than pooled.
 func (c *Conn) MarkReady() { c.ready.Store(true) }
+
+// SetIdentity records the user and database this connection was authenticated
+// for.
+//
+// A connection is only interchangeable between sessions that share both. It is
+// set once, when the startup exchange completes, and never changes: the
+// credentials are fixed at that moment and cannot be renegotiated without
+// opening a new connection.
+func (c *Conn) SetIdentity(user, database string) {
+	c.identityMu.Lock()
+	defer c.identityMu.Unlock()
+	c.user, c.database = user, database
+}
+
+// Identity returns the user and database this connection was authenticated for,
+// or empty strings if it never completed a startup exchange.
+func (c *Conn) Identity() (user, database string) {
+	c.identityMu.RLock()
+	defer c.identityMu.RUnlock()
+	return c.user, c.database
+}
+
+// BelongsTo reports whether this connection may serve a session for the given
+// user and database.
+//
+// An unauthenticated connection belongs to nobody yet and is available to the
+// next handshake, which is what supplies its identity.
+func (c *Conn) BelongsTo(user, database string) bool {
+	got, gotDB := c.Identity()
+	if got == "" && gotDB == "" {
+		return true
+	}
+	return got == user && gotDB == database
+}
 
 // Dirty reports whether the connection carries state the next caller must not
 // observe — an open transaction, most importantly.

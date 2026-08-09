@@ -31,30 +31,58 @@ func NewPostgresHandler() *PostgresHandler {
 }
 
 // Handshake manages the PostgreSQL startup sequence.
+// Handshake keeps the original one-shot order for callers that already hold a
+// backend connection. It is ReadStartup followed by CompleteHandshake.
 func (p *PostgresHandler) Handshake(ctx context.Context, client, server net.Conn, state *SessionState) error {
-	startup, err := p.readClientStartup(client)
+	req, err := p.ReadStartup(client, state)
 	if err != nil {
 		return err
 	}
+	return p.CompleteHandshake(ctx, client, server, req, state)
+}
 
-	state.User, state.Database, state.Replication = extractStartupParams(startup)
-	if state.Database == "" {
-		state.Database = state.User // PostgreSQL defaults the database to the user name
+// ReadStartup implements StartupReader. No backend is touched.
+func (p *PostgresHandler) ReadStartup(client net.Conn, state *SessionState) (*StartupRequest, error) {
+	startup, err := p.readClientStartup(client)
+	if err != nil {
+		return nil, err
 	}
 
-	// A replication stream cannot use this path.
+	user, database, replication := extractStartupParams(startup)
+	if database == "" {
+		database = user // PostgreSQL defaults the database to the user name
+	}
+
+	state.User, state.Database, state.Replication = user, database, replication
+
+	// A replication stream cannot use the pooled path.
 	//
 	// It is a persistent CopyBoth feed, not a sequence of request/response
 	// exchanges, so the pooling loop would hand a half-read WAL stream to the
-	// next client served by that connection. Hand the decision back to the
-	// gateway before the startup packet reaches this backend: the stream has
-	// to go to the node holding the slot, which is not the balanced one.
-	if IsReplication(state.Replication) {
+	// next client served by that connection. Reported here, before a backend is
+	// chosen, so a replication client no longer takes a pooled connection and
+	// immediately gives it back: the stream has to go to the node holding the
+	// slot, which is not the balanced one.
+	if IsReplication(replication) {
 		state.StartupPacket = startup.raw
-		return ErrReplicationRequested
+		return nil, ErrReplicationRequested
 	}
 
-	if _, err := server.Write(startup.raw); err != nil {
+	return &StartupRequest{
+		Raw:         startup.raw,
+		User:        user,
+		Database:    database,
+		Replication: replication,
+	}, nil
+}
+
+// CompleteHandshake implements StartupReader.
+func (p *PostgresHandler) CompleteHandshake(ctx context.Context, client, server net.Conn, req *StartupRequest, state *SessionState) error {
+	if req == nil {
+		return fmt.Errorf("no startup request to complete")
+	}
+
+	if _, err := server.Write(req.Raw); err != nil {
 		return fmt.Errorf("failed to forward startup message: %w", err)
 	}
 

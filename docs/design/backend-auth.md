@@ -148,6 +148,18 @@ in the server log. So this stage is not fixing a live cross-user leak; it is the
 makes reuse *safe to introduce* in Stage 4. Without it, the moment Pontus starts pooling
 properly it starts handing one user's connection to another.
 
+*Landed 2026-08-09 (first slice).* The acquire now happens **after** the client's startup
+packet is read, so the user and database are known before a connection is chosen, and the
+connection records the identity it authenticated as (`Conn.SetIdentity` / `BelongsTo`).
+Mid-session acquisition refuses a connection belonging to another identity. Pools are still
+keyed by address alone — the remaining work of this stage — but nothing can now hand one
+user's connection to another session.
+
+Protocols where the server speaks first cannot work this way, and that is expressed as a
+capability: `protocol.StartupReader`. MySQL sends the greeting, so Pontus would have to
+invent one before holding a backend to borrow it from; the MySQL handler does not implement
+the interface and keeps the original order.
+
 *Unblocked.* The apparent puzzle — a reused connection receiving a StartupMessage while
 already in the query phase — did not exist: connections are not reused across clients, so
 `Handshake` always forwards onto a fresh socket. The real work of this stage stands: the

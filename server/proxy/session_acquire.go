@@ -22,6 +22,12 @@ type startupCarrier interface {
 	Ready() bool
 }
 
+// identityCarrier is a connection that knows which user and database it
+// authenticated as.
+type identityCarrier interface {
+	BelongsTo(user, database string) bool
+}
+
 // warnedNoSplit keeps the explanation to one line per process.
 var warnedNoSplit sync.Once
 
@@ -45,10 +51,11 @@ func (g *Gateway) acquireForSession(
 	ctx context.Context,
 	hint balancer2.Hint,
 	home pool2.Backend,
+	user, database string,
 ) (pool2.Backend, net.Conn, error) {
 	backend, conn, err := g.acquireBackend(ctx, hint)
 	if err == nil {
-		if usable(conn) {
+		if usable(conn) && belongsTo(conn, user, database) {
 			return backend, conn, nil
 		}
 		// Releasing an unready connection destroys it rather than returning it
@@ -73,7 +80,7 @@ func (g *Gateway) acquireForSession(
 		}
 		return nil, nil, herr
 	}
-	if !usable(conn) {
+	if !usable(conn) || !belongsTo(conn, user, database) {
 		home.Release(conn)
 		return nil, nil, fmt.Errorf("%w on %s: Pontus cannot open a backend connection "+
 			"on its own, so only connections that carried a client handshake can be used",
@@ -93,6 +100,25 @@ func usable(conn net.Conn) bool {
 		return true
 	}
 	return carrier.Ready()
+}
+
+// belongsTo reports whether a connection may serve this user and database.
+//
+// A connection carries the credentials it authenticated with and cannot
+// renegotiate them, so handing one authenticated as alice to a session for bob
+// runs bob's queries with alice's privileges. Nothing today produces that —
+// every client currently gets a fresh connection — but this is the check that
+// has to exist before connections are shared, or the first day of real pooling
+// is the first day of a cross-user data path.
+//
+// A connection that cannot answer is assumed to belong to the caller: the MySQL
+// path and the test doubles do not implement it.
+func belongsTo(conn net.Conn, user, database string) bool {
+	carrier, ok := conn.(identityCarrier)
+	if !ok {
+		return true
+	}
+	return carrier.BelongsTo(user, database)
 }
 
 // noteSplitUnavailable explains the consequence once, rather than leaving an

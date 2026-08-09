@@ -285,7 +285,7 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 			CallerZone: m.current().localZone,
 			ReadOnly:   s.QueryInfo.ReadOnly,
 			Key:        s.RemoteAddr,
-		}, s.HomeBackend)
+		}, s.HomeBackend, s.State.User, s.State.Database)
 		if err != nil {
 			return err
 		}
@@ -300,7 +300,7 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 					CallerZone: m.current().localZone,
 					ReadOnly:   false,
 					Key:        s.RemoteAddr,
-				}, s.HomeBackend)
+				}, s.HomeBackend, s.State.User, s.State.Database)
 				if err != nil {
 					return err
 				}
@@ -513,33 +513,14 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 	buf := buffer.Get()
 	defer buffer.Put(buf)
 
-	// For the initial handshake, we need a backend.
-	backend, server, err := g.acquireBackend(ctx, balancer2.Hint{
-		CallerZone: g.current().localZone,
-		ReadOnly:   false,
-		Key:        remoteAddr,
-	})
+	backend, server, err := g.openSession(ctx, client, sessionState, remoteAddr)
 	if err != nil {
-		slog.Error("Failed to acquire backend for handshake", "client", remoteAddr, "error", err)
-		return
-	}
-
-	// Initial handshake
-	if err := g.handler.Handshake(ctx, client, server, sessionState); err != nil {
-		// A refused replication attempt is expected traffic, not a fault — the
-		// client has already been told why.
-		// This connection never carried a startup packet, so it was never marked
-		// ready and the pool destroys it on release. That is enforced by the
-		// engine for every caller, not by each one remembering to do it.
-		backend.Release(server)
-
 		// A replication stream is not a failure: it needs the node holding its
 		// slot rather than the balanced one, so it is carried on its own path.
 		if errors.Is(err, protocol.ErrReplicationRequested) {
 			g.handleReplication(ctx, client, sessionState, remoteAddr)
 			return
 		}
-
 		slog.Error("Handshake error", "client", remoteAddr, "error", err)
 		return
 	}
