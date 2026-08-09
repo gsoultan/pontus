@@ -44,14 +44,34 @@ Everything else is open. None of the open items are precedent to copy.
   unbounded string used as the never-evicted tenant-limiter key. `state.Vars` and
   `state.Stmts` have no cap and are replayed on every backend switch.
 
-- **A8 [OPEN, severe, repro]. Reads never reach a replica.** `handleClient` (`gateway.go:507`)
-  acquires a backend for the *handshake* with `ReadOnly: false`, so every session starts on the
-  primary. `executeRequest` only routes when `s.Server == nil`, which that handshake connection
-  has already satisfied, so the read/write split never engages and the session stays pinned to
-  the primary for its whole life. Replica routing, the lag gate and the streaming gate are all
-  downstream of a decision that is never made. Only visible with a real replica: instrumenting
-  the routing branch showed it never executes. `e2e.TestReadsReachTheReplica` is skipped and
-  will prove the fix.
+- **A8 [OPEN, CRITICAL, repro]. A session breaks the moment it changes backend — Pontus
+  cannot create a usable backend connection on its own.**
+
+  Corrected 2026-08-09 after measuring rather than reading. The first version of this note
+  said "the read/write split never engages"; it does engage, and that is the problem.
+
+  The only startup exchange Pontus ever performs is *proxying the client's own startup
+  packet*, in `handleClient` → `Handshake`, onto the one connection acquired for the
+  handshake (with `ReadOnly: false`, hence always the primary). Every other pooled
+  connection is raw TCP that has never completed a startup exchange. So:
+
+  - query 0 runs on the handshake connection (primary) and succeeds;
+  - it is released at the transaction boundary;
+  - query 1 routes on its own hint, reaches the replica, gets a freshly dialled socket with
+    no startup exchange, and the client session dies — observed as `conn closed`.
+
+  With a single backend this is invisible: the released handshake connection is the one
+  handed straight back, so it already carries the exchange. A second backend exposes it on
+  the second query. Measured: 10 probes, cache disabled, distinct SQL each — `replica=0
+  primary=10` across separate sessions, and `conn closed` from probe 1 onward within one
+  session.
+
+  **This is the same root cause as W2 and W4, and as A9 below.** Pontus does not own its
+  backend connections: it cannot authenticate as the client, so it cannot open a replacement.
+  Everything downstream — read/write splitting, replica routing, the lag gate, the streaming
+  gate, cross-client multiplexing — is built on a connection it can only borrow once. The fix
+  is Pontus-side backend authentication (pgbouncer's `auth_query` / `auth_file`), which is a
+  feature, not a patch. `e2e.TestReadsReachTheReplica` is skipped and will prove it.
 
 - **A9 [OPEN, severe, repro]. A pooled server connection is never reset between clients.**
   There is no `DISCARD ALL` anywhere in the tree. `driver.Recyclable` sends only `ROLLBACK`,
@@ -66,8 +86,9 @@ Everything else is open. None of the open items are precedent to copy.
   A first attempt at the fix (`DISCARD ALL` on release, gated on a state flag) was **reverted**:
   it exposed a second defect — `ReplaySessionState` does not reapply session variables, so a
   client's own `SET` stopped surviving its own session once the reset actually cleared it. That
-  had been masked by connections never being reset. Fix A9 and that replay bug together, or the
-  cure is worse than the disease. pgbouncer's `server_reset_query` is the reference.
+  had been masked by connections never being reset. Same family as A8: a connection is handed
+  between clients carrying state, because nothing owns its lifecycle. pgbouncer's
+  `server_reset_query` is the reference for the reset half.
 
 - **B12. The agent token travels in plaintext by default** — `insecure.NewCredentials()` when
   `tlsConfig == nil`, and one `tls.Config` is shared by the agent client and the DB dialer.

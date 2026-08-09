@@ -186,3 +186,8 @@ func psqlOn(t *testing.T, container, sql string) (string, error) {
 	t.Helper()
 	return runtimeExec(t, container, "psql", "-U", backendUser(), "-tAc", sql)
 }
+
+// replaceFirst swaps the first occurrence of old in the generated config.
+func replaceFirst(cfg, old, new string) string {
+	return strings.Replace(cfg, old, new, 1)
+}
