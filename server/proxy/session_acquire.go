@@ -10,6 +10,7 @@ import (
 
 	balancer2 "github.com/gsoultan/pontus/server/internal/balancer"
 	pool2 "github.com/gsoultan/pontus/server/internal/pool"
+	"github.com/gsoultan/pontus/server/internal/protocol"
 )
 
 // ErrNoUsableConnection is returned when every connection on offer is one this
@@ -51,17 +52,35 @@ func (g *Gateway) acquireForSession(
 	ctx context.Context,
 	hint balancer2.Hint,
 	home pool2.Backend,
-	user, database string,
+	state *protocol.SessionState,
 ) (pool2.Backend, net.Conn, error) {
+	user, database := state.User, state.Database
+
 	backend, conn, err := g.acquireBackend(ctx, hint)
 	if err == nil {
 		if usable(conn) && belongsTo(conn, user, database) {
 			return backend, conn, nil
 		}
+
+		// A connection that has never completed a startup exchange used to be
+		// the end of the line — it could not be used and the session fell back
+		// to the backend that handled its handshake, which is why reads never
+		// reached a replica. Holding the session's ClientKey changes that:
+		// Pontus can authenticate this connection as the same user, right here,
+		// and the read goes where the balancer sent it.
+		if !usable(conn) && g.canAuthenticateBackends(state) {
+			if authErr := g.authenticateFreshBackend(conn, state); authErr == nil {
+				return backend, conn, nil
+			} else {
+				slog.Warn("Could not authenticate a backend connection for this session",
+					"backend", backend.Address(), "user", user, "error", authErr)
+			}
+		}
+
 		// Releasing an unready connection destroys it rather than returning it
 		// to the idle set, so this does not poison the pool for the next caller.
 		backend.Release(conn)
-		noteSplitUnavailable(backend)
+		g.noteSplitUnavailable(backend)
 	}
 
 	// Fall back to the backend that carried this session's handshake. Its pool
@@ -102,6 +121,42 @@ func usable(conn net.Conn) bool {
 	return carrier.Ready()
 }
 
+// canAuthenticateBackends reports whether Pontus holds what it needs to open a
+// connection as this session's user.
+func (g *Gateway) canAuthenticateBackends(state *protocol.SessionState) bool {
+	return g.credentials != nil && len(state.ClientKey) > 0 && state.Verifier != nil
+}
+
+// authenticateFreshBackend performs a startup exchange on a newly dialled
+// connection using the session's recovered credential.
+//
+// The client is not involved: it finished its own startup long ago. All that is
+// needed is for this socket to reach the point where it can carry queries, and
+// to be marked with the identity it authenticated as so a later acquisition
+// knows whose it is.
+func (g *Gateway) authenticateFreshBackend(server net.Conn, state *protocol.SessionState) error {
+	if err := protocol.AuthenticateBackend(server, state.User, state.Database,
+		state.ClientKey, state.Verifier, nil); err != nil {
+		return err
+	}
+
+	params, err := protocol.WaitForReady(server)
+	if err != nil {
+		return err
+	}
+
+	if carrier, ok := server.(interface {
+		SetStartupParams(map[string]string)
+		SetIdentity(user, database string)
+		MarkReady()
+	}); ok {
+		carrier.SetStartupParams(params)
+		carrier.SetIdentity(state.User, state.Database)
+		carrier.MarkReady()
+	}
+	return nil
+}
+
 // belongsTo reports whether a connection may serve this user and database.
 //
 // A connection carries the credentials it authenticated with and cannot
@@ -123,7 +178,10 @@ func belongsTo(conn net.Conn, user, database string) bool {
 
 // noteSplitUnavailable explains the consequence once, rather than leaving an
 // operator to wonder why a healthy replica receives no reads.
-func noteSplitUnavailable(backend pool2.Backend) {
+func (g *Gateway) noteSplitUnavailable(backend pool2.Backend) {
+	if g.credentials != nil {
+		return // Pontus can open its own connections; the split is available.
+	}
 	warnedNoSplit.Do(func() {
 		slog.Warn("Read/write splitting is not in effect: a session can only use a backend "+
 			"connection that carried its own handshake, and Pontus cannot open one itself. "+

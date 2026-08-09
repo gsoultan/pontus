@@ -30,21 +30,16 @@ func servedByReplica(t *testing.T, s *stack) bool {
 // Reads should reach the replica. This is the whole point of running one, and
 // until now nothing proved a read had ever been routed to a real standby.
 //
-// SKIPPED BECAUSE IT FAILS, not because it does not matter.
+// This was skipped for days as finding A8. Pontus performed no startup exchange
+// of its own — it forwarded the client's packet once — so every connection on
+// any other backend was a raw socket a session could not speak on, and reads
+// stayed on whichever backend handled the handshake.
 //
-// Pontus never performs a startup exchange of its own — it forwards the
-// client's startup packet once, onto the connection acquired for the handshake.
-// Every connection on any other backend is a raw socket that has negotiated
-// nothing, so a session cannot speak on one. Acquisition now refuses those and
-// falls back to the handshake backend, which keeps sessions alive at the cost
-// of the split: reads stay on the primary. Unbalanced beats broken.
-//
-// This passes once Pontus can authenticate backend connections itself
-// (auth_query) — finding A8. It is the assertion that proves it.
+// It passes now because Pontus authenticates the client itself, keeps the
+// recovered ClientKey, and can open a connection on the replica as the same
+// user. This is the assertion that proves the read/write split works.
 func TestReadsReachTheReplica(t *testing.T) {
-	s := startCluster(t)
-	t.Skip("known defect A8: a session can only use connections that carried its own " +
-		"handshake, so reads stay on the handshake backend — see the comment above")
+	s := startAuthCluster(t)
 
 	// Role detection runs on the pool's deep check, so give it a moment to
 	// classify both nodes before asking where a read went.

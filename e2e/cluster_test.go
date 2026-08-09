@@ -110,6 +110,28 @@ func startCluster(t *testing.T) *stack {
 	})
 }
 
+// startAuthCluster runs both nodes with Pontus authenticating clients.
+//
+// Read/write splitting needs this: a session can only be moved to another
+// backend if Pontus can open a connection there as the same user, which is what
+// authenticating the client itself provides.
+func startAuthCluster(t *testing.T) *stack {
+	t.Helper()
+	requireCluster(t)
+
+	return startStackWith(t, func(cfg string) string {
+		cfg = withReplicaBackend(cfg, replicaAddr())
+		// Cache off: a cached row would answer without reaching a backend and
+		// make every read look like it landed wherever the first one did.
+		cfg = replaceFirst(cfg, "cache:\n  enabled: true", "cache:\n  enabled: false")
+		return cfg + `
+auth:
+  mode: pontus
+  cache_ttl: 30s
+`
+	})
+}
+
 // withReplicaBackend appends the replica to the generated config's backend list.
 func withReplicaBackend(cfg, replica string) string {
 	const marker = "\ncache:\n"

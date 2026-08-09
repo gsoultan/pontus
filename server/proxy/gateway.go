@@ -290,7 +290,7 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 			CallerZone: m.current().localZone,
 			ReadOnly:   s.QueryInfo.ReadOnly,
 			Key:        s.RemoteAddr,
-		}, s.HomeBackend, s.State.User, s.State.Database)
+		}, s.HomeBackend, s.State)
 		if err != nil {
 			return err
 		}
@@ -305,7 +305,7 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 					CallerZone: m.current().localZone,
 					ReadOnly:   false,
 					Key:        s.RemoteAddr,
-				}, s.HomeBackend, s.State.User, s.State.Database)
+				}, s.HomeBackend, s.State)
 				if err != nil {
 					return err
 				}
@@ -552,6 +552,22 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		// Acquisition falls back here when the balancer picks a backend whose
 		// connections never carried this session's handshake.
 		HomeBackend: backend,
+	}
+
+	// Give the startup connection back before the first query.
+	//
+	// It was acquired to complete the client's startup, with a write hint
+	// because nothing was known about the session yet — so keeping it meant
+	// every session's first statement ran on the primary whatever it asked for,
+	// and a client that issues one read per connection never touched a replica
+	// at all. Releasing it lets that first statement route on its own hint.
+	//
+	// Only when Pontus can authenticate a replacement. Under passthrough this
+	// connection is the session's only way to reach a backend.
+	if g.credentials != nil && g.current().pooling.shouldRelease(sessionState, false) {
+		releaseToPool(session.Backend, session.Server)
+		session.Server = nil
+		session.Backend = nil
 	}
 
 	// Transaction loop

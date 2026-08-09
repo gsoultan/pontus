@@ -74,41 +74,23 @@ Everything else is open. None of the open items are precedent to copy.
   unbounded string used as the never-evicted tenant-limiter key. `state.Vars` and
   `state.Stmts` have no cap and are replayed on every backend switch.
 
-- **A8 [OPEN, CRITICAL, repro]. A session breaks the moment it changes backend — Pontus
-  cannot create a usable backend connection on its own.**
+- **A8 [FIXED 2026-08-09, under `auth.mode: pontus`]. Reads reach replicas.**
+  `e2e.TestReadsReachTheReplica` is un-skipped and passing.
 
-  Corrected 2026-08-09 after measuring rather than reading. The first version of this note
-  said "the read/write split never engages"; it does engage, and that is the problem.
+  The cause was that Pontus could only ever produce the client's own startup exchange,
+  forwarded once, so every other connection was a raw socket a session could not speak on.
+  Holding the ClientKey recovered from the client's SCRAM proof removes that: a mid-session
+  acquisition that lands on a fresh connection now authenticates it as the same user rather
+  than falling back to the handshake backend.
 
-  The only startup exchange Pontus ever performs is *proxying the client's own startup
-  packet*, in `handleClient` → `Handshake`, onto the one connection acquired for the
-  handshake (with `ReadOnly: false`, hence always the primary). Every other pooled
-  connection is raw TCP that has never completed a startup exchange. So:
+  One more thing was needed and is easy to miss: the startup connection is acquired with a
+  **write** hint, because nothing is known about the session yet. Keeping it meant every
+  session's first statement ran on the primary whatever it asked for — and a client that
+  issues one read per connection never touched a replica at all. It is now returned to the
+  pool once the client's startup completes, so the first statement routes on its own hint.
 
-  - query 0 runs on the handshake connection (primary) and succeeds;
-  - it is released at the transaction boundary;
-  - query 1 routes on its own hint, reaches the replica, gets a freshly dialled socket with
-    no startup exchange, and the client session dies — observed as `conn closed`.
-
-  With a single backend this is invisible: the released handshake connection is the one
-  handed straight back, so it already carries the exchange. A second backend exposes it on
-  the second query. Measured: 10 probes, cache disabled, distinct SQL each — `replica=0
-  primary=10` across separate sessions, and `conn closed` from probe 1 onward within one
-  session.
-
-  **This is the same root cause as W2 and W4, and as A9 below.** Pontus does not own its
-  backend connections: it cannot authenticate as the client, so it cannot open a replacement.
-  Everything downstream — read/write splitting, replica routing, the lag gate, the streaming
-  gate, cross-client multiplexing — is built on a connection it can only borrow once. The fix
-  is Pontus-side backend authentication (pgbouncer's `auth_query` / `auth_file`), which is a
-  feature, not a patch. `e2e.TestReadsReachTheReplica` is skipped and will prove it.
-
-  **Contained 2026-08-09, not fixed.** `acquireForSession` now refuses a connection that has
-  not completed a startup exchange and falls back to `Session.HomeBackend`, the backend that
-  carried this session's handshake. Adding a replica no longer breaks the data plane — it
-  simply does not balance, and says so once at WARN naming the finding. Unbalanced beats
-  broken; `e2e.TestSessionSurvivesManyQueriesWithAReplica` fails with `conn closed` on query 1
-  against the old path.
+  Under passthrough this connection is the session's only way to reach a backend, so the
+  release and the mid-session authentication are both conditional on Pontus-side auth.
 
 - **A9 [FIXED 2026-08-09]. The result cache answered extended-protocol messages.**
 
