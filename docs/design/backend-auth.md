@@ -261,10 +261,37 @@ SASLInitialResponse / SASLContinue / SASLResponse / SASLFinal / AuthenticationOk
 and the rule that Pontus never offers a weaker method than the backend would. Verify against
 psql, pgx, JDBC and asyncpg.
 
-**Stage 3 — Pontus opens backend connections.**
-Startup packet plus authentication as the user, using the md5 verifier or the recovered
-`ClientKey`. This is the stage that removes A8's cause. Verify:
-`e2e.TestReadsReachTheReplica` is un-skipped and passes — a read reaches a real standby.
+**Stage 3 — Pontus opens backend connections.** *Core landed 2026-08-09.*
+
+`protocol.AuthenticateBackend` performs a full startup exchange as a given user from a
+`ClientKey` alone — no password — and `credentials.ScramClient` is the client half that
+produces the proof. The backend is authenticated in return via ServerKey, because skipping
+that would let anything answering on the backend's address complete the exchange.
+
+**Proven against a real server, not by arithmetic that agrees with itself:** a live test
+creates a role, reads its verifier through `auth_query`, recovers a `ClientKey` by verifying
+a client proof, and then opens a TCP connection to PostgreSQL 17.10 and authenticates with
+the key alone, through to `ReadyForQuery` and `server_version`. A fabricated key is refused
+*by the server*.
+
+Remaining: replacing the relay in `handleClient` — which is where Stages 2 and 3 meet, see
+below — plus md5 (a stored md5 verifier can answer an md5 challenge directly) and the
+per-identity pooling that lets the resulting connections actually be shared.
+
+### Stages 2 and 3 are coupled at the wire
+
+Worth stating because the staging implies otherwise. The moment Pontus authenticates the
+client itself, the client's startup packet can no longer be forwarded verbatim — its
+authentication exchange has been consumed, and a backend will not accept a startup whose
+auth reply never arrives. So the client-facing switch cannot land before the backend-facing
+side exists.
+
+Both halves now exist and are tested against a live server. What is left is the swap in
+`handleClient`: read startup (already done), authenticate the client with `ScramServer`,
+then open the backend with `AuthenticateBackend` and relay its ParameterStatus,
+BackendKeyData and ReadyForQuery to the client. That is one change, and it is the one that
+changes client-visible behaviour, so it wants the full driver matrix — psql, pgx, JDBC,
+asyncpg — behind it.
 
 **Stage 4 — safe reuse between clients.**
 Reuse only becomes possible at this stage — today every client gets a fresh backend
