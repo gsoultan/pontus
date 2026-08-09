@@ -75,6 +75,15 @@ func (p *Server) IsReplicating() bool {
 		return false
 	}
 
+	// The dwell is a penalty for *recovering*, not for being newly observed.
+	// A replica that has been streaming for a week is not suspect because
+	// Pontus started thirty seconds ago, and charging it the interval anyway
+	// took every replica out of the read pool for a minute after every restart
+	// and every config reload.
+	if !p.stoppedReplicating.Load() {
+		return true
+	}
+
 	since := p.replicatingSince.Load()
 	if since == 0 {
 		return false
@@ -88,6 +97,9 @@ func (p *Server) setReplicating(streaming bool) {
 	if !streaming {
 		p.replicating.Store(false)
 		p.replicatingSince.Store(0)
+		// Remember that this node has dropped at least once, so its next
+		// recovery has to wait out the dwell.
+		p.stoppedReplicating.Store(true)
 		return
 	}
 	// Only the first observation in a run starts the clock; later ones must not

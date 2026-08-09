@@ -68,6 +68,7 @@ type Server struct {
 	// replicatingSince when that run of streaming began — see reattach.go.
 	replicating        atomic.Bool
 	replicatingSince   atomic.Int64
+	stoppedReplicating atomic.Bool
 	totalRequests      atomic.Int64
 	totalErrors        atomic.Int64
 	errorRate          atomic.Uint64 // bits of float64

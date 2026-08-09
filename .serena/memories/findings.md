@@ -44,6 +44,31 @@ Everything else is open. None of the open items are precedent to copy.
   unbounded string used as the never-evicted tenant-limiter key. `state.Vars` and
   `state.Stmts` have no cap and are replayed on every backend switch.
 
+- **A8 [OPEN, severe, repro]. Reads never reach a replica.** `handleClient` (`gateway.go:507`)
+  acquires a backend for the *handshake* with `ReadOnly: false`, so every session starts on the
+  primary. `executeRequest` only routes when `s.Server == nil`, which that handshake connection
+  has already satisfied, so the read/write split never engages and the session stays pinned to
+  the primary for its whole life. Replica routing, the lag gate and the streaming gate are all
+  downstream of a decision that is never made. Only visible with a real replica: instrumenting
+  the routing branch showed it never executes. `e2e.TestReadsReachTheReplica` is skipped and
+  will prove the fix.
+
+- **A9 [OPEN, severe, repro]. A pooled server connection is never reset between clients.**
+  There is no `DISCARD ALL` anywhere in the tree. `driver.Recyclable` sends only `ROLLBACK`,
+  which ends a transaction and nothing else — prepared statements, `SET` variables, temp
+  tables, `LISTEN` registrations and session advisory locks all survive it. Worse, it only runs
+  when `Dirty()` is true, and `MarkDirty`'s own comment says the normal path never sets it.
+  Effect: the first client to run a query succeeds, every later client running the same SQL
+  gets `26000 prepared statement "stmtcache_…" does not exist`. Reproduced through the proxy
+  and clean directly against PostgreSQL (8/8), single backend, in both transaction and session
+  pooling. This breaks pgx, JDBC and asyncpg alike — they all use prepared statements.
+
+  A first attempt at the fix (`DISCARD ALL` on release, gated on a state flag) was **reverted**:
+  it exposed a second defect — `ReplaySessionState` does not reapply session variables, so a
+  client's own `SET` stopped surviving its own session once the reset actually cleared it. That
+  had been masked by connections never being reset. Fix A9 and that replay bug together, or the
+  cure is worse than the disease. pgbouncer's `server_reset_query` is the reference.
+
 - **B12. The agent token travels in plaintext by default** — `insecure.NewCredentials()` when
   `tlsConfig == nil`, and one `tls.Config` is shared by the agent client and the DB dialer.
   Still open, and it now matters more: the token is mandatory, so it is always on the wire.
