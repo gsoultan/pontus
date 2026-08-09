@@ -608,6 +608,16 @@ func (p *Server) deepCheckAdmin(ctx context.Context) bool {
 	p.replicationLag.Store(status.lag().Nanoseconds())
 	p.setReplicating(!status.inRecovery || status.streaming)
 
+	// Published here because this is the only place the truth is known. A
+	// replica cut off from its primary moves no other signal — connection
+	// counts, error rates and latency all stay healthy while its rows age.
+	observability.ReplicaLagSeconds.WithLabelValues(p.address).Set(status.lag().Seconds())
+	observability.ReplicaStreaming.WithLabelValues(p.address).
+		Set(observability.Bool(!status.inRecovery || status.streaming))
+	observability.ReplicaReadEligible.WithLabelValues(p.address).
+		Set(observability.Bool(p.IsReplicating()))
+	observability.SetBackendRole(p.address, string(status.role()))
+
 	if newRole := status.role(); p.Role() != newRole {
 		slog.Info("Backend role changed", "address", p.address, "from", p.Role(), "to", newRole)
 		p.setRole(newRole)

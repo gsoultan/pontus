@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gsoultan/pontus/api/proto/endpoints"
+	"github.com/gsoultan/pontus/pkg/observability"
 	"github.com/gsoultan/pontus/server/internal/pool"
 )
 
@@ -213,6 +214,7 @@ func (m *FailoverManager) setState(state FailoverState) {
 	m.mu.Lock()
 	m.state = state
 	m.mu.Unlock()
+	observability.SetFailoverState(state.String())
 }
 
 func (m *FailoverManager) TriggerFailover(ctx context.Context) error {
@@ -283,6 +285,7 @@ func (m *FailoverManager) TriggerFailover(ctx context.Context) error {
 	m.missedPrimary = 0
 	m.mu.Unlock()
 
+	observability.FailoverPromotions.WithLabelValues(bestReplica.Address()).Inc()
 	slog.Info("Replica promoted successfully", "address", bestReplica.Address())
 	m.setState(StateVerifying)
 
@@ -344,4 +347,21 @@ func (m *FailoverManager) State() FailoverState {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.state
+}
+
+// String names the state for logs and metrics. Without it a gauge would carry
+// an integer an operator has to decode against this file.
+func (s FailoverState) String() string {
+	switch s {
+	case StateMonitoring:
+		return "monitoring"
+	case StatePromoting:
+		return "promoting"
+	case StateVerifying:
+		return "verifying"
+	case StateFailed:
+		return "failed"
+	default:
+		return "idle"
+	}
 }

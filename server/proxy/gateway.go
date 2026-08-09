@@ -307,6 +307,16 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 			}
 		}
 
+		// The gap between read-intent requests and reads actually served by a
+		// replica is the health of the read/write split in one number, and it is
+		// not visible from connection counts or latency.
+		intent := "write"
+		if s.QueryInfo.ReadOnly {
+			intent = "read"
+		}
+		observability2.RoutedRequests.
+			WithLabelValues(backend.Address(), intent, string(backend.Role())).Inc()
+
 		s.Backend = backend
 		s.Server = server
 		s.ShouldReplay = true

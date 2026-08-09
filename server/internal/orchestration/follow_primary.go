@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gsoultan/pontus/pkg/observability"
 	"github.com/gsoultan/pontus/server/internal/pool"
 )
 
@@ -41,6 +42,7 @@ func (m *FailoverManager) followNewPrimary(ctx context.Context, primary string, 
 			defer cancel()
 
 			if err := m.provisioner.DemoteToReplica(nodeCtx, addr, primary); err != nil {
+				observability.FollowPrimaryResults.WithLabelValues("error").Inc()
 				// Not fatal to the failover — the write path is already
 				// restored. This replica is now orphaned and needs an operator,
 				// so say so plainly rather than folding it into a debug line.
@@ -49,6 +51,7 @@ func (m *FailoverManager) followNewPrimary(ctx context.Context, primary string, 
 					"replica", addr, "primary", primary, "error", err)
 				return
 			}
+			observability.FollowPrimaryResults.WithLabelValues("ok").Inc()
 			slog.Info("Replica now follows the new primary", "replica", addr, "primary", primary)
 		})
 	}
@@ -68,6 +71,7 @@ func (m *FailoverManager) replicasToFollow(primary string) []pool.Backend {
 			continue
 		}
 		if !b.IsHealthy() {
+			observability.FollowPrimaryResults.WithLabelValues("skipped_down").Inc()
 			slog.Warn("Replica is down and was not re-pointed at the new primary; "+
 				"it needs recovery before it can rejoin",
 				"replica", b.Address(), "primary", primary)
