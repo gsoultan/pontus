@@ -298,10 +298,18 @@ backend connection with the recovered ClientKey, and the session serves ten stat
 wrong password and an unknown role are refused *identically*, so the error does not
 enumerate real accounts. Passthrough with no auth block behaves exactly as before.
 
-Still open for this stage: md5 toward the client (a stored md5 verifier can answer an md5
-challenge directly, but it is a different exchange in both directions and is refused with
-its reason rather than downgraded), and the rest of the driver matrix — JDBC and asyncpg,
-which are where a wire implementation is really judged.
+Still open for this stage:
+
+- **md5 toward the client.** A stored md5 verifier can answer an md5 challenge directly, but
+  it is a different exchange in both directions. Refused with its reason rather than
+  downgraded, which excludes pre-14 deployments.
+- **The driver matrix is not finished, and this is the gate on recommending
+  `auth.mode: pontus` to anyone.** pgx passes, and libpq (psql 17.10) has been observed
+  authenticating successfully through Pontus — but `e2e.TestLibpqAuthenticatesAgainstPontus`
+  skips intermittently because its container-runtime lookup is unreliable, so it is not
+  yet a standing guarantee. asyncpg and JDBC are untested. A wire implementation is judged
+  by clients written without reference to it; pgx agreeing with us proves the exchange is
+  self-consistent, not that it is correct.
 
 **Stage 4 — safe reuse between clients.**
 Reuse only becomes possible at this stage — today every client gets a fresh backend
