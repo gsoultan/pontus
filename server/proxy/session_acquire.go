@@ -140,17 +140,17 @@ func (g *Gateway) authenticateFreshBackend(server net.Conn, state *protocol.Sess
 		return err
 	}
 
-	params, err := protocol.WaitForReady(server)
+	startup, err := protocol.WaitForReady(server)
 	if err != nil {
 		return err
 	}
 
 	if carrier, ok := server.(interface {
-		SetStartupParams(map[string]string)
+		SetStartup(*protocol.Startup)
 		SetIdentity(user, database string)
 		MarkReady()
 	}); ok {
-		carrier.SetStartupParams(params)
+		carrier.SetStartup(startup)
 		carrier.SetIdentity(state.User, state.Database)
 		carrier.MarkReady()
 	}

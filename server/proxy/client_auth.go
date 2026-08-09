@@ -67,9 +67,9 @@ func (g *Gateway) openAuthenticatedBackend(
 	// it stands — this is the case that makes pooling worth anything.
 	if carrier, ok := server.(interface {
 		Ready() bool
-		StartupParams() map[string]string
+		Startup() *protocol.Startup
 	}); ok && carrier.Ready() {
-		return protocol.CompleteClientStartup(client, carrier.StartupParams())
+		return protocol.CompleteClientStartup(client, carrier.Startup())
 	}
 
 	if err := protocol.AuthenticateBackend(server, req.User, req.Database,
@@ -77,19 +77,19 @@ func (g *Gateway) openAuthenticatedBackend(
 		return err
 	}
 
-	params, err := protocol.WaitForReady(server)
+	startup, err := protocol.WaitForReady(server)
 	if err != nil {
 		return err
 	}
 
-	// Keep them for whoever borrows this connection next.
-	if carrier, ok := server.(interface{ SetStartupParams(map[string]string) }); ok {
-		carrier.SetStartupParams(params)
+	// Keep it for whoever borrows this connection next.
+	if carrier, ok := server.(interface{ SetStartup(*protocol.Startup) }); ok {
+		carrier.SetStartup(startup)
 	}
 
-	// The client is waiting for the parameters and the ReadyForQuery that a
-	// relayed handshake would have delivered from the backend.
-	return protocol.CompleteClientStartup(client, params)
+	// The client is waiting for the parameters, the backend key and the
+	// ReadyForQuery that a relayed handshake would have delivered.
+	return protocol.CompleteClientStartup(client, startup)
 }
 
 // SetCredentialStore switches Pontus into authenticating clients itself.

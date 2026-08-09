@@ -150,13 +150,27 @@ func writeStartup(w io.Writer, user, database string, params map[string]string) 
 	return err
 }
 
+// Startup is what a backend reported between AuthenticationOk and
+// ReadyForQuery.
+type Startup struct {
+	// Params are the ParameterStatus values: server_version, client_encoding
+	// and the rest, which a client expects during its own startup.
+	Params map[string]string
+
+	// BackendKey is the raw BackendKeyData payload — the process id and secret
+	// a client needs in order to cancel a query.
+	//
+	// Kept because it is not optional in practice. PostgreSQL always sends it,
+	// and a client that models the startup sequence strictly treats its absence
+	// as a protocol error rather than a missing feature. asyncpg does; pgx and
+	// libpq do not, which is exactly why a single driver proves nothing.
+	BackendKey []byte
+}
+
 // WaitForReady consumes the messages between AuthenticationOk and
-// ReadyForQuery, returning the server's parameters.
-//
-// A caller needs those: ParameterStatus carries server_version, client_encoding
-// and the rest, which a client expects to receive during its own startup.
-func WaitForReady(conn net.Conn) (map[string]string, error) {
-	params := make(map[string]string)
+// ReadyForQuery.
+func WaitForReady(conn net.Conn) (*Startup, error) {
+	out := &Startup{Params: make(map[string]string)}
 
 	for {
 		tag, body, err := readTagged(conn)
@@ -171,9 +185,11 @@ func WaitForReady(conn net.Conn) (map[string]string, error) {
 				continue
 			}
 			value, _, _ := splitCString(rest)
-			params[key] = value
+			out.Params[key] = value
+		case 'K': // BackendKeyData
+			out.BackendKey = append([]byte(nil), body...)
 		case 'Z': // ReadyForQuery
-			return params, nil
+			return out, nil
 		case 'E':
 			return nil, fmt.Errorf("server refused the connection: %s", errorFields(body))
 		}

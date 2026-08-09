@@ -6,6 +6,25 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A10 [OPEN, blocks recommending `auth.mode: pontus`, repro]. asyncpg cannot use
+  Pontus-side authentication.** pgx and libpq (psql 17.10) both complete a session; asyncpg
+  cannot. Its connect hangs, and a *refused* login reports
+  `protocol.data_received() call failed` — an asyncpg protocol error, not an authentication
+  one. So Pontus emits something during or after the SASL exchange that asyncpg models more
+  strictly than the other two.
+
+  Supplying BackendKeyData, which `CompleteClientStartup` had been omitting, did **not** fix
+  it — though that omission was a real defect and the fix is kept: PostgreSQL always sends
+  it, and it is what a client uses to cancel a query.
+
+  `e2e.TestAsyncpgAuthenticatesAgainstPontus` is skipped with the diagnosis in its comment.
+  Next step is to capture asyncpg's traceback and diff Pontus's startup byte stream against a
+  real PostgreSQL's for the same client — the difference will be in what follows
+  AuthenticationOk.
+
+  This is why a driver matrix exists. Two drivers agreeing proved the exchange
+  self-consistent; the third proved it is not yet correct.
+
 - **W2 + W4 [FIXED 2026-08-09, under `auth.mode: pontus`]. Pontus now pools.** Eight
   sequential clients share one backend connection — same PID, same `backend_start` — where
   before, four sessions produced four connections.

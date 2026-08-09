@@ -105,15 +105,19 @@ func TestOpenBackendConnectionWithOnlyAClientKey(t *testing.T) {
 		t.Fatalf("authenticating to a real PostgreSQL with only a ClientKey: %v", err)
 	}
 
-	params, err := WaitForReady(conn)
+	startup, err := WaitForReady(conn)
 	if err != nil {
 		t.Fatalf("waiting for ReadyForQuery: %v", err)
 	}
-	if params["server_version"] == "" {
+	if startup.Params["server_version"] == "" {
 		t.Error("no server_version was reported; the startup did not complete")
 	}
+	if len(startup.BackendKey) == 0 {
+		t.Error("no BackendKeyData was captured; a client that models the startup " +
+			"sequence strictly treats its absence as a protocol error")
+	}
 	t.Logf("authenticated as %q with a ClientKey alone; server_version=%s",
-		role, params["server_version"])
+		role, startup.Params["server_version"])
 }
 
 // A wrong key must be refused by the server, not merely by our own arithmetic.

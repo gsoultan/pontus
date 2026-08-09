@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"github.com/gsoultan/pontus/server/internal/protocol"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -29,10 +30,10 @@ type Conn struct {
 	user       string
 	database   string
 
-	// startupParams is what the backend reported during this connection's one
-	// startup exchange, replayed to any later client that borrows it.
-	startupParams map[string]string
-	ready         atomic.Bool
+	// startup is what the backend reported during this connection's one startup
+	// exchange, replayed to any later client that borrows it.
+	startup *protocol.Startup
+	ready   atomic.Bool
 
 	// stmts is the set of prepared statements the server has parsed on this
 	// connection. Guarded because Recyclable may clear it from the engine's
@@ -139,23 +140,23 @@ func (c *Conn) BelongsTo(user, database string) bool {
 	return got == user && gotDB == database
 }
 
-// SetStartupParams records what the backend reported during startup.
+// SetStartup records what the backend reported during startup.
 //
 // A reused connection cannot be asked again — its startup happened once — but
 // the next client still expects ParameterStatus for server_version and the
 // rest. Keeping them is what lets a connection be handed on without a second
 // startup exchange, which the backend would reject.
-func (c *Conn) SetStartupParams(params map[string]string) {
+func (c *Conn) SetStartup(startup *protocol.Startup) {
 	c.identityMu.Lock()
 	defer c.identityMu.Unlock()
-	c.startupParams = params
+	c.startup = startup
 }
 
-// StartupParams returns the parameters from this connection's startup.
-func (c *Conn) StartupParams() map[string]string {
+// Startup returns what this connection's backend reported at startup.
+func (c *Conn) Startup() *protocol.Startup {
 	c.identityMu.RLock()
 	defer c.identityMu.RUnlock()
-	return c.startupParams
+	return c.startup
 }
 
 // Dirty reports whether the connection carries state the next caller must not

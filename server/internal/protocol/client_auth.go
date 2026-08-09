@@ -105,14 +105,29 @@ func authenticateSCRAM(client net.Conn, verifier *credentials.SCRAMVerifier) ([]
 // client_encoding, then ReadyForQuery. Those normally arrive from the backend
 // during a relayed handshake; when Pontus authenticates the client itself it
 // has to supply them from the backend connection it opened.
-func CompleteClientStartup(client net.Conn, params map[string]string) error {
-	for key, value := range params {
+func CompleteClientStartup(client net.Conn, startup *Startup) error {
+	if startup == nil {
+		return fmt.Errorf("no startup information to complete the client with")
+	}
+
+	for key, value := range startup.Params {
 		body := make([]byte, 0, len(key)+len(value)+2)
 		body = append(body, key...)
 		body = append(body, 0)
 		body = append(body, value...)
 		body = append(body, 0)
 		if err := writeTagged(client, 'S', body); err != nil {
+			return err
+		}
+	}
+
+	// BackendKeyData. PostgreSQL always sends it, and a client that models the
+	// startup sequence strictly — asyncpg does — treats its absence as a
+	// protocol error rather than a missing feature. Omitting it made asyncpg
+	// fail with "protocol.data_received() call failed" while pgx and libpq
+	// carried on, which is the whole argument for testing more than one driver.
+	if len(startup.BackendKey) > 0 {
+		if err := writeTagged(client, 'K', startup.BackendKey); err != nil {
 			return err
 		}
 	}

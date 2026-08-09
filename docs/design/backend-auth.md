@@ -308,10 +308,20 @@ Still open for this stage:
   matters more than pgx: nearly every PostgreSQL tool is built on libpq, and it has never
   seen this code, so it tests correctness rather than self-consistency.
 
-  asyncpg and JDBC remain untested. asyncpg is the most valuable remaining opinion — a pure
-  Python SCRAM implementation sharing no code with either — but it needs to be preinstalled
-  rather than fetched on demand; resolving it with `uv` compiles from source and hangs the
-  suite. Until those land, `auth.mode: pontus` is not something to recommend broadly.
+  **asyncpg fails, and that is finding A10.** It is the most valuable third opinion — a pure
+  Python SCRAM implementation sharing no code with either — and it cannot complete a session:
+  the connect hangs, and a refused login reports `protocol.data_received() call failed`,
+  which is a protocol error rather than an authentication one. Pontus emits something after
+  AuthenticationOk that asyncpg models more strictly than pgx and libpq do. Supplying
+  BackendKeyData, which was genuinely missing, did not fix it.
+
+  JDBC remains untested. Until A10 is closed, `auth.mode: pontus` should not be recommended
+  and asyncpg clients must not be pointed at it.
+
+  The interpreter is discovered, never installed: resolving asyncpg on demand with `uv` cost
+  longer than the suite's budget and left Go blocked on a pipe inherited by the killed child.
+  Create one with `uv venv /tmp/pontus-drivers --python 3.12 && uv pip install --python
+  /tmp/pontus-drivers/bin/python asyncpg`, or point `PONTUS_E2E_PYTHON` at one.
 
   *The bug that hid this:* `e2e.containerRuntime` picked the first runtime binary on PATH
   without checking it worked, and Podman is commonly installed and not running. Every call

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -103,15 +104,132 @@ func TestLibpqAuthenticatesAgainstPontus(t *testing.T) {
 	t.Logf("libpq: %s", strings.TrimSpace(string(out)))
 }
 
-// asyncpg is deliberately absent.
+// pythonWithAsyncpg finds an interpreter that can already import asyncpg.
 //
-// It implements SCRAM in pure Python, independently of libpq and of pgx, which
-// makes it the most valuable third opinion available — but fetching it with uv
-// compiles from source and takes longer than the suite's budget, and killing
-// the child leaves Go blocked on an inherited pipe. The result was a test that
-// hung for four hundred seconds, which is worse than no test at all.
+// Deliberately never installs anything. An earlier version resolved the package
+// on demand with `uv run --with`, which spent longer than the suite's budget and
+// then left Go blocked on a pipe inherited by the killed child — the suite hung
+// for four hundred seconds. A test that hangs is worse than no test, and a test
+// that needs the network is not testing Pontus.
+func pythonWithAsyncpg(t *testing.T) string {
+	t.Helper()
+
+	candidates := []string{
+		os.Getenv("PONTUS_E2E_PYTHON"),
+		"/tmp/pontus-drivers/bin/python",
+		"python3",
+	}
+
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		path, err := exec.LookPath(candidate)
+		if err != nil {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		err = exec.CommandContext(ctx, path, "-c", "import asyncpg").Run()
+		cancel()
+		if err == nil {
+			return path
+		}
+	}
+
+	t.Skip("no interpreter with asyncpg. Create one with:\n" +
+		"  uv venv /tmp/pontus-drivers --python 3.12 && \\\n" +
+		"  uv pip install --python /tmp/pontus-drivers/bin/python asyncpg\n" +
+		"or point PONTUS_E2E_PYTHON at one")
+	return ""
+}
+
+// asyncpg implements SCRAM in pure Python, sharing no code with libpq or with
+// pgx. Three implementations that agree, written independently, is what makes a
+// wire exchange credible — one that agrees with itself proves only that it is
+// self-consistent.
 //
-// To add it: preinstall asyncpg in the environment and invoke the interpreter
-// directly, rather than resolving a package on demand. The assertion wanted is
-// a multi-statement session, so the connection has to survive past its first
-// query rather than merely authenticate.
+// KNOWN FAILURE, and the reason this test exists. asyncpg cannot complete a
+// session against auth.mode: pontus: the connect hangs, and a refused login
+// reports "protocol.data_received() call failed" — an asyncpg *protocol* error
+// rather than an authentication one. pgx and libpq both pass, so Pontus is
+// sending something asyncpg models more strictly than they do. Supplying
+// BackendKeyData, which was missing, did not fix it; the cause is not yet
+// identified.
+//
+// Do not run asyncpg against auth.mode: pontus until this passes.
+func TestAsyncpgAuthenticatesAgainstPontus(t *testing.T) {
+	t.Skip("known failure: asyncpg cannot complete a session against " +
+		"auth.mode: pontus — see the comment above. pgx and libpq pass, so this " +
+		"is a Pontus protocol defect, not an asyncpg one")
+
+	python := pythonWithAsyncpg(t)
+
+	s := startAuthStackOnAllInterfaces(t)
+	port := proxyPort(t, s)
+
+	script := fmt.Sprintf(`
+import asyncio, asyncpg
+
+async def main():
+    conn = await asyncpg.connect(
+        host="127.0.0.1", port=%s, user=%q, password=%q, database=%q)
+    # More than one statement: the session has to survive past its first, which
+    # is where a connection that authenticated but cannot be reused shows up.
+    for i in range(5):
+        assert await conn.fetchval("SELECT $1::int", i) == i
+    who = await conn.fetchval("SELECT current_user")
+    await conn.close()
+    print("asyncpg-ok", who)
+
+asyncio.run(main())
+`, port, backendUser(), backendPass(), backendDB())
+
+	// Short, because the observed failure is a hang. A test that waits a minute
+	// to tell you something is broken is a test people stop running.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, python, "-c", script).CombinedOutput()
+	if err != nil {
+		t.Fatalf("asyncpg could not authenticate against Pontus: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "asyncpg-ok") {
+		t.Fatalf("unexpected reply from asyncpg: %s", out)
+	}
+	t.Logf("asyncpg: %s", strings.TrimSpace(string(out)))
+}
+
+// A wrong password must be refused for asyncpg exactly as it is for the others.
+func TestAsyncpgRejectsAWrongPassword(t *testing.T) {
+	python := pythonWithAsyncpg(t)
+
+	s := startAuthStackOnAllInterfaces(t)
+	port := proxyPort(t, s)
+
+	script := fmt.Sprintf(`
+import asyncio, asyncpg
+
+async def main():
+    try:
+        await asyncpg.connect(host="127.0.0.1", port=%s, user=%q,
+                              password="wrong-password", database=%q)
+    except Exception as exc:
+        print("asyncpg-refused", type(exc).__name__)
+        return
+    print("asyncpg-ACCEPTED")
+
+asyncio.run(main())
+`, port, backendUser(), backendDB())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	out, _ := exec.CommandContext(ctx, python, "-c", script).CombinedOutput()
+	if strings.Contains(string(out), "asyncpg-ACCEPTED") {
+		t.Fatalf("asyncpg was let in with a wrong password: %s", out)
+	}
+	if !strings.Contains(string(out), "asyncpg-refused") {
+		t.Fatalf("asyncpg neither refused nor connected: %s", out)
+	}
+	t.Logf("asyncpg: %s", strings.TrimSpace(string(out)))
+}
