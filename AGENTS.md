@@ -156,6 +156,45 @@ precedent to copy.
 
 ---
 
+## Replication, failover and the agent — config surface
+
+Every key below has a default and a consumer; `pkg/config`'s wiring test fails if one
+stops being read.
+
+```yaml
+failover:
+  enabled: false              # automatic promotion. Split-brain resolution runs regardless.
+  failure_threshold: 3        # consecutive checks with no healthy primary before promoting
+  follow_primary: false       # re-point surviving replicas after a promotion
+  follow_primary_timeout: 30m # per-replica budget; re-pointing can mean a base backup
+  max_replica_lag: 10s        # pgpool's delay_threshold; applied on reload
+  auto_reattach: true         # pull a non-streaming replica out of the read pool
+  auto_reattach_interval: 1m  # dwell before a *recovered* replica is trusted again
+
+agent_tls:                    # separate from backend_tls on purpose — different peer,
+  ca_file: ...                # different name, usually a different CA
+  cert_file: ...
+  key_file: ...
+```
+
+The agent refuses to start without `-token` / `PONTUS_AGENT_TOKEN` (`-insecure` is a
+warned, localhost-only opt-out) and serves TLS with `-tls-cert` / `-tls-key`. Without TLS
+the mandatory token crosses the network in cleartext, which the proxy warns about once.
+
+Two things here are deliberately unlike pgpool-II, and both are documented at their
+definitions rather than only here:
+
+- `auto_reattach` defaults to **on** and its "off" means "ignore streaming state, gate on
+  lag alone". pgpool's flag protects a node an operator *administratively detached*; Pontus
+  has no detach, so a faithful "off" would mean "out until restart, with no way back".
+- Nothing ever returns the write role to a recovered primary. That node has diverged onto
+  an abandoned timeline; returning it to service is an operator action. See `mem:failover`.
+
+**Do not trust a replica's lag figure on its own.** A replica cut off from its primary
+reports *zero* — it replayed everything it received and then stopped receiving. Pair it
+with the streaming state (`pontus_replica_streaming`, `BackendStatus.streaming`) or the
+worst case reads as the best one.
+
 ## Definition of done
 
 Satisfy each item for the surface you touched, or say why it doesn't apply.
