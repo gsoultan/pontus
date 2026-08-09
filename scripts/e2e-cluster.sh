@@ -19,8 +19,13 @@ set -euo pipefail
 
 PRIMARY_NAME="${PRIMARY_NAME:-pontus-e2e-primary}"
 REPLICA_NAME="${REPLICA_NAME:-pontus-e2e-replica}"
-PRIMARY_PORT="${PRIMARY_PORT:-55432}"
-REPLICA_PORT="${REPLICA_PORT:-55433}"
+# 55432/55433 was the obvious pick and collided with another project's dev
+# database on the same machine. The collision did not look like a collision: the
+# other container answered on 127.0.0.1 and rejected our credentials, so Pontus
+# reported "password authentication failed" and looked like an auth bug. Hence
+# both the less obvious defaults and the preflight below.
+PRIMARY_PORT="${PRIMARY_PORT:-55832}"
+REPLICA_PORT="${REPLICA_PORT:-55833}"
 PG_IMAGE="${PG_IMAGE:-postgres:17-alpine}"
 PG_USER="${PG_USER:-postgres}"
 PG_PASSWORD="${PG_PASSWORD:-postgres}"
@@ -167,8 +172,43 @@ start_replica() {
   die "replica never attached a WAL receiver"
 }
 
+# port_free fails if anything is already listening, whoever owns it.
+#
+# A more specific bind (127.0.0.1:PORT) wins over a container publishing on
+# *:PORT, so a foreign listener silently intercepts every connection the tests
+# make. Checking up front turns a confusing authentication error into a sentence
+# naming the port.
+port_free() {
+  local port="$1"
+  if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
+preflight_ports() {
+  local port label
+  for pair in "$PRIMARY_PORT:primary" "$REPLICA_PORT:replica"; do
+    port="${pair%%:*}"; label="${pair##*:}"
+    if cr_running "$PRIMARY_NAME" && [ "$label" = "primary" ]; then
+      continue # our own container already holds it
+    fi
+    if cr_running "$REPLICA_NAME" && [ "$label" = "replica" ]; then
+      continue
+    fi
+    if ! port_free "$port"; then
+      warn "port $port ($label) is already in use by another process"
+      lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | tail -n +2 | head -3 | sed 's/^/      /'
+      die "choose different ports: PRIMARY_PORT=... REPLICA_PORT=... $0 up
+    A foreign listener on these ports does not fail loudly — it answers and
+    rejects our credentials, which reads as an authentication bug in Pontus."
+    fi
+  done
+}
+
 cluster_up() {
   detect_runtime
+  preflight_ports
   start_primary
   start_replica
 

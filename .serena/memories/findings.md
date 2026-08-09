@@ -6,7 +6,23 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
-- **W2 + W4. Pontus does not pool.** The client's Terminate is forwarded to the backend, so
+- **W2 + W4 — the "does not pool" half is STALE (re-measured 2026-08-09).** Eight sequential
+  client sessions through the proxy returned the same backend PID *and the same
+  `backend_start`*, which is the same physical connection rather than a recycled PID.
+  Connections **are** reused across client sessions. The original note below predates the
+  gpool migration; do not act on it.
+
+  What this makes live instead: reuse happens with **no identity check**, so a connection
+  authenticated as one user is handed to the next client. That is the cross-user data path
+  Stage 0 of `docs/design/backend-auth.md` exists to close.
+
+  **Open, and blocking Stage 0:** `PostgresHandler.Handshake` forwards the client's startup
+  packet to the server unconditionally (`postgres_handler.go:57`) with no readiness check, so
+  a reused connection should receive a StartupMessage while already in the query phase — and
+  it demonstrably does not break. Understand that before restructuring the handshake, because
+  Stage 0 changes this exact path.
+
+- **W2 + W4 (original note, superseded above). Pontus does not pool.** The client's Terminate is forwarded to the backend, so
   every client session ends its backend connection: `SELECT pg_backend_pid()` over four
   sequential sessions returned 278, 279, 280, 281. And `handleClient` calls `Handshake` on
   every acquired connection, so a *reused* one gets a startup packet it is already past.

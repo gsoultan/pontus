@@ -141,6 +141,17 @@ Each stage lands on its own, with its own verification, and leaves the system wo
 No new auth yet; connections are still only usable by the session that opened them. Fixes the
 cross-user reuse in W2. Verify: a connection opened by one user is never handed to another.
 
+*Premise confirmed 2026-08-09:* eight sequential client sessions returned the same backend
+PID **and the same `backend_start`** — the same physical connection, not a recycled PID. Reuse
+across clients is real and carries no identity check, so this stage has something to fix.
+
+*Blocked on one unknown.* `Handshake` forwards the client's startup packet to the server
+unconditionally, with no readiness check, so a reused connection should receive a
+StartupMessage while already in the query phase — and demonstrably does not break. Stage 0
+restructures this exact path (the identity is only known *after* the startup packet is read,
+yet the connection is acquired before it), so that has to be understood first. Do not begin
+by moving the acquire.
+
 **Stage 1 — `CredentialStore`.**
 `auth_query` and `auth_file`, with the bounded cache above. No behaviour change yet.
 Verify: lookups against a real `pg_authid`, cache eviction, negative caching, and that a
