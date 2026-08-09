@@ -164,3 +164,77 @@ func TestSecurityDefinerRecipeWorksWithoutSuperuser(t *testing.T) {
 	}
 	t.Logf("non-superuser lookup via SECURITY DEFINER returned a %s verifier", verifier.Method)
 }
+
+// The exchange has to interoperate with a verifier PostgreSQL generated, not
+// just with one this package derived. Everything about SCRAM — the iteration
+// count, the salt, the key derivation — is the server's choice, so agreeing
+// with ourselves proves nothing.
+func TestScramAgainstAPostgresGeneratedVerifier(t *testing.T) {
+	db := liveDB(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	const role = "pontus_scram_probe"
+	const password = "s3cret-probe-password"
+
+	if _, err := db.ExecContext(ctx, `DROP ROLE IF EXISTS `+role); err != nil {
+		t.Fatalf("drop role: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`CREATE ROLE `+role+` LOGIN PASSWORD '`+password+`'`); err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	t.Cleanup(func() {
+		c, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_, _ = db.ExecContext(c, `DROP ROLE IF EXISTS `+role)
+	})
+
+	store, err := NewQueryStore(SQLQuerier{DB: db}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := store.Lookup(ctx, role)
+	if err != nil {
+		t.Fatalf("looking up the probe role: %v", err)
+	}
+	if verifier.Method != MethodSCRAM {
+		t.Skipf("server stores %s verifiers, not SCRAM", verifier.Method)
+	}
+	t.Logf("PostgreSQL issued a verifier with %d iterations and a %d-byte salt",
+		verifier.SCRAM.Iterations, len(verifier.SCRAM.Salt))
+
+	// A client authenticating with the real password must be accepted, and its
+	// ClientKey recovered.
+	server, err := NewScramServer(verifier.SCRAM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &scramClient{user: role, password: password, nonce: "liveprobenonce"}
+
+	serverFirst, err := server.Begin(client.first())
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	clientFinal, clientKey := client.final(t, serverFirst)
+	if _, err := server.Finish(clientFinal); err != nil {
+		t.Fatalf("a correct password was rejected against a PostgreSQL verifier: %v", err)
+	}
+	if len(server.ClientKey()) != 32 || string(server.ClientKey()) != string(clientKey) {
+		t.Error("the ClientKey recovered from a PostgreSQL-issued verifier is wrong; " +
+			"Pontus could not authenticate to a backend with it")
+	}
+
+	// And a wrong password must not be.
+	server2, _ := NewScramServer(verifier.SCRAM)
+	wrong := &scramClient{user: role, password: password + "-wrong", nonce: "liveprobenonce"}
+	serverFirst2, err := server2.Begin(wrong.first())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongFinal, _ := wrong.final(t, serverFirst2)
+	if _, err := server2.Finish(wrongFinal); err == nil {
+		t.Error("a wrong password was accepted against a PostgreSQL verifier")
+	}
+}

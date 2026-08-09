@@ -239,11 +239,27 @@ GRANT EXECUTE ON FUNCTION pontus_auth_lookup(text) TO pontus_auth;
 
 with `auth_query: SELECT rolname, verifier FROM pontus_auth_lookup($1)`.
 
-**Stage 2 — Pontus authenticates the client.**
-Replace relaying with a real server-side implementation of `trust`, `md5` and
-`scram-sha-256`, recovering and holding `ClientKey`. Pontus must never offer the client a
-weaker method than the backend would have. Verify: psql, pgx, JDBC and asyncpg all
-authenticate; a wrong password is refused; `-PLUS` is refused rather than downgraded.
+**Stage 2 — Pontus authenticates the client.** *SCRAM exchange landed 2026-08-09;
+wire integration still to do.*
+
+`credentials.ScramServer` is the server half of SCRAM-SHA-256, and it recovers `ClientKey`
+from the client's proof exactly as described above. That premise is no longer an assertion:
+a test derives a verifier from a password, has an independently-implemented client compute a
+proof, and checks the server recovers the same `ClientKey` the client used — and a second
+test does it against a verifier **PostgreSQL generated** (4096 iterations, 16-byte salt), so
+the interoperability is real rather than self-consistent.
+
+Refusals implemented and tested: channel binding announced up front (`p=`), a binding
+asserted only in the final message (a downgrade attempt between the two), a nonce from
+another exchange (a replay), a proof of the wrong length, and every malformed shape. One
+error for every failure — telling a caller whether the user existed, or how far the proof
+got, is an oracle.
+
+Remaining for this stage: the PostgreSQL message framing (AuthenticationSASL /
+SASLInitialResponse / SASLContinue / SASLResponse / SASLFinal / AuthenticationOk), `md5` and
+`trust` toward the client, the config surface (`auth_query`, `auth_file`, cache settings),
+and the rule that Pontus never offers a weaker method than the backend would. Verify against
+psql, pgx, JDBC and asyncpg.
 
 **Stage 3 — Pontus opens backend connections.**
 Startup packet plus authentication as the user, using the md5 verifier or the recovered
