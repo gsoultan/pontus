@@ -73,6 +73,13 @@ Everything else is open. None of the open items are precedent to copy.
   is Pontus-side backend authentication (pgbouncer's `auth_query` / `auth_file`), which is a
   feature, not a patch. `e2e.TestReadsReachTheReplica` is skipped and will prove it.
 
+  **Contained 2026-08-09, not fixed.** `acquireForSession` now refuses a connection that has
+  not completed a startup exchange and falls back to `Session.HomeBackend`, the backend that
+  carried this session's handshake. Adding a replica no longer breaks the data plane — it
+  simply does not balance, and says so once at WARN naming the finding. Unbalanced beats
+  broken; `e2e.TestSessionSurvivesManyQueriesWithAReplica` fails with `conn closed` on query 1
+  against the old path.
+
 - **A9 [OPEN, severe, repro]. A pooled server connection is never reset between clients.**
   There is no `DISCARD ALL` anywhere in the tree. `driver.Recyclable` sends only `ROLLBACK`,
   which ends a transaction and nothing else — prepared statements, `SET` variables, temp

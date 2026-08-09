@@ -1,0 +1,109 @@
+package proxy
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"sync"
+
+	balancer2 "github.com/gsoultan/pontus/server/internal/balancer"
+	pool2 "github.com/gsoultan/pontus/server/internal/pool"
+)
+
+// ErrNoUsableConnection is returned when every connection on offer is one this
+// session cannot speak on.
+var ErrNoUsableConnection = errors.New("no backend connection is usable by this session")
+
+// startupCarrier is a connection that knows whether it has completed a
+// PostgreSQL startup exchange.
+type startupCarrier interface {
+	Ready() bool
+}
+
+// warnedNoSplit keeps the explanation to one line per process.
+var warnedNoSplit sync.Once
+
+// acquireForSession returns a connection this session can actually speak on.
+//
+// Pontus never performs a startup exchange of its own: it forwards the client's
+// startup packet, once, onto the single connection acquired for the handshake.
+// Every other connection the pool creates is a raw socket that has never
+// negotiated anything. Handing one to a session that is past its handshake does
+// not fail loudly — the client simply stops getting answers and the session
+// dies with "conn closed", which is what happened the moment a second backend
+// was configured and reads began routing to it.
+//
+// So a mid-session acquisition insists on a connection that carries a startup
+// exchange, and falls back to the backend that performed this session's
+// handshake before giving up. The consequence is honest and visible: with no
+// usable connection on a replica, reads stay on the primary rather than
+// breaking. The read/write split does not work until Pontus can authenticate
+// backend connections itself — see finding A8.
+func (g *Gateway) acquireForSession(
+	ctx context.Context,
+	hint balancer2.Hint,
+	home pool2.Backend,
+) (pool2.Backend, net.Conn, error) {
+	backend, conn, err := g.acquireBackend(ctx, hint)
+	if err == nil {
+		if usable(conn) {
+			return backend, conn, nil
+		}
+		// Releasing an unready connection destroys it rather than returning it
+		// to the idle set, so this does not poison the pool for the next caller.
+		backend.Release(conn)
+		noteSplitUnavailable(backend)
+	}
+
+	// Fall back to the backend that carried this session's handshake. Its pool
+	// holds the connection this session has already spoken on.
+	if home == nil {
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, fmt.Errorf("%w: no connection carrying a startup exchange", ErrNoUsableConnection)
+	}
+
+	conn, herr := home.Acquire(ctx)
+	if herr != nil {
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, herr
+	}
+	if !usable(conn) {
+		home.Release(conn)
+		return nil, nil, fmt.Errorf("%w on %s: Pontus cannot open a backend connection "+
+			"on its own, so only connections that carried a client handshake can be used",
+			ErrNoUsableConnection, home.Address())
+	}
+	return home, conn, nil
+}
+
+// usable reports whether a connection has completed a startup exchange.
+//
+// A connection that does not report either way is assumed usable: the MySQL
+// path and the test doubles do not implement this, and refusing them would
+// break working setups to guard a PostgreSQL-specific hazard.
+func usable(conn net.Conn) bool {
+	carrier, ok := conn.(startupCarrier)
+	if !ok {
+		return true
+	}
+	return carrier.Ready()
+}
+
+// noteSplitUnavailable explains the consequence once, rather than leaving an
+// operator to wonder why a healthy replica receives no reads.
+func noteSplitUnavailable(backend pool2.Backend) {
+	warnedNoSplit.Do(func() {
+		slog.Warn("Read/write splitting is not in effect: a session can only use a backend "+
+			"connection that carried its own handshake, and Pontus cannot open one itself. "+
+			"Reads will stay on the backend that handled the handshake",
+			"attempted", backend.Address(),
+			"finding", "A8",
+			"fix", "Pontus-side backend authentication (auth_query)")
+	})
+}

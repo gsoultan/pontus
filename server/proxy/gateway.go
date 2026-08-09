@@ -281,11 +281,11 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 
 	// Ensure we have a server connection
 	if s.Server == nil {
-		backend, server, err := m.acquireBackend(ctx, balancer2.Hint{
+		backend, server, err := m.acquireForSession(ctx, balancer2.Hint{
 			CallerZone: m.current().localZone,
 			ReadOnly:   s.QueryInfo.ReadOnly,
 			Key:        s.RemoteAddr,
-		})
+		}, s.HomeBackend)
 		if err != nil {
 			return err
 		}
@@ -296,11 +296,11 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 				slog.Warn("LSN wait failed or timed out, routing to primary", "error", err)
 				backend.Release(server)
 				// Retry with primary
-				backend, server, err = m.acquireBackend(ctx, balancer2.Hint{
+				backend, server, err = m.acquireForSession(ctx, balancer2.Hint{
 					CallerZone: m.current().localZone,
 					ReadOnly:   false,
 					Key:        s.RemoteAddr,
-				})
+				}, s.HomeBackend)
 				if err != nil {
 					return err
 				}
@@ -558,6 +558,10 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		Backend:    backend,
 		Server:     server,
 		Buffer:     buf,
+		// The one backend holding a connection this session has spoken on.
+		// Acquisition falls back here when the balancer picks a backend whose
+		// connections never carried this session's handshake.
+		HomeBackend: backend,
 	}
 
 	// Transaction loop
