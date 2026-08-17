@@ -197,8 +197,28 @@ Everything else is open. None of the open items are precedent to copy.
   startup — port in use, bad config, missing credentials — became a silent hang that systemd
   still reported as active.
 
-- **A3. Client-facing TLS is not wired.** Only `cfg.BackendTLS` reaches `CreateTLSConfig`; the
-  proxy listener is a plain `net.Listen`. The `tls:` block is inert.
+- **A3 [FIXED 2026-08-17]. Client-facing TLS is wired.**
+
+  The `tls:` block was parsed and reached nothing, so Pontus answered every SSLRequest with
+  'N' and each client session ran in the clear — including the password exchange for any
+  method other than SCRAM.
+
+  It could never have been a `tls.NewListener` around the accept loop: PostgreSQL negotiates
+  encryption *inside* the protocol. The client opens in plaintext, sends an eight-byte
+  SSLRequest, and the server answers with a single byte before any handshake. So the handler
+  answers it and upgrades in place, and the upgraded connection is threaded back to the
+  gateway because everything after — authentication, startup completion, the session loop —
+  has to use it rather than the socket the client opened with.
+
+  The handshake is bounded: an unauthenticated peer controls how long it takes, and a bare
+  `Handshake()` waits forever. Verified with a client on `sslmode=require`, which refuses to
+  continue unencrypted.
+
+  **The reason it reached nothing is worth remembering.** `registry.go` builds each proxy's
+  config field by field, and `TLS` was not among them — nor were `Failover` or `Auth`. So
+  `max_replica_lag` and `auto_reattach` were also silently taking their built-in values
+  however they were configured. `pkg/config`'s wiring test cannot catch this: it proves a
+  field is *referenced* somewhere, not that it reaches the code that acts on it.
 
 - **C8. The query-timeout context starts before the client read** (`gateway.go`), so a session
   idle longer than `query_timeout` gets an already-expired context for its next query.

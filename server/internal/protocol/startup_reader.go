@@ -14,6 +14,14 @@ type StartupRequest struct {
 	User        string
 	Database    string
 	Replication string
+
+	// Conn is the connection to use from here on.
+	//
+	// A client that asked for TLS has been upgraded, and the plaintext socket it
+	// opened with can no longer be read or written — everything after the
+	// negotiation, including the startup packet itself, goes through the
+	// encrypted one.
+	Conn net.Conn
 }
 
 // StartupReader is implemented by protocols where the **client speaks first**,

@@ -32,18 +32,27 @@ func (g *Gateway) openSession(
 	client net.Conn,
 	state *protocol.SessionState,
 	remoteAddr string,
-) (pool2.Backend, net.Conn, error) {
+) (backendOut pool2.Backend, serverOut net.Conn, clientOut net.Conn, err error) {
+	// clientOut is returned because a TLS upgrade replaces the connection.
+	clientOut = client
 	reader, identityFirst := g.handler.(protocol.StartupReader)
 
 	var req *protocol.StartupRequest
 	if identityFirst {
-		var err error
 		// No backend is held here, so a replication request costs nothing to
 		// discover and a client that disconnects mid-startup takes nothing
 		// with it.
 		req, err = reader.ReadStartup(client, state)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, clientOut, err
+		}
+
+		// A client that negotiated TLS is now on an encrypted connection, and
+		// the plaintext one it opened with cannot be used again. Everything
+		// after this — authentication, the startup completion, and the whole
+		// session loop — has to go through the upgraded connection.
+		if req.Conn != nil {
+			client = req.Conn
 		}
 
 		// Authenticate the client before a backend is chosen. An unauthenticated
@@ -51,7 +60,7 @@ func (g *Gateway) openSession(
 		// all — otherwise anyone who can reach the port can consume the pool.
 		if g.credentials != nil {
 			if err := g.authenticateClient(ctx, client, req, state); err != nil {
-				return nil, nil, err
+				return nil, nil, clientOut, err
 			}
 		}
 	}
@@ -74,13 +83,14 @@ func (g *Gateway) openSession(
 
 	var backend pool2.Backend
 	var server net.Conn
-	var err error
+
+	clientOut = client
 
 	for attempt := range identityAttempts {
 		backend, server, err = g.acquireBackendFor(ctx, hint, state.User, state.Database)
 		if err != nil {
 			slog.Error("Failed to acquire backend for handshake", "client", remoteAddr, "error", err)
-			return nil, nil, err
+			return nil, nil, clientOut, err
 		}
 
 		switch {
@@ -109,7 +119,7 @@ func (g *Gateway) openSession(
 			if attempt == identityAttempts-1 {
 				slog.Warn("Gave up finding a connection for this session's identity",
 					"client", remoteAddr, "user", state.User, "attempts", identityAttempts)
-				return nil, nil, err
+				return nil, nil, clientOut, err
 			}
 			continue
 		}
@@ -118,7 +128,7 @@ func (g *Gateway) openSession(
 		// marked ready and the pool destroys it on release rather than handing
 		// an unusable socket to the next caller.
 		_ = backend.Release(server)
-		return nil, nil, err
+		return nil, nil, clientOut, err
 	}
 
 	// The startup exchange completed, so this connection can carry queries and
@@ -131,5 +141,5 @@ func (g *Gateway) openSession(
 		c.SetIdentity(state.User, state.Database)
 	}
 
-	return backend, server, nil
+	return backend, server, clientOut, nil
 }

@@ -158,30 +158,30 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 		func() []pool2.Backend { return backends }, failoverOptions(r.defaults))
 	go failoverMgr.Start(ctx)
 
-	proxyCfg := &config.Options{
-		ProxyAddr:    prcfg.Address,
-		Protocol:     protocolName,
-		DialTimeout:  r.dialTimeout,
-		MaxConns:     prcfg.MaxConns,
-		QueryTimeout: 30 * time.Second,
-		Balancer:     prcfg.Balancer,
+	// Start from the global configuration and override what is per-proxy.
+	//
+	// This used to be built field by field, which meant every setting the
+	// gateway reads had to be remembered here as well — and `tls:` was not, so
+	// client connections ran in the clear, while max_replica_lag and
+	// auto_reattach silently took their built-in values. Inheriting first makes
+	// that class of omission impossible: a new global setting reaches the data
+	// plane without anyone having to remember this function exists.
+	//
+	// pkg/config's wiring test cannot catch it either — it proves a field is
+	// referenced somewhere, not that it reaches the code acting on it.
+	proxyCfg := &config.Options{}
+	if r.defaults != nil {
+		*proxyCfg = *r.defaults
 	}
-	// Inherit the global data-plane settings. ProxyConfig has no fields for
-	// these, so without inheriting them the rate limiter and result cache are
-	// never enabled for any proxy the registry builds.
-	if d := r.defaults; d != nil {
-		// The zone this proxy runs in. Without it the balancer's locality
-		// penalty never applies, because CallerZone is empty on every hint.
-		proxyCfg.LocalZone = d.LocalZone
-		proxyCfg.RateLimit = d.RateLimit
-		proxyCfg.Cache = d.Cache
-		proxyCfg.ShadowBackends = d.ShadowBackends
-		if d.PoolingMode != "" {
-			proxyCfg.PoolingMode = d.PoolingMode
-		}
-		if d.QueryTimeout > 0 {
-			proxyCfg.QueryTimeout = d.QueryTimeout
-		}
+
+	proxyCfg.ProxyAddr = prcfg.Address
+	proxyCfg.Protocol = protocolName
+	proxyCfg.DialTimeout = r.dialTimeout
+	proxyCfg.MaxConns = prcfg.MaxConns
+	proxyCfg.Balancer = prcfg.Balancer
+	proxyCfg.Backends = nil // this proxy's backends are built above, not parsed here
+	if proxyCfg.QueryTimeout <= 0 {
+		proxyCfg.QueryTimeout = 30 * time.Second
 	}
 
 	gateway := proxy.NewGateway(handler, lb, failoverMgr, proxyCfg, r.backendTLS)

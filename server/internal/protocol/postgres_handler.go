@@ -38,12 +38,14 @@ func (p *PostgresHandler) Handshake(ctx context.Context, client, server net.Conn
 	if err != nil {
 		return err
 	}
-	return p.CompleteHandshake(ctx, client, server, req, state)
+	// A TLS upgrade replaced the connection; the rest of the exchange has to
+	// use it.
+	return p.CompleteHandshake(ctx, req.Conn, server, req, state)
 }
 
 // ReadStartup implements StartupReader. No backend is touched.
 func (p *PostgresHandler) ReadStartup(client net.Conn, state *SessionState) (*StartupRequest, error) {
-	startup, err := p.readClientStartup(client)
+	startup, client, err := p.readClientStartup(client)
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +75,7 @@ func (p *PostgresHandler) ReadStartup(client net.Conn, state *SessionState) (*St
 		User:        user,
 		Database:    database,
 		Replication: replication,
+		Conn:        client,
 	}, nil
 }
 
@@ -100,28 +103,37 @@ func (p *PostgresHandler) CompleteHandshake(ctx context.Context, client, server 
 // answered by a single byte, so treating it as a StartupMessage and piping it to
 // the backend leaves both sides waiting — the reason a default-configured client
 // used to hang instead of connecting.
-func (p *PostgresHandler) readClientStartup(client net.Conn) (*startupPacket, error) {
+func (p *PostgresHandler) readClientStartup(client net.Conn) (*startupPacket, net.Conn, error) {
 	for range 2 { // at most one SSLRequest and one GSSENCRequest precede the real one
 		pkt, err := readStartupPacket(client)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read startup message: %w", err)
+			return nil, nil, fmt.Errorf("failed to read startup message: %w", err)
 		}
 
 		switch pkt.code {
-		case sslRequestCode, gssEncRequestCode:
-			// Decline. Pontus terminates no TLS on the client side, and saying so
-			// lets a sslmode=prefer client fall back to plaintext and continue.
+		case sslRequestCode:
+			upgraded, err := p.negotiateTLS(client)
+			if err != nil {
+				return nil, nil, err
+			}
+			// Everything after this reads and writes through TLS, including the
+			// startup packet that follows — so the caller needs this connection
+			// too, not the plaintext one it opened with.
+			client = upgraded
+		case gssEncRequestCode:
+			// GSSAPI encryption is not supported. Declining lets a client that
+			// asked for it fall back rather than hang.
 			if _, err := client.Write([]byte{'N'}); err != nil {
-				return nil, fmt.Errorf("failed to decline encryption request: %w", err)
+				return nil, nil, fmt.Errorf("failed to decline GSSAPI encryption: %w", err)
 			}
 		case cancelRequestCode:
-			return nil, fmt.Errorf("cancel request is not a session startup")
+			return nil, nil, fmt.Errorf("cancel request is not a session startup")
 		default:
-			return pkt, nil
+			return pkt, client, nil
 		}
 	}
 
-	return nil, fmt.Errorf("client sent no startup message after encryption negotiation")
+	return nil, nil, fmt.Errorf("client sent no startup message after encryption negotiation")
 }
 
 // PeekTransactionState inspects PostgreSQL packets to determine the transaction status.

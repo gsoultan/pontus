@@ -120,6 +120,23 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	// How stale a replica may be before reads stop going to it. Applied on
 	// reload as well as at startup: an operator raising this during a
 	// replication backlog should not have to restart the proxy.
+	// What Pontus presents to clients that ask for encryption.
+	//
+	// PostgreSQL negotiates TLS inside the protocol rather than at the transport
+	// layer, so this cannot be a tls.NewListener around the accept loop — the
+	// handler answers the client's SSLRequest and upgrades in place. The `tls:`
+	// block was parsed and reached nothing, so every client session ran in the
+	// clear (finding A3).
+	if clientTLS, err := CreateTLSConfig(cfg.TLS); err != nil {
+		slog.Error("tls is configured but unusable; client connections stay in plaintext",
+			"error", err)
+	} else {
+		protocol.SetClientTLS(clientTLS)
+		if clientTLS != nil {
+			slog.Info("Client TLS enabled")
+		}
+	}
+
 	fo := cfg.FailoverOptions()
 	balancer2.SetMaxReplicaLag(fo.MaxReplicaLag)
 	// Whether a replica that lost its WAL receiver is pulled from the read pool,
@@ -535,7 +552,7 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 	buf := buffer.Get()
 	defer buffer.Put(buf)
 
-	backend, server, err := g.openSession(ctx, client, sessionState, remoteAddr)
+	backend, server, client, err := g.openSession(ctx, client, sessionState, remoteAddr)
 	if err != nil {
 		// A replication stream is not a failure: it needs the node holding its
 		// slot rather than the balanced one, so it is carried on its own path.
