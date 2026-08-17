@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -113,8 +114,18 @@ func NewGateway(h protocol.Handler, b balancer2.Balancer, orch FailoverOrchestra
 	return g
 }
 
+// withQueryTimeout bounds one statement, unless the bound is disabled.
+func (g *Gateway) withQueryTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if g.queryTimeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, g.queryTimeout)
+}
+
 func (g *Gateway) reconfigure(cfg *config.Options) {
-	if cfg.QueryTimeout > 0 {
+	// A negative value disables the bound; see config.Options.QueryTimeout for
+	// why that is spelled with a sign rather than a zero.
+	if cfg.QueryTimeout != 0 {
 		g.queryTimeout = cfg.QueryTimeout
 	}
 	// How stale a replica may be before reads stop going to it. Applied on
@@ -399,7 +410,7 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	}
 
 	requestStart := time.Now()
-	state, isReadOnlyErr, rtt, err := m.proxyResponse(s.Client, s.Server, s.Buffer, capture,
+	state, isReadOnlyErr, rtt, err := m.proxyResponse(ctx, s.Client, s.Server, s.Buffer, capture,
 		s.QueryInfo.ReadOnly, m.handler.ResponseEndFor(s.Data))
 	if call != nil {
 		call.data = capture.Bytes()
@@ -485,6 +496,29 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	// transaction loop and ignored here, and this runs first. Testing the
 	// predicate in isolation proved it correct and proved nothing about it
 	// being the only thing that releases.
+	// A timed-out read leaves the backend still working on the statement, so
+	// the connection cannot go back to the pool: the next borrower would be
+	// handed a socket that is about to emit the previous client's result set.
+	//
+	// This has to run *before* the release below, not after — marking a
+	// connection broken once it is already back in the pool changes nothing.
+	if errors.Is(err, os.ErrDeadlineExceeded) && s.Server != nil {
+		if broken, ok := s.Server.(interface{ MarkBroken() }); ok {
+			broken.MarkBroken()
+		}
+		slog.Warn("Query exceeded query_timeout; discarding the connection",
+			"client", s.RemoteAddr, "timeout", m.queryTimeout)
+
+		// Say so in the protocol. Returning the error closes the client
+		// connection, and a bare close is indistinguishable from the database
+		// dying — it points the operator at the network instead of at the
+		// timeout that fired. FATAL because the session ends here: the backend
+		// is still producing a result nobody will read.
+		_, _ = s.Client.Write(protocol.ErrorResponse(
+			protocol.SeverityFatal, protocol.SQLStateQueryCanceled,
+			"canceling statement: exceeded Pontus query_timeout of "+m.queryTimeout.String()))
+	}
+
 	if s.Server != nil &&
 		m.current().pooling.shouldReleaseAt(state, m.handler.IsPinned(s.State)) {
 		if m.resetOnRelease() {
@@ -643,7 +677,7 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		session.QueryInfo = g.handler.ClassifyQuery(session.Data)
 
 		// The clock starts now: there is a statement to run.
-		qctx, qcancel := context.WithTimeout(ctx, g.queryTimeout)
+		qctx, qcancel := g.withQueryTimeout(ctx)
 
 		// Execute through middleware chain
 		rc := g.current()
@@ -880,7 +914,21 @@ func (g *Gateway) CacheManager() *cache.Manager {
 	return g.cacheManager
 }
 
-func (g *Gateway) proxyResponse(client, server net.Conn, buf []byte, capture *bytes.Buffer, readOnly bool, end protocol.ResponseEnd) (protocol.TransactionState, bool, time.Duration, error) {
+func (g *Gateway) proxyResponse(ctx context.Context, client, server net.Conn, buf []byte, capture *bytes.Buffer, readOnly bool, end protocol.ResponseEnd) (protocol.TransactionState, bool, time.Duration, error) {
+	// query_timeout, made real.
+	//
+	// The deadline was carried on the context and the read loop never consulted
+	// it, so a statement ran for as long as the database took — a twenty-second
+	// pg_sleep completed happily under a three-second timeout. The whole point
+	// of the setting is that one query cannot hold a pooled connection
+	// indefinitely, and a context nothing reads does not bound anything.
+	if deadline, ok := ctx.Deadline(); ok && g.queryTimeout > 0 {
+		if err := server.SetReadDeadline(deadline); err != nil {
+			return protocol.StateError, false, 0, err
+		}
+		defer func() { _ = server.SetReadDeadline(time.Time{}) }()
+	}
+
 	// Fast Path: a read-only query with nothing to capture can be steered straight through.
 	if readOnly && capture == nil {
 		return g.proxyResponseFastPath(client, server, buf, end)

@@ -187,8 +187,12 @@ func (m *mockConn) RemoteAddr() net.Addr {
 	return &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
 }
 
-func (m *mockConn) Close() error                  { return nil }
-func (m *mockConn) SetDeadline(t time.Time) error { return nil }
+func (m *mockConn) Close() error                      { return nil }
+func (m *mockConn) SetDeadline(t time.Time) error     { return nil }
+func (m *mockConn) SetReadDeadline(t time.Time) error { return nil }
+func (m *mockConn) SetWriteDeadline(t time.Time) error {
+	return nil
+}
 
 func TestGateway_HandleClient_TransactionRelease(t *testing.T) {
 	handler := &mockHandler{state: protocol2.StateIdle}

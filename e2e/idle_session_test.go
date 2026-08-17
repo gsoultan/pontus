@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -81,6 +82,12 @@ func TestSlowQueryStillHitsTheTimeout(t *testing.T) {
 	if elapsed > 15*time.Second {
 		t.Errorf("the timeout took %v to fire; it is no longer bounding anything",
 			elapsed.Round(time.Second))
+	}
+	// The error has to name the cause. A bare "conn closed" is what a dead
+	// database looks like too, so it sends the operator to the wrong place —
+	// Pontus has to say in the protocol that *it* stopped the statement.
+	if !strings.Contains(err.Error(), "query_timeout") {
+		t.Errorf("client saw %q, which does not identify Pontus's timeout as the cause", err)
 	}
 	t.Logf("slow query cut off after %v: %v", elapsed.Round(time.Millisecond), err)
 }

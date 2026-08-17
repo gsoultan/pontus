@@ -26,6 +26,20 @@ Everything else is open. None of the open items are precedent to copy.
   now keys on the bytes that were actually executed. Same shape as finding B1: inspecting a
   different string than the one that runs is wrong by construction.
 
+- **C8b [FIXED 2026-08-17]. `query_timeout` bounded nothing at all.**
+  The deadline rode on a context, and the response loop read the backend socket with no
+  deadline and never consulted it — a `pg_sleep(20)` finished happily under a three-second
+  timeout. The setting exists so one statement cannot hold a pooled connection
+  indefinitely, which is exactly the failure it was not preventing. The loop now applies
+  the context deadline to the socket, marks the connection broken *before* the release
+  decision (a backend still producing rows must never go back to the pool), and sends a
+  real `ErrorResponse` — 57014, the code PostgreSQL's own statement_timeout uses — so the
+  client reports a timeout instead of a bare closed socket.
+
+  A negative `query_timeout` now disables the bound. Enforcing a previously-dead 30s
+  default would otherwise have killed every legitimately long analytical query with no
+  opt-out. Zero could not mean "off": zero is what an unset field holds.
+
 - **C8 [FIXED 2026-08-17]. The query timeout counted while the session was idle.**
   `context.WithTimeout` was created *before* the read that waits for the client, so a session
   quiet for longer than `query_timeout` got an already-expired context for its next statement
