@@ -18,11 +18,13 @@ type mockBackend struct {
 	latency      time.Duration
 	lastHealthy  time.Time
 	lag          time.Duration
+	rtt          time.Duration
+	zone         string
 	notStreaming bool
 }
 
 func (m *mockBackend) Address() string    { return m.address }
-func (m *mockBackend) Zone() string       { return "" }
+func (m *mockBackend) Zone() string       { return m.zone }
 func (m *mockBackend) ErrorRate() float64 { return 0 }
 func (m *mockBackend) IsHealthy() bool    { return m.healthy }
 func (m *mockBackend) ActiveConns() int64 { return m.activeConns }
@@ -39,7 +41,7 @@ func (m *mockBackend) Weight() int {
 	return m.weight
 }
 func (m *mockBackend) Latency() time.Duration                        { return m.latency }
-func (m *mockBackend) RTT() time.Duration                            { return 0 }
+func (m *mockBackend) RTT() time.Duration                            { return m.rtt }
 func (m *mockBackend) ReportLatency(time.Duration)                   {}
 func (m *mockBackend) ReportRTT(time.Duration)                       {}
 func (m *mockBackend) ReplicationLag() time.Duration                 { return m.lag }

@@ -91,11 +91,21 @@ Everything else is open. None of the open items are precedent to copy.
   the identical question each time, so it was reading a cached row rather than the backend.
   Any probe of connection identity must disable the cache and vary the SQL.
 
-- **A2. `pool.Server.ReportLatency` has zero callers**, so `Backend.Latency()` is always 0.
-  `balancer.CalculateCost` starts with `if latency == 0 { return 0 }`, so **every backend
-  always costs 0** and the locality, error-rate, replication-lag and slow-start terms below
-  that line never execute. `least_conn` / `p2c` / `peak_ewma` all rank by a constant, and
-  `FilterNodes`' write path keeps the *first* healthy primary, never the cheapest.
+- **A2 [FIXED 2026-08-17]. The load balancer did not balance.**
+
+  `ReportLatency` had no callers, so `Backend.Latency()` was always zero — and `CalculateCost`
+  returned early on a zero latency, *before* the locality, error-rate, replication-lag,
+  slow-start and active-connection terms. Every backend therefore scored 0, and `least_conn`,
+  `p2c` and `peak_ewma` each ranked by a constant. Measured: an idle backend and one with 500
+  active connections both cost 0.
+
+  Two causes, both fixed. The gateway now reports service time alongside the
+  time-to-first-byte it already reported. And the early return is gone: with no timing data
+  the cost falls back to a neutral unit so the remaining terms still rank, rather than
+  discarding them. Same measurement afterwards: idle costs 1, saturated costs 501.
+
+  The `return 0` read as "prefer nodes with no data", and would have been defensible if
+  anything ever reported data. Nothing did, so it was every backend, always.
 
 - **B1. [MOOT — the WAF was removed 2026-08-07] Normalization truncation was a WAF bypass.** The firewall inspects `s.Normalized`
   while `executeRequest` sends the raw `s.Data`. Normalization no longer *truncates* on an

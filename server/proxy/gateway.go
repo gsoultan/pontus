@@ -381,6 +381,7 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 		capture = new(bytes.Buffer)
 	}
 
+	requestStart := time.Now()
 	state, isReadOnlyErr, rtt, err := m.proxyResponse(s.Client, s.Server, s.Buffer, capture,
 		s.QueryInfo.ReadOnly, m.handler.ResponseEndFor(s.Data))
 	if call != nil {
@@ -389,6 +390,17 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	}
 	if rtt > 0 {
 		s.Backend.ReportRTT(rtt)
+	}
+
+	// Service time, as distinct from time-to-first-byte.
+	//
+	// Nothing reported this, so Backend.Latency() was always zero — and
+	// CalculateCost returns early on a zero latency, which meant every backend
+	// scored identically and least_conn, p2c and peak_ewma all ranked by a
+	// constant. A load balancer that cannot tell an idle node from a saturated
+	// one is not balancing.
+	if elapsed := time.Since(requestStart); elapsed > 0 {
+		s.Backend.ReportLatency(elapsed)
 	}
 	s.Backend.ReportResult(err)
 

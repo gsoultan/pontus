@@ -79,15 +79,28 @@ func MaxReplicaLag() time.Duration {
 func CalculateCost(b pool.Backend, callerZone string) float64 {
 	latency := float64(b.Latency().Nanoseconds())
 	rtt := float64(b.RTT().Nanoseconds())
-	if latency == 0 {
-		return 0 // Prefer nodes with no data
+
+	// Blend service time with time-to-first-byte: the first covers the work, the
+	// second the network.
+	effectiveLatency := latency
+	switch {
+	case latency > 0 && rtt > 0:
+		effectiveLatency = (latency * 0.7) + (rtt * 0.3)
+	case latency == 0:
+		effectiveLatency = rtt
 	}
 
-	// Use max of latency and RTT to account for both processing and network delay
-	effectiveLatency := latency
-	if rtt > 0 {
-		// effectiveLatency = 0.7*latency + 0.3*rtt
-		effectiveLatency = (latency * 0.7) + (rtt * 0.3)
+	// No timing yet — a backend that has served nothing, or one whose first
+	// request is still in flight.
+	//
+	// This used to `return 0`, which did not mean "prefer it": it meant every
+	// term below was discarded, so connections, weight, locality, error rate and
+	// replication lag stopped counting entirely. With nothing reporting latency
+	// that was every backend, all the time, and least_conn, p2c and peak_ewma
+	// each ranked by a constant. A neutral unit keeps the remaining terms
+	// meaningful while still favouring an untried node over a slow one.
+	if effectiveLatency <= 0 {
+		effectiveLatency = 1
 	}
 
 	active := float64(b.ActiveConns() + 1)
