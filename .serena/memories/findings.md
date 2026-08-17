@@ -117,10 +117,19 @@ Everything else is open. None of the open items are precedent to copy.
   No `--`, no `/* */`, no dollar-quoting, no `E'...'`. Every rule matching *adjacent* tokens
   is defeated by an inline comment.
 
-- **B4. `ValidateBackend` is an unauthenticated SSRF / port scanner.** `net.DialTimeout` on a
-  caller-supplied address, returning success, latency and the raw `err.Error()`
-  (`manager/backend.go:276`). It is on the non-admin allowlist, and with the default empty
-  `admin_token` it needs no auth at all.
+- **B4 [FIXED 2026-08-17]. `ValidateBackend` was a port scanner for any logged-in user.**
+
+  The "unauthenticated" half was already gone: the interceptor stopped calling through
+  without a token when B5–B9 were fixed, so it always required a login. What remained was
+  that it sat on the non-admin allowlist, so any authenticated viewer could make Pontus dial
+  an arbitrary address and learn whether it connected and how long it took — from wherever
+  Pontus sits, which is usually inside the network the databases are on.
+
+  Now admin-only. It exists to check a backend before adding one, and adding is admin-only,
+  so a read-only dashboard user never had a reason to reach it; the UI form that calls it is
+  already behind `isAdmin`. The dial error is no longer returned verbatim either —
+  distinguishing "connection refused" from "no route to host" from a timeout is precisely the
+  signal a scan wants. The detail goes to the log.
 
 - **B5–B9. Auth defaults.** Hardcoded JWT secret fallback `"pontus-secret-key"`
   (`manager/auth.go:22`); auth interceptor returns `next(...)` unauthenticated when

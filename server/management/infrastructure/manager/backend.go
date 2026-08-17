@@ -273,13 +273,26 @@ func (m *Backend) ProvisionReplica(ctx context.Context, req *endpoints.Provision
 	return ps.FailoverMgr.ProvisionReplica(ctx, req, progress)
 }
 
+// ValidateBackend reports whether an address accepts a TCP connection.
+//
+// Admin-only, and it says less than it used to. Returning the dial error
+// verbatim distinguished "connection refused" from "no route to host" from a
+// timeout, which is exactly the signal a port scan is after — and Pontus
+// usually sits inside the network the databases are on. The detail goes to the
+// log, where an operator can see it and a caller cannot.
 func (m *Backend) ValidateBackend(ctx context.Context, req *endpoints.ValidateBackendRequest) (*endpoints.ValidateBackendResponse, error) {
 	start := time.Now()
-	conn, err := net.DialTimeout("tcp", req.Address, 5*time.Second)
+
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", req.Address)
 	if err != nil {
-		return &endpoints.ValidateBackendResponse{Success: false, Message: err.Error()}, nil
+		slog.Info("Backend validation failed", "address", req.Address, "error", err)
+		return &endpoints.ValidateBackendResponse{
+			Success: false,
+			Message: "could not connect",
+		}, nil
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	return &endpoints.ValidateBackendResponse{
 		Success:   true,

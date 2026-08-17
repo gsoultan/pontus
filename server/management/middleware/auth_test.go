@@ -116,6 +116,13 @@ func TestAuthEnforcesRoleAllowlist(t *testing.T) {
 		{"/api.proto.service.ManagementService/PromoteBackend", false},
 		{"/api.proto.service.ManagementService/CreateUser", false},
 		{"/api.proto.service.ManagementService/ShutdownBackend", false},
+
+		// ValidateBackend dials an address the caller supplies and reports
+		// whether it connected. That is a port scan run from wherever Pontus
+		// sits, usually inside the network the databases are on, so it is
+		// admin-only — it exists to check a backend before adding one, and
+		// adding is admin-only too.
+		{"/api.proto.service.ManagementService/ValidateBackend", false},
 	}
 
 	for _, tc := range cases {

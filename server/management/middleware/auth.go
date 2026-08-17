@@ -26,8 +26,15 @@ var readOnlyProcedures = []string{
 	// Read-only view of attached CDC consumers; terminating one is admin-only.
 	"/ListReplicationStreams",
 	"/GetServerInfo",
-	"/ValidateBackend",
 }
+
+// ValidateBackend is deliberately absent from that list.
+//
+// It dials an address the caller supplies and reports whether the connection
+// succeeded and how long it took, which is a port scanner run from wherever
+// Pontus sits — usually inside the network the databases are on. It exists to
+// check a backend before adding it, and adding one is admin-only, so a
+// read-only dashboard user has no reason to reach it.
 
 // Auth implements connect.Interceptor to provide token-based authentication.
 type Auth struct {
