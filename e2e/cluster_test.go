@@ -180,34 +180,41 @@ func connectSimple(t *testing.T, ctx context.Context, s *stack) *pgx.Conn {
 func containerRuntime(t *testing.T) string {
 	t.Helper()
 
-	// Being on PATH is not the same as working. Podman is frequently installed
-	// and not running, and picking it then produces "cannot connect to Podman"
-	// from every call — which reads as a Pontus failure and cost real time to
-	// track down. scripts/e2e-cluster.sh has always probed; this did not.
-	probes := []struct {
-		binary string
-		args   []string
-	}{
-		{"docker", []string{"info"}},
-		{"podman", []string{"info"}},
-		{"container", []string{"system", "status"}},
-	}
-
-	for _, probe := range probes {
-		path, err := exec.LookPath(probe.binary)
+	// Two things have to be true, and checking only the first has cost real
+	// time twice.
+	//
+	// Being on PATH is not being able to run: Podman is often installed and not
+	// started, and every call then fails with "cannot connect to Podman", which
+	// reads as a Pontus authentication error.
+	//
+	// And being able to run is not holding *our* cluster: with both Podman and
+	// Apple's runtime working, picking the wrong one ran psql inside a container
+	// on a different network, whose gateway routes nowhere near the proxy. The
+	// runtime that matters is whichever one has the primary container.
+	for _, binary := range []string{"docker", "podman", "container"} {
+		path, err := exec.LookPath(binary)
 		if err != nil {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		err = exec.CommandContext(ctx, path, probe.args...).Run()
-		cancel()
-		if err == nil {
-			return path
+		if !runtimeHasContainer(path, primaryContainer()) {
+			continue
 		}
+		return path
 	}
 
-	t.Skip("no working container runtime; cannot manipulate the cluster")
+	t.Skipf("no container runtime holds %s; cannot reach the cluster", primaryContainer())
 	return ""
+}
+
+// runtimeHasContainer reports whether this runtime can exec in the container.
+//
+// Running a trivial command is a stronger check than listing: it proves the
+// runtime is up, the container exists in it, and exec works — which is all this
+// package ever asks of it.
+func runtimeHasContainer(runtime, name string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, runtime, "exec", name, "true").Run() == nil
 }
 
 func runtimeExec(t *testing.T, name string, args ...string) (string, error) {

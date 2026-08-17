@@ -8,6 +8,14 @@ type QueryClassifier interface {
 	// NormalizeQuery strips values from the query for metrics grouping.
 	NormalizeQuery(data []byte) string
 
+	// ResponseEndFor reports how the reply to this request will end.
+	//
+	// A client may terminate an extended-protocol batch with Sync, which is
+	// answered by ReadyForQuery, or with Flush, which is answered by nothing in
+	// particular. Waiting for ReadyForQuery either way blocks forever on the
+	// second, which is what asyncpg and pipelined libpq both do.
+	ResponseEndFor(request []byte) ResponseEnd
+
 	// IsTerminate reports whether this message ends the client's session.
 	//
 	// It must not be forwarded. The backend connection belongs to Pontus, not to

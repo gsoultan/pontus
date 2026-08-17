@@ -6,24 +6,38 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
-- **A10 [OPEN, blocks recommending `auth.mode: pontus`, repro]. asyncpg cannot use
-  Pontus-side authentication.** pgx and libpq (psql 17.10) both complete a session; asyncpg
-  cannot. Its connect hangs, and a *refused* login reports
-  `protocol.data_received() call failed` — an asyncpg protocol error, not an authentication
-  one. So Pontus emits something during or after the SASL exchange that asyncpg models more
-  strictly than the other two.
+- **A10 [FIXED 2026-08-10]. A Flush-terminated batch hung the proxy forever.**
 
-  Supplying BackendKeyData, which `CompleteClientStartup` had been omitting, did **not** fix
-  it — though that omission was a real defect and the fix is kept: PostgreSQL always sends
-  it, and it is what a client uses to cancel a query.
+  Pontus decided a reply was finished by looking for ReadyForQuery and nothing else. A client
+  may end an extended-protocol batch with **Flush** instead of Sync, and Flush produces no
+  ReadyForQuery — so the read loop blocked on a message that was never coming. The connection
+  stayed checked out, the client hung, and nothing under `query_timeout` noticed.
 
-  `e2e.TestAsyncpgAuthenticatesAgainstPontus` is skipped with the diagnosis in its comment.
-  Next step is to capture asyncpg's traceback and diff Pontus's startup byte stream against a
-  real PostgreSQL's for the same client — the difference will be in what follows
-  AuthenticationOk.
+  asyncpg prepares that way, so it connected and then hung on its first query. libpq in
+  pipeline mode does too. **This was never specific to `auth.mode: pontus`** — it was in the
+  generic query path and affected passthrough identically.
 
-  This is why a driver matrix exists. Two drivers agreeing proved the exchange
-  self-consistent; the third proved it is not yet correct.
+  `ResponseEndFor` now works out how a reply will end: ReadyForQuery when the batch contains
+  a Sync or is a simple query, otherwise the answer to the last message that produces one
+  (ParseComplete, BindComplete, RowDescription/NoData, CommandComplete, CloseComplete). An
+  ErrorResponse ends any of them. `replyScanner` tracks that across reads that split a
+  message, since the socket decides where chunks land.
+
+  A Flush-terminated reply reports `StateInTransaction` rather than Idle, because the client
+  still owes a Sync — returning the connection to the pool between a Parse and its Bind would
+  hand the next statement to a backend that never saw the statement being bound.
+
+  Also fixed alongside: `WritePostgresError` appended ReadyForQuery, which is right after a
+  query error and wrong during authentication — the client has not had AuthenticationOk and
+  is not in the query phase. `WriteStartupError` sends FATAL with no ReadyForQuery, which is
+  what turned asyncpg's rejection from `protocol.data_received() call failed` into a proper
+  `InvalidPasswordError`.
+
+  **Method note.** The first regression test written for this passed with the fix reverted, so
+  it proved nothing: Pontus forwards bytes as it reads them, so the client sees the reply
+  either way — what it does not survive is the *next* message. Causation was finally
+  established by disabling the fix behind a verified assertion and watching asyncpg reproduce
+  the original hang. Driver matrix: pgx, libpq and asyncpg all pass.
 
 - **W2 + W4 [FIXED 2026-08-09, under `auth.mode: pontus`]. Pontus now pools.** Eight
   sequential clients share one backend connection — same PID, same `backend_start` — where
@@ -46,21 +60,11 @@ Everything else is open. None of the open items are precedent to copy.
   That is the documented semantics of transaction pooling and pgbouncer behaves identically —
   an earlier attempt at this reset was reverted after misreading that as a regression.
 
-- **W2 + W4 (original note). Pontus does not pool.** *Re-confirmed 2026-08-09:* three sequential client
-  sessions returned three different backend PIDs **and three different `backend_start`s**,
-  and the server log shows a connect/authorize/disconnect per session. Connections are not
-  reused across clients.
-
-  A probe on 2026-08-09 briefly appeared to show the opposite — the same PID and
-  `backend_start` eight times — and that reading was **wrong**: the harness config has the
-  result cache enabled and the probe asked the identical question each time, so it was
-  reading a cached row, not the backend. Any probe of connection identity must disable the
-  cache and vary the SQL. The client's Terminate is forwarded to the backend, so
-  every client session ends its backend connection: `SELECT pg_backend_pid()` over four
-  sequential sessions returned 278, 279, 280, 281. And `handleClient` calls `Handshake` on
-  every acquired connection, so a *reused* one gets a startup packet it is already past.
-  **These are one piece of work** — fixing W4 alone makes connections survive, which is
-  exactly what triggers W2. See "Pooling needs Pontus-side client auth" below.
+  *Superseded history, kept only because it explains the shape of the mistake:* an earlier
+  probe appeared to show reuse already working — same PID and `backend_start` eight times —
+  and that reading was **wrong**. The harness has the result cache enabled and the probe asked
+  the identical question each time, so it was reading a cached row rather than the backend.
+  Any probe of connection identity must disable the cache and vary the SQL.
 
 - **A2. `pool.Server.ReportLatency` has zero callers**, so `Backend.Latency()` is always 0.
   `balancer.CalculateCost` starts with `if latency == 0 { return 0 }`, so **every backend

@@ -138,6 +138,10 @@ func CompleteClientStartup(client net.Conn, startup *Startup) error {
 
 // WriteClientError reports a startup failure to a client in the form its driver
 // expects, so it prints a reason instead of "connection closed".
+//
+// Severity FATAL and no ReadyForQuery: the client has not been authenticated,
+// so it is not in the query phase and telling it otherwise describes a state
+// the connection is not in.
 func WriteClientError(client net.Conn, code, message string) error {
-	return WritePostgresError(client, code, message)
+	return WriteStartupError(client, code, message)
 }

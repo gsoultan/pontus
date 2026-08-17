@@ -194,6 +194,12 @@ func (m *MySQLHandler) extractQuery(data []byte) string {
 	return ""
 }
 
+// ResponseEndFor: MySQL replies are self-delimiting and there is no Flush, so
+// the existing completion rule applies to every request.
+func (m *MySQLHandler) ResponseEndFor([]byte) ResponseEnd {
+	return ResponseEnd{OnReadyForQuery: true}
+}
+
 // IsTerminate reports COM_QUIT.
 func (m *MySQLHandler) IsTerminate(data []byte) bool {
 	const comQuit = 0x01

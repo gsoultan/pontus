@@ -381,7 +381,8 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 		capture = new(bytes.Buffer)
 	}
 
-	state, isReadOnlyErr, rtt, err := m.proxyResponse(s.Client, s.Server, s.Buffer, capture, s.QueryInfo.ReadOnly)
+	state, isReadOnlyErr, rtt, err := m.proxyResponse(s.Client, s.Server, s.Buffer, capture,
+		s.QueryInfo.ReadOnly, m.handler.ResponseEndFor(s.Data))
 	if call != nil {
 		call.data = capture.Bytes()
 		call.err = err
@@ -831,19 +832,20 @@ func (g *Gateway) CacheManager() *cache.Manager {
 	return g.cacheManager
 }
 
-func (g *Gateway) proxyResponse(client, server net.Conn, buf []byte, capture *bytes.Buffer, readOnly bool) (protocol.TransactionState, bool, time.Duration, error) {
+func (g *Gateway) proxyResponse(client, server net.Conn, buf []byte, capture *bytes.Buffer, readOnly bool, end protocol.ResponseEnd) (protocol.TransactionState, bool, time.Duration, error) {
 	// Fast Path: a read-only query with nothing to capture can be steered straight through.
 	if readOnly && capture == nil {
-		return g.proxyResponseFastPath(client, server, buf)
+		return g.proxyResponseFastPath(client, server, buf, end)
 	}
 
-	return g.proxyResponseWithCapture(client, server, buf, capture)
+	return g.proxyResponseWithCapture(client, server, buf, capture, end)
 }
 
-func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte) (protocol.TransactionState, bool, time.Duration, error) {
+func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte, end protocol.ResponseEnd) (protocol.TransactionState, bool, time.Duration, error) {
 	start := time.Now()
 	firstByte := true
 	var rtt time.Duration
+	scan := protocol.NewReplyScanner(end)
 
 	for {
 		n, err := server.Read(buf)
@@ -857,10 +859,8 @@ func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte) (pr
 				return protocol.StateError, false, rtt, werr
 			}
 
-			// Still need to peek at transaction state to know when the response ends
-			state, _ := g.handler.PeekTransactionState(buf[:n])
-			if state != protocol.StatePartial {
-				return state, false, rtt, nil
+			if done, state := scan.Feed(buf[:n]); done {
+				return midSequenceState(state, end), false, rtt, nil
 			}
 		}
 		if err != nil {
@@ -869,11 +869,25 @@ func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte) (pr
 	}
 }
 
-func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, capture *bytes.Buffer) (protocol.TransactionState, bool, time.Duration, error) {
+// midSequenceState keeps a connection pinned when the client is mid-batch.
+//
+// A Flush-terminated request leaves the extended-protocol sequence open — the
+// client still owes a Sync — so reporting Idle here would return the connection
+// to the pool between a Parse and its Bind, and hand the next statement to a
+// backend that never saw the statement being bound.
+func midSequenceState(state protocol.TransactionState, end protocol.ResponseEnd) protocol.TransactionState {
+	if !end.OnReadyForQuery {
+		return protocol.StateInTransaction
+	}
+	return state
+}
+
+func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, capture *bytes.Buffer, end protocol.ResponseEnd) (protocol.TransactionState, bool, time.Duration, error) {
 	isReadOnlyErr := false
 	var rtt time.Duration
 	start := time.Now()
 	firstByte := true
+	scan := protocol.NewReplyScanner(end)
 	for {
 		n, err := server.Read(buf)
 		if n > 0 {
@@ -892,12 +906,11 @@ func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, 
 				isReadOnlyErr = true
 			}
 
-			// Peek at transaction state
-			state, _ := g.handler.PeekTransactionState(buf[:n])
-
-			// If we reached a stable state (Idle, InTransaction, or Error), we are done with this response.
-			if state != protocol.StatePartial {
-				return state, isReadOnlyErr, rtt, nil
+			// The reply ends at ReadyForQuery when the client sent a Sync, and
+			// at the answer to its last message when it sent a Flush. Waiting
+			// for ReadyForQuery either way blocks forever on the second.
+			if done, state := scan.Feed(buf[:n]); done {
+				return midSequenceState(state, end), isReadOnlyErr, rtt, nil
 			}
 		}
 		if err != nil {

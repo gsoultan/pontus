@@ -308,15 +308,14 @@ Still open for this stage:
   matters more than pgx: nearly every PostgreSQL tool is built on libpq, and it has never
   seen this code, so it tests correctness rather than self-consistency.
 
-  **asyncpg fails, and that is finding A10.** It is the most valuable third opinion — a pure
-  Python SCRAM implementation sharing no code with either — and it cannot complete a session:
-  the connect hangs, and a refused login reports `protocol.data_received() call failed`,
-  which is a protocol error rather than an authentication one. Pontus emits something after
-  AuthenticationOk that asyncpg models more strictly than pgx and libpq do. Supplying
-  BackendKeyData, which was genuinely missing, did not fix it.
+  **asyncpg passes too, as of 2026-08-10.** It was finding A10, and the cause was not in the
+  authentication path at all: asyncpg prepares with a **Flush** rather than a Sync, and
+  Pontus considered a reply finished only on ReadyForQuery — which Flush never produces. The
+  proxy blocked forever on the next message. That was in the generic query path, so it
+  affected passthrough identically and had nothing to do with this feature.
 
-  JDBC remains untested. Until A10 is closed, `auth.mode: pontus` should not be recommended
-  and asyncpg clients must not be pointed at it.
+  JDBC remains untested. Three independent implementations now agree — pgx, libpq and
+  asyncpg — which is the bar this was waiting on.
 
   The interpreter is discovered, never installed: resolving asyncpg on demand with `uv` cost
   longer than the suite's budget and left Go blocked on a pipe inherited by the killed child.

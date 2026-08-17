@@ -38,6 +38,32 @@ func WritePostgresError(conn net.Conn, code, message string) error {
 	return err
 }
 
+// WriteStartupError reports a failure that happened before the client was
+// authenticated.
+//
+// Deliberately without the ReadyForQuery that WritePostgresError appends. That
+// is right *during a session* — a client that survives a query error is waiting
+// for one — but during startup the client has not had AuthenticationOk and is
+// not in the query phase. A server that sends ReadyForQuery there is describing
+// a state the connection is not in, and PostgreSQL itself sends the error and
+// closes.
+func WriteStartupError(conn net.Conn, code, message string) error {
+	body := make([]byte, 0, len(message)+len(code)+32)
+	body = appendField(body, 'S', "FATAL")
+	body = appendField(body, 'V', "FATAL")
+	body = appendField(body, 'C', code)
+	body = appendField(body, 'M', message)
+	body = append(body, 0)
+
+	frame := make([]byte, 0, len(body)+5)
+	frame = append(frame, 'E')
+	frame = binary.BigEndian.AppendUint32(frame, uint32(len(body)+4))
+	frame = append(frame, body...)
+
+	_, err := conn.Write(frame)
+	return err
+}
+
 func appendField(dst []byte, tag byte, value string) []byte {
 	dst = append(dst, tag)
 	dst = append(dst, value...)

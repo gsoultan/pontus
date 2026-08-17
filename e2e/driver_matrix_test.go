@@ -69,14 +69,21 @@ func TestLibpqAuthenticatesAgainstPontus(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// One exec, not two. Finding the gateway in a separate call doubled the
-	// chances of a runtime hiccup, and a skip from that is indistinguishable
-	// from a real failure — which makes the test worse than not having it.
-	// The gateway is resolved inside the same shell that runs psql.
+	// One exec, not two, and every plausible route to the host tried in turn.
+	//
+	// How a container reaches its host is runtime-specific: rootless Podman
+	// publishes host.containers.internal and does *not* route to host services
+	// via the default gateway, Docker Desktop uses host.docker.internal, and
+	// Apple's runtime routes via the gateway. Assuming one produced a
+	// "connection refused" that looked like Pontus not listening.
 	script := fmt.Sprintf(
-		`GW=$(ip route | awk '/^default/{print $3}'); `+
-			`test -n "$GW" || { echo "no default gateway" >&2; exit 3; }; `+
-			`exec psql -h "$GW" -p %s -U %s -d %s -tAc "SELECT 'libpq-ok', current_user"`,
+		`for H in host.containers.internal host.docker.internal `+
+			`$(ip route 2>/dev/null | awk '/^default/{print $3}'); do `+
+			`  if psql -h "$H" -p %s -U %s -d %s -tAc "SELECT 'libpq-ok', current_user" 2>/dev/null; then `+
+			`    exit 0; `+
+			`  fi; `+
+			`done; `+
+			`echo "no route from this container to the proxy" >&2; exit 3`,
 		port, backendUser(), backendDB())
 
 	out, err := exec.CommandContext(ctx, runtimeBin, "exec",
@@ -148,19 +155,12 @@ func pythonWithAsyncpg(t *testing.T) string {
 // wire exchange credible — one that agrees with itself proves only that it is
 // self-consistent.
 //
-// KNOWN FAILURE, and the reason this test exists. asyncpg cannot complete a
-// session against auth.mode: pontus: the connect hangs, and a refused login
-// reports "protocol.data_received() call failed" — an asyncpg *protocol* error
-// rather than an authentication one. pgx and libpq both pass, so Pontus is
-// sending something asyncpg models more strictly than they do. Supplying
-// BackendKeyData, which was missing, did not fix it; the cause is not yet
-// identified.
-//
-// Do not run asyncpg against auth.mode: pontus until this passes.
+// This was finding A10 for a while. asyncpg connected and then hung on its
+// first query, because it prepares with a Flush rather than a Sync and Pontus
+// decided a reply was over only when it saw ReadyForQuery — which a Flush never
+// produces. pgx and libpq happened not to exercise that path, which is exactly
+// why one driver proves nothing.
 func TestAsyncpgAuthenticatesAgainstPontus(t *testing.T) {
-	t.Skip("known failure: asyncpg cannot complete a session against " +
-		"auth.mode: pontus — see the comment above. pgx and libpq pass, so this " +
-		"is a Pontus protocol defect, not an asyncpg one")
 
 	python := pythonWithAsyncpg(t)
 
