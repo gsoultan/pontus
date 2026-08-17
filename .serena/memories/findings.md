@@ -365,7 +365,21 @@ Everything else is open. None of the open items are precedent to copy.
   never fired. Do not read a pointer config block in `reconfigure` without checking it;
   several others there are pointers too.
 
-  **Remaining:** stale-while-revalidate has no singleflight.
+- **C20 [FIXED 2026-08-17]. Stale-while-revalidate is deduplicated and bounded.**
+  Every client that hit the same stale entry started its own refresh — one goroutine and one
+  *pooled backend connection* each, all running the identical query at the same moment. That
+  is the thundering herd the cache exists to prevent, arriving through the cache itself.
+
+  One refresh per key now, plus a ceiling of 8 across keys, because deduplication alone
+  bounds nothing: a thousand distinct stale keys would still take a thousand connections
+  from the pool that real queries are waiting on. Both takes are non-blocking — an entry
+  that cannot be refreshed stays stale until it expires, which is what a stale window is for.
+
+  The refresh capture is bounded too, and an oversized reply is **not stored**: the loop used
+  to `break` and fall straight into `Set`, which would have served a truncated result to
+  every later client as though it were complete.
+
+  **C18–C20 is now closed.**
 
 - **C16 [STALE].** The blocked-word firewall no longer exists in the tree — there is no
   `fwConfig`, no firewall middleware and no blocked-word matcher. Nothing to fix.

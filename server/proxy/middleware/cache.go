@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/gsoultan/pontus/pkg/buffer"
@@ -15,10 +16,35 @@ import (
 	"github.com/gsoultan/pontus/server/internal/protocol"
 )
 
+// maxConcurrentRefreshes bounds how many stale entries may be refreshed at
+// once, across all keys.
+//
+// Each refresh takes a pooled backend connection, so an unbounded number of
+// them is a self-inflicted outage: the cache would drain the pool that real
+// queries are waiting on, in order to keep itself warm.
+const maxConcurrentRefreshes = 8
+
+// maxRefreshBytes bounds a reply captured during a background refresh, for the
+// same reason the foreground capture is bounded — see proxy.responseCapture.
+const maxRefreshBytes = 8 << 20
+
 type Cache struct {
 	manager *cache.Manager
 	config  *config.Cache
 	handler protocol.Handler
+
+	// refreshing deduplicates background refreshes by key.
+	//
+	// Without it, every client that hit the same stale entry started its own
+	// refresh: one goroutine and one pooled connection each, all running the
+	// identical query against the database at the same moment. That is exactly
+	// the thundering herd the cache exists to prevent, arriving through the
+	// cache itself.
+	refreshing sync.Map
+
+	// slots bounds concurrent refreshes across *different* keys, which
+	// deduplication alone does not.
+	slots chan struct{}
 }
 
 func NewCache(manager *cache.Manager, config *config.Cache, handler protocol.Handler) *Cache {
@@ -26,6 +52,7 @@ func NewCache(manager *cache.Manager, config *config.Cache, handler protocol.Han
 		manager: manager,
 		config:  config,
 		handler: handler,
+		slots:   make(chan struct{}, maxConcurrentRefreshes),
 	}
 }
 
@@ -100,11 +127,33 @@ func (m *Cache) revalidate(key string, s *Session) {
 		return
 	}
 
+	// One refresh per key. The rest of the callers keep the stale entry, which
+	// is what a stale window is for.
+	if _, busy := m.refreshing.LoadOrStore(key, struct{}{}); busy {
+		return
+	}
+
+	// And a ceiling across keys. A non-blocking take: if every slot is in use,
+	// this entry stays stale until it expires rather than queueing behind the
+	// others and holding a goroutine to do it.
+	select {
+	case m.slots <- struct{}{}:
+	default:
+		m.refreshing.Delete(key)
+		return
+	}
+
 	data := bytes.Clone(s.Data)
 	tables := slices.Clone(s.QueryInfo.AffectedTables)
 	state := s.State
 
-	go m.backgroundRefresh(key, data, state, backend, tables)
+	go func() {
+		defer func() {
+			<-m.slots
+			m.refreshing.Delete(key)
+		}()
+		m.backgroundRefresh(key, data, state, backend, tables)
+	}()
 }
 
 func (m *Cache) backgroundRefresh(key string, data []byte, state *protocol.SessionState, backend pool.Backend, tables []string) {
@@ -133,10 +182,19 @@ func (m *Cache) backgroundRefresh(key string, data []byte, state *protocol.Sessi
 	buf := buffer.Get()
 	defer buffer.Put(buf)
 	capture := new(bytes.Buffer)
+	oversized := false
 
 	for {
 		n, err := conn.Read(buf)
 		if n > 0 {
+			// Bounded for the same reason the foreground capture is: a reply
+			// held whole in memory is a reply the proxy can run out of memory
+			// on. Past the bound the refresh is abandoned and the stale entry
+			// is left to expire.
+			if capture.Len()+n > maxRefreshBytes {
+				oversized = true
+				break
+			}
 			capture.Write(buf[:n])
 			state, _ := m.handler.PeekTransactionState(buf[:n])
 			if state != protocol.StatePartial {
@@ -146,6 +204,15 @@ func (m *Cache) backgroundRefresh(key string, data []byte, state *protocol.Sessi
 		if err != nil {
 			return
 		}
+	}
+
+	// A truncated reply must never be stored. It would be served whole to
+	// every subsequent client as a complete result set, which is worse than
+	// the stale entry it replaced and worse than no entry at all.
+	if oversized {
+		slog.Warn("Stale entry is too large to refresh; leaving it to expire",
+			"limit_bytes", maxRefreshBytes)
+		return
 	}
 
 	if capture.Len() > 0 {
