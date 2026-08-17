@@ -244,7 +244,7 @@ func xorBytes(a, b []byte) []byte {
 func newNonce() (string, error) {
 	raw := make([]byte, nonceBytes)
 	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("%w: %v", ErrAuthFailed, err)
+		return "", fmt.Errorf("%w: %w", ErrAuthFailed, err)
 	}
 	return base64.StdEncoding.EncodeToString(raw), nil
 }

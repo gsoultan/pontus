@@ -34,7 +34,7 @@ type MD5Salt [4]byte
 func NewMD5Salt() (MD5Salt, error) {
 	var salt MD5Salt
 	if _, err := rand.Read(salt[:]); err != nil {
-		return salt, fmt.Errorf("%w: %v", ErrAuthFailed, err)
+		return salt, fmt.Errorf("%w: %w", ErrAuthFailed, err)
 	}
 	return salt, nil
 }

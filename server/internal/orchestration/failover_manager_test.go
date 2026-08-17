@@ -19,17 +19,41 @@ func immediateFailover() Options {
 type mockBackend struct {
 	pool.Backend
 	address string
-	role    pool.Role
-	healthy bool
 
+	// Guarded, because the real *pool.Server is: verifyPromotion reads the role
+	// from its own goroutine while a test writes it, and a double that is not
+	// safe reports a race the production type does not have.
 	mu         sync.Mutex
+	role       pool.Role
+	healthy    bool
 	reevaluted int
 }
 
-func (m *mockBackend) Address() string   { return m.address }
-func (m *mockBackend) Role() pool.Role   { return m.role }
-func (m *mockBackend) IsHealthy() bool   { return m.healthy }
-func (m *mockBackend) SetHealthy(h bool) { m.healthy = h }
+func (m *mockBackend) Address() string { return m.address }
+
+func (m *mockBackend) Role() pool.Role {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.role
+}
+
+func (m *mockBackend) setRole(r pool.Role) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.role = r
+}
+
+func (m *mockBackend) IsHealthy() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.healthy
+}
+
+func (m *mockBackend) SetHealthy(h bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.healthy = h
+}
 
 func (m *mockBackend) ReevaluateRole() {
 	m.mu.Lock()
@@ -213,10 +237,10 @@ func TestRecoveredPrimaryDoesNotStealBackTheWriteRole(t *testing.T) {
 	if promotedAddr != "r1" {
 		t.Fatalf("expected r1 promoted, got %q", promotedAddr)
 	}
-	replica.role = pool.RolePrimary
+	replica.setRole(pool.RolePrimary)
 
 	// p1 reboots and comes back still believing it is the primary.
-	old.healthy = true
+	old.SetHealthy(true)
 	mgr.monitor(t.Context())
 
 	provisioner.mu.Lock()
@@ -276,11 +300,11 @@ func TestFailoverThresholdResetsWhenThePrimaryAnswers(t *testing.T) {
 	mgr.monitor(t.Context())
 
 	// The primary was only briefly unreachable.
-	primary.healthy = true
+	primary.SetHealthy(true)
 	mgr.monitor(t.Context())
 
 	// It drops again — this must start counting from one, not from three.
-	primary.healthy = false
+	primary.SetHealthy(false)
 	mgr.monitor(t.Context())
 
 	provisioner.mu.Lock()
@@ -309,5 +333,49 @@ func TestFailoverDoesNotPromoteWhenDisabled(t *testing.T) {
 	defer provisioner.mu.Unlock()
 	if provisioner.promoted != "" {
 		t.Errorf("promoted %q with automatic failover disabled", provisioner.promoted)
+	}
+}
+
+// StateVerifying used to be a thirty-second sleep that then declared success,
+// so a promotion the database refused looked exactly like one that worked.
+func TestPromotionIsVerifiedAgainstTheNodesActualRole(t *testing.T) {
+	dead := &mockBackend{address: "p1", role: pool.RolePrimary, healthy: false}
+	promoted := &mockBackend{address: "r1", role: pool.RoleReplica, healthy: true}
+
+	backends := []pool.Backend{dead, promoted}
+	mgr := NewFailoverManager(&mockProvisioner{}, nil,
+		func() []pool.Backend { return backends }, immediateFailover())
+
+	// The node reports itself primary, as a real one would once promotion lands.
+	promoted.setRole(pool.RolePrimary)
+
+	mgr.verifyPromotion(t.Context(), promoted)
+
+	if got := mgr.State(); got != StateIdle {
+		t.Errorf("state = %v after a confirmed promotion, want Idle", got)
+	}
+	if promoted.reevaluations() == 0 {
+		t.Error("the node was never re-asked; verification would be trusting the " +
+			"role recorded at promotion time")
+	}
+}
+
+// A node that never becomes primary must raise the alarm rather than quietly
+// returning to idle: the cluster has no writable node.
+func TestUnconfirmedPromotionIsReportedAsFailed(t *testing.T) {
+	stuck := &mockBackend{address: "r1", role: pool.RoleReplica, healthy: true}
+
+	mgr := NewFailoverManager(&mockProvisioner{}, nil,
+		func() []pool.Backend { return []pool.Backend{stuck} }, immediateFailover())
+
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
+	// The context expiring stands in for the budget running out without the
+	// test waiting a minute for it.
+	mgr.verifyPromotion(ctx, stuck)
+
+	if got := mgr.State(); got == StateVerifying {
+		t.Error("left in Verifying; the state has to resolve one way or the other")
 	}
 }

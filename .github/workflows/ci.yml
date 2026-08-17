@@ -69,6 +69,12 @@ jobs:
         uses: golangci-lint/golangci-lint-action@v6
         with:
           version: latest
+          # Gate new work, not the backlog. .golangci.yml encodes the limits in
+          # .junie/guidelines.md and the tree has a few hundred pre-existing
+          # findings against them; failing the build on those would mean
+          # everyone disables the linter, and a rule everyone suppresses is
+          # worse than no rule. New and changed lines have to be clean.
+          only-new-issues: true
 
       - name: Go Vet
         run: go vet ./...

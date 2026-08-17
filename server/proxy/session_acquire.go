@@ -80,7 +80,7 @@ func (g *Gateway) acquireForSession(
 
 		// Releasing an unready connection destroys it rather than returning it
 		// to the idle set, so this does not poison the pool for the next caller.
-		backend.Release(conn)
+		_ = backend.Release(conn)
 		g.noteSplitUnavailable(backend)
 	}
 
@@ -101,7 +101,7 @@ func (g *Gateway) acquireForSession(
 		return nil, nil, herr
 	}
 	if !usable(conn) || !belongsTo(conn, user, database) {
-		home.Release(conn)
+		_ = home.Release(conn)
 		return nil, nil, fmt.Errorf("%w on %s: Pontus cannot open a backend connection "+
 			"on its own, so only connections that carried a client handshake can be used",
 			ErrNoUsableConnection, home.Address())
@@ -226,7 +226,7 @@ func releaseToPool(backend pool2.Backend, server net.Conn) {
 	if carrier, ok := server.(interface{ MarkDirty() }); ok {
 		carrier.MarkDirty()
 	}
-	backend.Release(server)
+	_ = backend.Release(server)
 }
 
 // resetOnRelease reports whether a reset is worth its round trip.

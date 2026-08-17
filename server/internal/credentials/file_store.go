@@ -46,7 +46,7 @@ func (s *FileStore) Reload() error {
 	if err != nil {
 		return fmt.Errorf("auth file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	if err := checkPermissions(file); err != nil {
 		return err

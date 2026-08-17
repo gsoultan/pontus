@@ -104,7 +104,7 @@ func (g *Gateway) openSession(
 			if broken, ok := server.(interface{ MarkBroken() }); ok {
 				broken.MarkBroken()
 			}
-			backend.Release(server)
+			_ = backend.Release(server)
 			observability2.IdentityMismatches.WithLabelValues(backend.Address()).Inc()
 			if attempt == identityAttempts-1 {
 				slog.Warn("Gave up finding a connection for this session's identity",
@@ -117,7 +117,7 @@ func (g *Gateway) openSession(
 		// This connection never completed a startup exchange, so it was never
 		// marked ready and the pool destroys it on release rather than handing
 		// an unusable socket to the next caller.
-		backend.Release(server)
+		_ = backend.Release(server)
 		return nil, nil, err
 	}
 

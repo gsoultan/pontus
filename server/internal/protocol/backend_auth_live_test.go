@@ -101,7 +101,7 @@ func TestOpenBackendConnectionWithOnlyAClientKey(t *testing.T) {
 	_ = conn.SetDeadline(time.Now().Add(20 * time.Second))
 
 	if err := AuthenticateBackend(conn, role, envOr("PONTUS_E2E_DB", "postgres"),
-		clientKey, verifier.SCRAM, nil); err != nil {
+		clientKey, verifier, nil); err != nil {
 		t.Fatalf("authenticating to a real PostgreSQL with only a ClientKey: %v", err)
 	}
 
@@ -160,7 +160,7 @@ func TestBackendRefusesAWrongClientKey(t *testing.T) {
 	}
 
 	if err := AuthenticateBackend(conn, user, envOr("PONTUS_E2E_DB", "postgres"),
-		wrongKey, verifier.SCRAM, nil); err == nil {
+		wrongKey, verifier, nil); err == nil {
 		t.Fatal("a fabricated ClientKey was accepted by a real PostgreSQL")
 	}
 }

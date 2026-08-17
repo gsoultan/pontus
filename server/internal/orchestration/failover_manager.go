@@ -301,17 +301,62 @@ func (m *FailoverManager) TriggerFailover(ctx context.Context) error {
 			bestReplica.Address(), m.opts.FollowPrimaryTimeout)
 	}
 
-	// Reset to idle after verification period (simulated)
-	go func() {
-		time.Sleep(30 * time.Second)
-		m.mu.Lock()
-		if m.state == StateVerifying {
-			m.state = StateIdle
-		}
-		m.mu.Unlock()
-	}()
+	// Verify the promotion actually took.
+	//
+	// This used to be a thirty-second sleep that then declared success — the
+	// state was called Verifying and verified nothing, so a promotion the
+	// database refused looked identical to one that worked. What matters is
+	// whether the node now reports itself writable, which is what the pool's
+	// role check answers.
+	go m.verifyPromotion(context.WithoutCancel(ctx), bestReplica)
 
 	return nil
+}
+
+// verifyPromotion waits for the promoted node to report itself as primary.
+//
+// Promotion is asynchronous on the database side: pg_ctl promote returns before
+// the node finishes leaving recovery. Watching for the role to change is the
+// only honest confirmation, and failing to see it is worth an alarm — the
+// cluster has no writable node and the failover believed otherwise.
+func (m *FailoverManager) verifyPromotion(ctx context.Context, promoted pool.Backend) {
+	const (
+		checkEvery = 2 * time.Second
+		budget     = 60 * time.Second
+	)
+
+	deadline := time.Now().Add(budget)
+	ticker := time.NewTicker(checkEvery)
+	defer ticker.Stop()
+
+	for {
+		// Ask the node again rather than trusting the role recorded at
+		// promotion time.
+		promoted.ReevaluateRole()
+
+		if promoted.Role() == pool.RolePrimary && promoted.IsHealthy() {
+			slog.Info("Promotion verified", "address", promoted.Address())
+			m.setState(StateIdle)
+			return
+		}
+
+		if time.Now().After(deadline) {
+			slog.Error("Promotion was not confirmed; the cluster may have no writable node",
+				"address", promoted.Address(),
+				"role", promoted.Role(),
+				"healthy", promoted.IsHealthy(),
+				"waited", budget)
+			m.setState(StateFailed)
+			return
+		}
+
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			m.setState(StateIdle)
+			return
+		}
+	}
 }
 
 func (m *FailoverManager) findBestReplica(ctx context.Context) (pool.Backend, error) {

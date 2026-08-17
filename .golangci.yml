@@ -1,0 +1,77 @@
+# golangci-lint v2 configuration.
+#
+# CI has run golangci-lint-action since before this file existed, which meant
+# only the default linter set was enforced and none of the limits in
+# .junie/guidelines.md were. This encodes those limits.
+#
+# The set is deliberately narrow. A linter that fires on style nobody agreed to
+# trains people to add nolint comments, and a rule everyone suppresses is worse
+# than no rule.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    # Correctness and safety.
+    - bodyclose      # an unclosed response body leaks a connection
+    - errorlint      # %v on an error breaks errors.Is for the next caller
+    - nilerr         # returning nil after checking err != nil
+    - rowserrcheck   # sql.Rows.Err() left unchecked hides a truncated result
+    - sqlclosecheck  # an unclosed sql.Rows holds a connection
+    - contextcheck   # a dropped context is a goroutine that outlives its request
+    - noctx          # HTTP and SQL calls with no context cannot be cancelled
+
+    # The guideline limits.
+    - funlen
+    - cyclop
+    - nestif
+
+    # Hygiene that reads on review.
+    - misspell
+    - unconvert
+    - wastedassign
+
+  settings:
+    funlen:
+      # .junie/guidelines.md asks for functions that fit on a screen. Generous
+      # enough that a protocol state machine is not forced to fragment.
+      lines: 90
+      statements: 60
+      ignore-comments: true
+
+    cyclop:
+      # A wire-protocol switch is legitimately branchy; a business rule is not.
+      max-complexity: 18
+
+    nestif:
+      # Guidelines: no nested if where a strategy or an early return fits.
+      min-complexity: 5
+
+    errorlint:
+      # Only the wrapping check. Comparison and type-assertion warnings fire
+      # heavily on existing code without finding anything.
+      errorf: true
+      asserts: false
+      comparison: false
+
+  exclusions:
+    generated: lax
+    rules:
+      # Generated code is regenerated, never edited.
+      - path: (\.pb\.go|_pb\.ts|connect\.go)$
+        linters: [funlen, cyclop, nestif, misspell, unconvert, wastedassign]
+
+      # Tests describe scenarios: a table of cases is long by nature, and the
+      # reason to split one is readability rather than a line count.
+      - path: _test\.go$
+        linters: [funlen, cyclop, nestif, bodyclose, noctx, contextcheck]
+
+issues:
+  # Report everything found rather than the first few per linter, or a file with
+  # many instances looks like a file with three.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt

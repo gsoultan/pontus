@@ -349,7 +349,7 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	}
 
 	if _, err := s.Server.Write(s.Data); err != nil {
-		s.Backend.Release(s.Server)
+		_ = s.Backend.Release(s.Server)
 		s.Server = nil
 		return err
 	}
@@ -461,7 +461,7 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 		if m.resetOnRelease() {
 			releaseToPool(s.Backend, s.Server)
 		} else {
-			s.Backend.Release(s.Server)
+			_ = s.Backend.Release(s.Server)
 		}
 		s.Server = nil
 	}
@@ -642,7 +642,7 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 			slog.Error("Request failed", "client", remoteAddr, "error", err)
 			qcancel()
 			if session.Server != nil {
-				session.Backend.Release(session.Server)
+				_ = session.Backend.Release(session.Server)
 				session.Server = nil
 			}
 			return
@@ -657,7 +657,7 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 			if g.resetOnRelease() {
 				releaseToPool(session.Backend, session.Server)
 			} else {
-				session.Backend.Release(session.Server)
+				_ = session.Backend.Release(session.Server)
 			}
 			session.Server = nil
 			session.Backend = nil

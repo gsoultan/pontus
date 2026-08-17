@@ -124,11 +124,11 @@ func TestReplyScannerReadsTransactionStatusAcrossASplit(t *testing.T) {
 
 	scan := newReplyScanner(ResponseEnd{OnReadyForQuery: true})
 
-	done, state := scan.feed(reply[:3]) // header only, partially
+	done, _ := scan.feed(reply[:3]) // header only, partially
 	if done {
 		t.Fatal("reported done before the message arrived")
 	}
-	done, state = scan.feed(reply[3:])
+	done, state := scan.feed(reply[3:])
 	if !done {
 		t.Fatal("did not report done after ReadyForQuery")
 	}
