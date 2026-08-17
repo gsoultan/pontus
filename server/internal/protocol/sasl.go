@@ -71,6 +71,36 @@ func WriteAuthSASLFinal(w io.Writer, data string) error {
 	return writeTagged(w, 'R', append(payload, data...))
 }
 
+// WriteAuthMD5 challenges a client to answer with an md5 response.
+func WriteAuthMD5(w io.Writer, salt [4]byte) error {
+	payload := binary.BigEndian.AppendUint32(make([]byte, 0, 8), authMD5Password)
+	return writeTagged(w, 'R', append(payload, salt[:]...))
+}
+
+// ReadPasswordMessage reads a client's PasswordMessage.
+//
+// The same 'p' tag carries SASL replies; which one it is depends on what was
+// asked for, so the caller decides how to read it.
+func ReadPasswordMessage(r io.Reader) (string, error) {
+	tag, body, err := readTagged(r)
+	if err != nil {
+		return "", err
+	}
+	if tag != 'p' {
+		return "", fmt.Errorf("expected a password message, got %q", string(tag))
+	}
+	// The value is a C string; drop the terminator if present.
+	if n := indexByte(body, 0); n >= 0 {
+		body = body[:n]
+	}
+	return string(body), nil
+}
+
+// WritePasswordMessage sends a password response to a server.
+func WritePasswordMessage(w io.Writer, response string) error {
+	return writeTagged(w, 'p', append([]byte(response), 0))
+}
+
 // WriteAuthOK tells a client it is authenticated.
 func WriteAuthOK(w io.Writer) error {
 	return writeTagged(w, 'R', binary.BigEndian.AppendUint32(nil, authOK))

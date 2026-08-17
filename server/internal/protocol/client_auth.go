@@ -28,12 +28,10 @@ func AuthenticateClient(client net.Conn, user string, verifier credentials.Verif
 		return authenticateSCRAM(client, verifier.SCRAM)
 
 	case credentials.MethodMD5:
-		// An md5 verifier can answer an md5 challenge directly, but that is a
-		// separate exchange in both directions and is not implemented yet.
-		// Refusing is correct until it is: falling back to SCRAM here would ask
-		// the client for a proof no stored md5 credential can verify.
-		return nil, fmt.Errorf("%w: role %q stores an md5 verifier, which this "+
-			"build cannot verify", ErrUnsupportedAuth, user)
+		// The stored verifier is exactly what the client proves knowledge of, so
+		// unlike SCRAM there is no key to recover: the same value answers a
+		// backend's challenge later. Nothing is returned here for that reason.
+		return nil, authenticateMD5(client, verifier)
 
 	case credentials.MethodNone:
 		// A role with no password can only arrive over a trust or peer line.
@@ -44,6 +42,32 @@ func AuthenticateClient(client net.Conn, user string, verifier credentials.Verif
 	default:
 		return nil, fmt.Errorf("%w: role %q", ErrUnsupportedAuth, user)
 	}
+}
+
+// authenticateMD5 carries the one-round md5 exchange with a client.
+//
+// Supported because refusing it strands every pre-14 deployment, not because it
+// is a good idea: md5 is weak, the stored value is unsalted, and anyone holding
+// it can authenticate as that role. PostgreSQL has defaulted to SCRAM since 14.
+func authenticateMD5(client net.Conn, verifier credentials.Verifier) error {
+	salt, err := credentials.NewMD5Salt()
+	if err != nil {
+		return err
+	}
+	if err := WriteAuthMD5(client, salt); err != nil {
+		return err
+	}
+
+	response, err := ReadPasswordMessage(client)
+	if err != nil {
+		return err
+	}
+	if err := credentials.VerifyMD5(verifier, salt, response); err != nil {
+		// Every failure reaches the client as the same message.
+		return ErrAuthRejected
+	}
+
+	return WriteAuthOK(client)
 }
 
 // authenticateSCRAM carries the SASL exchange with a client.

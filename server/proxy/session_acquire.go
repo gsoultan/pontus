@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	balancer2 "github.com/gsoultan/pontus/server/internal/balancer"
+	"github.com/gsoultan/pontus/server/internal/credentials"
 	pool2 "github.com/gsoultan/pontus/server/internal/pool"
 	"github.com/gsoultan/pontus/server/internal/protocol"
 )
@@ -124,7 +125,19 @@ func usable(conn net.Conn) bool {
 // canAuthenticateBackends reports whether Pontus holds what it needs to open a
 // connection as this session's user.
 func (g *Gateway) canAuthenticateBackends(state *protocol.SessionState) bool {
-	return g.credentials != nil && len(state.ClientKey) > 0 && state.Verifier != nil
+	if g.credentials == nil {
+		return false
+	}
+	switch state.Verifier.Method {
+	case credentials.MethodSCRAM:
+		// SCRAM needs the key recovered from the client's own proof.
+		return len(state.ClientKey) > 0
+	case credentials.MethodMD5:
+		// The stored verifier answers a backend challenge on its own.
+		return state.Verifier.MD5 != ""
+	default:
+		return false
+	}
 }
 
 // authenticateFreshBackend performs a startup exchange on a newly dialled

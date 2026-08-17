@@ -55,7 +55,7 @@ func (g *Gateway) authenticateClient(
 
 	// Password-equivalent for this session. Held only for its lifetime.
 	state.ClientKey = clientKey
-	state.Verifier = verifier.SCRAM
+	state.Verifier = verifier
 	return nil
 }
 

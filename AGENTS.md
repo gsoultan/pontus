@@ -211,6 +211,16 @@ auth:
 once, on one connection, which is why a session cannot be moved between backends and
 connections cannot be shared — findings A8 and W2/W4.
 
+`pontus` supports **scram-sha-256** and **md5**. md5 is supported because refusing it strands
+every pre-14 deployment — an upgraded cluster keeps md5 verifiers until each password is
+reset — not because it is a good idea: it is unsalted, and the stored value is a password
+equivalent for anyone who obtains it.
+
+The stored verifier's type must match what the backend's `pg_hba` demands. An md5 verifier
+cannot answer a scram-sha-256 challenge; that is arithmetic, not a Pontus limitation, and
+such a role cannot connect directly either. Pontus refuses with the reason rather than
+downgrading.
+
 `pontus` makes Pontus the SCRAM server. Verifying a client's proof also *recovers* its
 ClientKey, which is what a backend connection needs, so Pontus can open connections as that
 user without ever holding a password. Opt-in because it changes client-visible

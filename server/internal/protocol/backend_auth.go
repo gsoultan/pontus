@@ -26,16 +26,11 @@ func AuthenticateBackend(
 	conn net.Conn,
 	user, database string,
 	clientKey []byte,
-	verifier *credentials.SCRAMVerifier,
+	verifier credentials.Verifier,
 	params map[string]string,
 ) error {
 	if err := writeStartup(conn, user, database, params); err != nil {
 		return fmt.Errorf("startup: %w", err)
-	}
-
-	scram, err := credentials.NewScramClient(user, clientKey)
-	if err != nil {
-		return err
 	}
 
 	for {
@@ -49,7 +44,15 @@ func AuthenticateBackend(
 			return nil
 
 		case authSASL:
-			if err := runSASL(conn, scram, req, verifier); err != nil {
+			if verifier.Method != credentials.MethodSCRAM {
+				return fmt.Errorf("%w: backend asked for SCRAM but the stored "+
+					"credential is %s", ErrUnsupportedAuth, verifier.Method)
+			}
+			scram, err := credentials.NewScramClient(user, clientKey)
+			if err != nil {
+				return err
+			}
+			if err := runSASL(conn, scram, req, verifier.SCRAM); err != nil {
 				return err
 			}
 			// The server sends AuthenticationOk after SASLFinal, so the loop
@@ -62,8 +65,17 @@ func AuthenticateBackend(
 				"cannot be answered from a SCRAM credential", ErrUnsupportedAuth)
 
 		case authMD5Password:
-			return fmt.Errorf("%w: backend asked for md5 but the stored credential "+
-				"is SCRAM; the two are not interchangeable", ErrUnsupportedAuth)
+			// An md5 verifier is exactly what the client proves knowledge of, so
+			// it answers this challenge directly — no key recovery needed.
+			if verifier.Method != credentials.MethodMD5 {
+				return fmt.Errorf("%w: backend asked for md5 but the stored "+
+					"credential is %s; the two are not interchangeable",
+					ErrUnsupportedAuth, verifier.Method)
+			}
+			if err := WritePasswordMessage(conn,
+				credentials.MD5Response(verifier.MD5, req.Salt)); err != nil {
+				return err
+			}
 
 		default:
 			return fmt.Errorf("%w: authentication type %d", ErrUnsupportedAuth, req.Type)

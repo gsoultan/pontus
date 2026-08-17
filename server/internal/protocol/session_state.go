@@ -22,9 +22,12 @@ type SessionState struct {
 	// user: it lives for the session and is never logged or persisted.
 	ClientKey []byte
 
-	// Verifier is the stored SCRAM verifier for this role, kept so a backend can
-	// be authenticated in return via its ServerKey.
-	Verifier *credentials.SCRAMVerifier
+	// Verifier is the stored credential for this role.
+	//
+	// The whole thing rather than its SCRAM half: an md5 verifier answers a
+	// backend's md5 challenge directly, and the SCRAM half supplies the
+	// ServerKey that authenticates the backend in return.
+	Verifier credentials.Verifier
 	TxState  TransactionState
 	User     string
 	// Database is the database named in the client's startup packet. It is part
