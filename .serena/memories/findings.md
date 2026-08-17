@@ -314,9 +314,15 @@ Everything else is open. None of the open items are precedent to copy.
 - **C16. Blocked words match with `strings.Contains`**, so a column named `dropdown` trips a
   `DROP` rule.
 
-- **C18–C20.** Tenant limiters unbounded at hardcoded 100 rps / 200 burst, and a configured
-  `burst < 50` makes `WaitN` fail outright because `estimateCost` caps at 50. The collapser
-  buffers whole result sets with no bound. Stale-while-revalidate has no singleflight.
+- **C18–C20 [PARTLY FIXED].** Tenant limiters are bounded and self-evicting
+  (`DefaultMaxTenants = 4096`, 10m idle sweep) and use the configured rate — that half is
+  done. The burst footgun is fixed too: `estimateCost` charges up to 50, and
+  `rate.Limiter.WaitN` *errors immediately* when n exceeds the burst rather than waiting, so
+  any deployment with a burst under 50 had every JOIN-heavy query rejected outright by a
+  setting that reads like "allow N at once". Cost is now clamped to the limiter's burst.
+
+  **Remaining:** the collapser buffers whole result sets with no bound, and
+  stale-while-revalidate has no singleflight.
 
 - **D1–D6. Build & ops.** `/go.sum` gitignored and incomplete; CI runs Go tests before the web
   build; `web/src/logs/` was never committed so `bun run build` fails (D1b); no

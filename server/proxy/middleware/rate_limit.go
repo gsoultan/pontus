@@ -21,7 +21,7 @@ func (m *RateLimit) Handle(ctx context.Context, s *Session, next HandlerFunc) er
 	cost := m.estimateCost(s.Normalized)
 
 	if m.limiter != nil {
-		if err := m.limiter.WaitN(ctx, cost); err != nil {
+		if err := waitCost(ctx, m.limiter, cost); err != nil {
 			return err
 		}
 	}
@@ -29,7 +29,7 @@ func (m *RateLimit) Handle(ctx context.Context, s *Session, next HandlerFunc) er
 	// Per-tenant limits use the configured rate; they were previously pinned
 	// to a hardcoded 100rps/200burst that ignored config entirely.
 	if s.State.User != "" && m.tenants != nil {
-		if err := m.tenants.Get(s.State.User).WaitN(ctx, cost); err != nil {
+		if err := waitCost(ctx, m.tenants.Get(s.State.User), cost); err != nil {
 			return err
 		}
 	}
@@ -67,8 +67,32 @@ func (m *RateLimit) estimateCost(query string) int {
 	}
 
 	// Cap cost to prevent stalling the limiter too long
-	if cost > 50 {
-		cost = 50
+	if cost > maxQueryCost {
+		cost = maxQueryCost
 	}
 	return cost
+}
+
+// maxQueryCost bounds how many tokens one statement may be charged, so a
+// pathological query cannot stall the limiter for an unbounded time.
+const maxQueryCost = 50
+
+// waitCost charges a limiter, never asking for more than it can ever grant.
+//
+// rate.Limiter.WaitN fails immediately when n exceeds the burst — it can never
+// be satisfied, so it does not wait, it errors. estimateCost charges up to 50
+// tokens for an expensive statement, so any deployment configuring a burst
+// below that had every JOIN-heavy query *rejected* rather than throttled, and
+// the error looked like a rate limit that no amount of waiting would clear.
+//
+// Clamping is the honest reading of a small burst: it says how much work may
+// arrive at once, so a single statement can cost at most the whole allowance.
+func waitCost(ctx context.Context, limiter *rate.Limiter, cost int) error {
+	if limiter.Limit() == rate.Inf {
+		return nil
+	}
+	if burst := limiter.Burst(); burst > 0 && cost > burst {
+		cost = burst
+	}
+	return limiter.WaitN(ctx, cost)
 }
