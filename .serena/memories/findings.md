@@ -25,10 +25,11 @@ Everything else is open. None of the open items are precedent to copy.
   `pontus_pool_identity_mismatches_total` counts them; zero is the expected value once pools
   are keyed by identity.
 
-  **This is the argument for per-identity pools stated as a defect rather than a design
-  preference.** A pool holding every identity together will keep offering the wrong
-  connection; the check turns that from a data leak into churn, and only the keying removes
-  the churn.
+  **Per-identity pools landed 2026-08-10** and removed the churn: two users interleaving
+  sessions on one backend went from 3 failures in 20 attempts to 0 in 20. Pools are keyed by
+  `(backend, database, user)`; `max_conns` is the per-identity ceiling with a total ceiling
+  above it, the map is bounded and reaped, and Pontus's own probes use a distinct *system*
+  identity so they cannot borrow a session's connection.
 
 - **A10 [FIXED 2026-08-10]. A Flush-terminated batch hung the proxy forever.**
 

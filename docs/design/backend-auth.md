@@ -138,7 +138,7 @@ rate-limiter map that had to be bounded. It needs, non-negotiably:
 
 Each stage lands on its own, with its own verification, and leaves the system working.
 
-**Stage 0 — pool keying by (backend, database, user).**
+**Stage 0 — pool keying by (backend, database, user). Landed 2026-08-10.**
 No new auth yet; connections are still only usable by the session that opened them. Fixes the
 cross-user reuse in W2. Verify: a connection opened by one user is never handed to another.
 

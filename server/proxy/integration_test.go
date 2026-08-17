@@ -33,6 +33,11 @@ func (m *mockIntegrationBackend) Acquire(ctx context.Context) (net.Conn, error) 
 	return &mockConn{data: []byte("OK")}, nil
 }
 
+// AcquireFor ignores the identity: the double does not pool.
+func (m *mockIntegrationBackend) AcquireFor(ctx context.Context, _, _ string) (net.Conn, error) {
+	return m.Acquire(ctx)
+}
+
 func (m *mockIntegrationBackend) Release(conn net.Conn) error { return nil }
 func (m *mockIntegrationBackend) IsHealthy() bool             { return m.healthy.Load() }
 func (m *mockIntegrationBackend) Address() string             { return m.addr }

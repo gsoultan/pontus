@@ -178,7 +178,10 @@ func (c *AdaptivePoolController) adjust() {
 		targetPoolSize = c.pool.maxConns
 	}
 
-	if current := c.pool.core.MaxConns(); targetPoolSize != current {
+	// The per-identity ceiling, which every pool on this backend shares. Read
+	// from the configuration rather than from one pool, because pools come and
+	// go with the identities using them and an empty backend has none to ask.
+	if current := c.pool.currentMaxConns(); targetPoolSize != current {
 		// Shrinking never blocks: the engine reclaims free permits now and takes
 		// the rest from connections as they are released.
 		if err := c.pool.SetMaxConns(targetPoolSize); err != nil {

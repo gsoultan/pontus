@@ -230,6 +230,30 @@ Rules that must not regress:
 - Prefer a `SECURITY DEFINER` function over granting the admin role superuser — the recipe
   is in `docs/design/backend-auth.md` and is covered by a live test.
 
+## Connection pooling
+
+Pools are keyed by **(backend, database, user)**, not by backend address. A connection
+carries the credentials it authenticated with and cannot renegotiate them, so this is a
+correctness boundary rather than a tuning choice: with one pool per backend, a session was
+handed another user's connection and its queries ran with that user's privileges
+(`mem:findings` A11).
+
+- `max_conns` is the **per-identity** ceiling — pgbouncer's `default_pool_size`.
+- The set enforces a **total** ceiling per backend above it. Per-pool alone has no upper
+  bound at all: the number of pools follows the user name in a startup packet, which is
+  client-supplied, and every pool costs real connections on the database.
+- The pool map is bounded and idle pools are reaped on a TTL, so a user who connects once
+  does not hold connections for the life of the process. At the ceiling, the least recently
+  used **idle** pool is evicted rather than the new session refused.
+- `min_idle` is **0** for identity pools. Warm connections multiply by the number of
+  identities, so five across forty users is two hundred idle connections against a database
+  that probably allows a hundred.
+- Pontus's own work — health probes, role detection — uses a distinct *system* identity, so
+  a probe can neither borrow a session's connection nor count against a tenant's ceiling.
+
+`pontus_pool_identity_mismatches_total` should be zero. Anything else means a pool is being
+asked for a connection it does not own, which the keying is supposed to prevent.
+
 ## Definition of done
 
 Satisfy each item for the surface you touched, or say why it doesn't apply.

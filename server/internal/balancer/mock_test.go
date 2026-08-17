@@ -52,6 +52,11 @@ func (m *mockBackend) SetHealthy(h bool)                             { m.healthy
 func (m *mockBackend) ReportResult(error)                            {}
 func (m *mockBackend) Close() error                                  { return nil }
 func (m *mockBackend) Acquire(ctx context.Context) (net.Conn, error) { return nil, nil }
-func (m *mockBackend) Release(conn net.Conn) error                   { return nil }
-func (m *mockBackend) IncRequests()                                  {}
-func (m *mockBackend) IncErrors()                                    {}
+
+// AcquireFor ignores the identity: the double does not pool.
+func (m *mockBackend) AcquireFor(ctx context.Context, _, _ string) (net.Conn, error) {
+	return m.Acquire(ctx)
+}
+func (m *mockBackend) Release(conn net.Conn) error { return nil }
+func (m *mockBackend) IncRequests()                {}
+func (m *mockBackend) IncErrors()                  {}

@@ -56,7 +56,7 @@ func (g *Gateway) acquireForSession(
 ) (pool2.Backend, net.Conn, error) {
 	user, database := state.User, state.Database
 
-	backend, conn, err := g.acquireBackend(ctx, hint)
+	backend, conn, err := g.acquireBackendFor(ctx, hint, user, database)
 	if err == nil {
 		if usable(conn) && belongsTo(conn, user, database) {
 			return backend, conn, nil
@@ -92,7 +92,7 @@ func (g *Gateway) acquireForSession(
 		return nil, nil, fmt.Errorf("%w: no connection carrying a startup exchange", ErrNoUsableConnection)
 	}
 
-	conn, herr := home.Acquire(ctx)
+	conn, herr := home.AcquireFor(ctx, user, database)
 	if herr != nil {
 		if err != nil {
 			return nil, nil, err

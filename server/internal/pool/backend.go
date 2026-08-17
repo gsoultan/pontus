@@ -20,7 +20,18 @@ const (
 // Backend represents a database server that can accept connections.
 type Backend interface {
 	// Acquire returns an active connection to the backend.
+	// Acquire takes a connection for Pontus's own use — health probes and the
+	// like. It is a distinct identity from every client's, so a probe cannot
+	// borrow a session's connection or count against a tenant's ceiling.
 	Acquire(ctx context.Context) (net.Conn, error)
+
+	// AcquireFor takes a connection from the pool belonging to this user and
+	// database.
+	//
+	// A connection carries the credentials it authenticated with and cannot
+	// renegotiate them, so pools are keyed by identity. Acquiring without one
+	// was how a session came to be served on another user's connection.
+	AcquireFor(ctx context.Context, user, database string) (net.Conn, error)
 
 	// Release returns a connection to the pool.
 	Release(conn net.Conn) error

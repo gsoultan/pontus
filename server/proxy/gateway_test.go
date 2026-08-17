@@ -107,6 +107,11 @@ func (m *mockBackend) Acquire(ctx context.Context) (net.Conn, error) {
 	return &mockConn{data: []byte("response")}, nil
 }
 
+// AcquireFor ignores the identity: the double does not pool.
+func (m *mockBackend) AcquireFor(ctx context.Context, _, _ string) (net.Conn, error) {
+	return m.Acquire(ctx)
+}
+
 func (m *mockBackend) Release(conn net.Conn) error {
 	m.released <- true
 	return nil

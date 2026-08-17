@@ -666,7 +666,22 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 	}
 }
 
+// acquireBackend picks a backend and takes a connection from the pool belonging
+// to this session's identity.
+//
+// The identity is part of acquisition rather than checked afterwards: a pool
+// holding every user together keeps offering the wrong connection, and the
+// check downstream then turns that into churn. Keying here is what makes the
+// common case a hit.
+func (g *Gateway) acquireBackendFor(ctx context.Context, hint balancer2.Hint, user, database string) (pool2.Backend, net.Conn, error) {
+	return g.acquire(ctx, hint, user, database)
+}
+
 func (g *Gateway) acquireBackend(ctx context.Context, hint balancer2.Hint) (pool2.Backend, net.Conn, error) {
+	return g.acquire(ctx, hint, "", "")
+}
+
+func (g *Gateway) acquire(ctx context.Context, hint balancer2.Hint, user, database string) (pool2.Backend, net.Conn, error) {
 	var lastErr error
 	for i := range 3 {
 		// If in failover, wait for resolution — but no longer than the caller
@@ -679,7 +694,7 @@ func (g *Gateway) acquireBackend(ctx context.Context, hint balancer2.Hint) (pool
 
 		backend, err := g.balancer.Next(ctx, hint)
 		if err == nil {
-			conn, aerr := backend.Acquire(ctx)
+			conn, aerr := backend.AcquireFor(ctx, user, database)
 			if aerr == nil {
 				return backend, conn, nil
 			}

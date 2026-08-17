@@ -32,7 +32,14 @@ type Server struct {
 	zone    string
 	roleMu  sync.RWMutex
 	role    Role
-	core    *pooling.Core[*Conn]
+	// pools holds one gpool Core per (user, database). A connection carries the
+	// credentials it authenticated with, so this is the keying that makes reuse
+	// safe rather than a cross-user data path — see finding A11.
+	pools *poolSet
+
+	// coreConfig is how each identity's pool is built.
+	coreConfig pooling.Config
+	driver     *connDriver
 
 	// admin is Pontus's own authenticated channel, used for the questions the
 	// control plane asks a database. Nil when no admin_dsn is configured.
@@ -134,30 +141,37 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 	p.controller = NewAdaptivePoolController(p, monitor)
 
 	// The engine owns capacity, idle buckets, the reaper and statistics. MaxConns
-	// is a structural ceiling here — a connection is only created while its
-	// acquirer holds a permit — rather than the check-then-act the previous
+	// is a structural ceiling — a connection is only created while its acquirer
+	// holds a permit — rather than the check-then-act the previous
 	// implementation used, which two concurrent acquirers could both pass.
-	core, err := pooling.New[*Conn](&connDriver{
+	//
+	// It is now a *per-identity* ceiling, because each (user, database) gets its
+	// own pool. min_idle is deliberately dropped for those: warm connections
+	// multiply by the number of identities, so a min_idle of five across forty
+	// users is two hundred idle connections against a database that probably
+	// allows a hundred. The set's own ceiling is what bounds the total.
+	p.driver = &connDriver{
 		address:     address,
 		dialTimeout: dialTimeout,
 		tlsConfig:   tlsConfig,
 		handler:     handler,
-	}, pooling.Config{
+	}
+	p.coreConfig = pooling.Config{
 		MaxConns: maxConns,
 		// The adaptive controller may lower capacity under pressure and raise it
 		// again, but never above the configured max_conns.
 		MaxConnsLimit:     maxConns,
-		MinConns:          minIdle,
+		MinConns:          0,
 		MaxConnIdleTime:   p.maxIdleTime,
 		MaxConnLifetime:   p.maxLifetime,
 		HealthCheckPeriod: time.Minute,
 		ConnectTimeout:    dialTimeout,
-	}.WithDefaults())
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("pool for backend %s: %w", address, err)
-	}
-	p.core = core
+	}.WithDefaults()
+
+	p.pools = newPoolSet(address, backendConnCeiling(maxConns), maxIdentityPools, identityPoolTTL,
+		func() (*pooling.Core[*Conn], error) {
+			return pooling.New[*Conn](p.driver, p.coreConfig)
+		})
 
 	p.roleCheckChan = make(chan struct{}, 1)
 	p.healthy.Store(true)
@@ -196,17 +210,31 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 // the engine now; what stays here is Pontus-specific: refusing a draining
 // backend and keeping dial failures behind the circuit breaker.
 func (p *Server) Acquire(ctx context.Context) (net.Conn, error) {
+	// The system identity: health checks and anything else Pontus does on its
+	// own behalf. Kept apart from every client pool so a probe cannot borrow a
+	// session's connection or be counted against a tenant's ceiling.
+	return p.AcquireFor(ctx, "", "")
+}
+
+// AcquireFor takes a connection from the pool belonging to this user and
+// database, creating that pool if the backend has room.
+func (p *Server) AcquireFor(ctx context.Context, user, database string) (net.Conn, error) {
 	if p.IsDraining() {
 		return nil, ErrDraining
+	}
+
+	core, err := p.pools.get(identity{user: user, database: database})
+	if err != nil {
+		return nil, err
 	}
 
 	waitCtx, cancel := context.WithTimeoutCause(ctx, p.waitTimeout, ErrPoolExhausted)
 	defer cancel()
 
 	var handle pooling.Handle[*Conn]
-	err := p.breaker.Call(waitCtx, func() error {
+	err = p.breaker.Call(waitCtx, func() error {
 		var aerr error
-		handle, aerr = p.core.Acquire(waitCtx)
+		handle, aerr = core.Acquire(waitCtx)
 		return aerr
 	})
 	if err != nil {
@@ -309,7 +337,20 @@ func (p *Server) SetWeight(weight int) {
 // not block, and a value outside [min_idle, max_conns] is refused rather than
 // clamped, so a miscalculated target is visible instead of silently ignored.
 func (p *Server) SetMaxConns(n int32) error {
-	return p.core.SetMaxConns(n)
+	// max_conns is a per-identity ceiling now, so a resize applies to every pool
+	// *and* to the template new ones are built from — otherwise a pool created
+	// after a resize would silently get the old ceiling.
+	p.mu.Lock()
+	p.coreConfig.MaxConns = n
+	p.mu.Unlock()
+
+	var firstErr error
+	p.pools.each(func(core *pooling.Core[*Conn]) {
+		if err := core.SetMaxConns(n); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	})
+	return firstErr
 }
 
 // ActiveConns returns the number of connections currently checked out.
@@ -342,8 +383,11 @@ func (p *Server) setRole(role Role) {
 // changed role does not hand a connection opened against the old role to the
 // next caller. Connections still checked out are judged when they are released.
 func (p *Server) clearIdleConns() {
-	if n := p.core.EvictIdle(); n > 0 {
-		slog.Info("Discarded pooled connections after role change", "address", p.address, "count", n)
+	var evicted int
+	p.pools.each(func(core *pooling.Core[*Conn]) { evicted += core.EvictIdle() })
+	if evicted > 0 {
+		slog.Info("Discarded pooled connections after role change",
+			"address", p.address, "count", evicted)
 	}
 }
 
@@ -414,23 +458,35 @@ func (p *Server) SetDraining(draining bool) {
 
 // ReevaluateRole triggers an immediate check of the backend role and health.
 func (p *Server) Stats() BackendStats {
-	st := p.core.Stat()
+	st := p.pools.totals()
 
 	// Only blocked acquisitions are timed, so the mean wait is over those.
 	avgWaitDelay := time.Duration(0)
-	if empty := st.EmptyAcquireCount(); empty > 0 {
-		avgWaitDelay = st.AcquireDuration() / time.Duration(empty)
+	if empty := st.EmptyAcquires; empty > 0 {
+		avgWaitDelay = st.AcquireWait / time.Duration(empty)
 	}
 
 	return BackendStats{
-		MaxConns:      st.MaxConnections(),
+		MaxConns:      st.MaxConns,
 		ActiveConns:   int32(p.checkedOut.Load()),
-		IdleConns:     st.IdleConnections(),
-		WaitQueueSize: int64(st.WaitingAcquires()),
+		IdleConns:     st.Idle,
+		WaitQueueSize: int64(st.Waiting),
 		TotalRequests: p.totalRequests.Load(),
 		TotalErrors:   p.totalErrors.Load(),
 		AvgWaitDelay:  avgWaitDelay,
 	}
+}
+
+// currentMaxConns is the per-identity ceiling every pool on this backend is
+// built with.
+//
+// Tracked here rather than read from a pool: pools are created and reaped as
+// identities come and go, so a backend with no active users has none to ask,
+// and two pools could otherwise disagree after a resize raced a creation.
+func (p *Server) currentMaxConns() int32 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.coreConfig.MaxConns
 }
 
 func (p *Server) AdaptiveStatus() (isThrottled bool, reason string, currentMaxWaiters int32, activeGoroutines int32, suggestions []Suggestion) {
@@ -446,7 +502,7 @@ func (p *Server) AdaptiveStatus() (isThrottled bool, reason string, currentMaxWa
 
 	// Callers parked for a connection right now — the actual saturation signal,
 	// rather than the cumulative "has been short at some point" counter.
-	return isThrottled, reason, p.core.Stat().WaitingAcquires(), goroutines, suggestions
+	return isThrottled, reason, p.pools.totals().Waiting, goroutines, suggestions
 }
 
 func (p *Server) DatabaseMetrics() *domain.DatabaseMetrics {
@@ -652,7 +708,13 @@ func (p *Server) deepCheck(ctx context.Context) bool {
 	// Go through the pool rather than reaching into it: the engine owns whether
 	// this reuses an idle connection or dials a fresh one, and releasing through
 	// the handle keeps the accounting honest either way.
-	conn, err := p.core.Acquire(ctx)
+	// The system pool: a health probe must not borrow a client's connection.
+	handle, err := p.pools.mustGet(identity{})
+	if err != nil {
+		p.SetHealthy(false)
+		return false
+	}
+	conn, err := handle.Acquire(ctx)
 	if err != nil {
 		p.SetHealthy(false)
 		return false
@@ -721,9 +783,9 @@ func (p *Server) Close() error {
 	if p.cancel != nil {
 		p.cancel()
 	}
-	if p.core != nil {
+	if p.pools != nil {
 		// Drains checked-out connections, then destroys the idle ones.
-		p.core.Close()
+		p.pools.close()
 	}
 	if p.agentConn != nil {
 		_ = p.agentConn.Close()

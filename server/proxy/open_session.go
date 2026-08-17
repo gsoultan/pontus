@@ -77,7 +77,7 @@ func (g *Gateway) openSession(
 	var err error
 
 	for attempt := range identityAttempts {
-		backend, server, err = g.acquireBackend(ctx, hint)
+		backend, server, err = g.acquireBackendFor(ctx, hint, state.User, state.Database)
 		if err != nil {
 			slog.Error("Failed to acquire backend for handshake", "client", remoteAddr, "error", err)
 			return nil, nil, err
