@@ -53,7 +53,18 @@ func CacheKey(s *Session) string {
 		write("")
 	}
 
-	write(s.Normalized)
+	// The bytes that were actually executed, not the normalized form.
+	//
+	// Normalization strips literals so queries can be grouped for metrics:
+	// `WHERE id = 1` and `WHERE id = 2` both become `WHERE id = ?`. Keying a
+	// *result* cache on that made them the same entry, so the second query was
+	// answered with the first one's rows — a cross-record data leak, and in any
+	// application where a tenant id is a literal, a cross-tenant one.
+	//
+	// This file namespaces the key by backend, database, user and session
+	// variables precisely so a response is never reused across identities. It
+	// then discarded the values that decide which rows come back.
+	write(string(s.Data))
 
 	return string(h.Sum(nil))
 }

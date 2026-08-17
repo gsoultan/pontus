@@ -6,6 +6,32 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A12 [FIXED 2026-08-17, most severe finding in this tree]. The result cache returned
+  another row's data.**
+
+  `CacheKey` was built from `s.Normalized` — the *normalized* query, which exists to group
+  queries for metrics and therefore replaces literals with placeholders. `WHERE id = 1` and
+  `WHERE id = 2` both normalize to `WHERE id = ?`, so they shared a cache entry and the
+  second query was answered with the first one's rows.
+
+  Found by accident: a test asserting an idle session still works ran `SELECT 1` then
+  `SELECT 2` and got **1** back.
+
+  Any cached query whose literals select the rows returns the wrong ones. Where a literal
+  carries a tenant or account id, that is one tenant reading another's data — with the cache
+  enabled by default in the shipped config.
+
+  The file already namespaced the key by backend, database, user and every session variable,
+  exactly as `AGENTS.md` demands, and then keyed on a string with the values stripped out. It
+  now keys on the bytes that were actually executed. Same shape as finding B1: inspecting a
+  different string than the one that runs is wrong by construction.
+
+- **C8 [FIXED 2026-08-17]. The query timeout counted while the session was idle.**
+  `context.WithTimeout` was created *before* the read that waits for the client, so a session
+  quiet for longer than `query_timeout` got an already-expired context for its next statement
+  and failed instantly. Connection-pooling clients hold connections idle by design. The clock
+  now starts when a statement arrives.
+
 - **A11 [FIXED 2026-08-10, and it was self-inflicted]. A session could be served on another
   user's connection.**
 

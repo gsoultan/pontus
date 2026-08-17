@@ -602,13 +602,15 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 
 	// Transaction loop
 	for {
-		// Poison-pill protection: Apply query timeout
-		qctx, qcancel := context.WithTimeout(ctx, g.queryTimeout)
-
-		// Read from client
+		// Wait for the client with no deadline of its own.
+		//
+		// The query timeout used to start here, before this read, so it was
+		// counting while the client was simply idle — a session that sat quiet
+		// for longer than query_timeout got an already-expired context for its
+		// next statement and failed instantly. An idle connection is not a slow
+		// query, and connection-pooling clients hold them idle by design.
 		n, err := client.Read(buf)
 		if err != nil {
-			qcancel()
 			releaseToPool(session.Backend, session.Server)
 			if n > 0 || err != net.ErrClosed {
 				slog.Debug("Client read error or close", "client", remoteAddr, "error", err)
@@ -628,7 +630,6 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		// which is why it cannot pool. Reuse is a property of Pontus-side
 		// authentication, not of the release path.
 		if g.credentials != nil && g.handler.IsTerminate(session.Data) {
-			qcancel()
 			releaseToPool(session.Backend, session.Server)
 			session.Server = nil
 			return
@@ -640,6 +641,9 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 
 		session.Normalized = g.handler.NormalizeQuery(session.Data)
 		session.QueryInfo = g.handler.ClassifyQuery(session.Data)
+
+		// The clock starts now: there is a statement to run.
+		qctx, qcancel := context.WithTimeout(ctx, g.queryTimeout)
 
 		// Execute through middleware chain
 		rc := g.current()

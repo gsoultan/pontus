@@ -6,9 +6,13 @@ import (
 	"github.com/gsoultan/pontus/server/internal/protocol"
 )
 
-func session(user, database, normalized string, vars map[string]string) *Session {
+// session builds one carrying both the executed bytes and the normalized form,
+// because the key is derived from the former and the latter is only for
+// metrics. A helper that set only Normalized would test a key nothing uses.
+func session(user, database, sql string, vars map[string]string) *Session {
 	return &Session{
-		Normalized: normalized,
+		Data:       append(append([]byte{'Q', 0, 0, 0, 0}, sql...), 0),
+		Normalized: sql,
 		State: &protocol.SessionState{
 			User:     user,
 			Database: database,
@@ -60,5 +64,44 @@ func TestCacheKey_NoBoundaryCollision(t *testing.T) {
 
 	if CacheKey(a) == CacheKey(b) {
 		t.Error("field boundaries collide: \"ab\"+\"c\" keyed the same as \"a\"+\"bc\"")
+	}
+}
+
+// Two queries differing only in a literal must not share a cache entry.
+//
+// The key used the *normalized* query, which exists to group queries for
+// metrics and therefore replaces literals with placeholders. `WHERE id = 1` and
+// `WHERE id = 2` became the same entry, so the second was answered with the
+// first one's rows. Where a literal carries a tenant id, that is one tenant
+// reading another's data.
+func TestCacheKeyDistinguishesLiterals(t *testing.T) {
+	first := &Session{
+		Data:       []byte("Q\x00\x00\x00\x00SELECT * FROM users WHERE id = 1\x00"),
+		Normalized: "SELECT * FROM users WHERE id = ?",
+		State:      &protocol.SessionState{User: "app", Database: "main"},
+	}
+	second := &Session{
+		Data:       []byte("Q\x00\x00\x00\x00SELECT * FROM users WHERE id = 2\x00"),
+		Normalized: "SELECT * FROM users WHERE id = ?",
+		State:      &protocol.SessionState{User: "app", Database: "main"},
+	}
+
+	if CacheKey(first) == CacheKey(second) {
+		t.Fatal("two queries differing only in a literal share a cache entry; " +
+			"the second would be answered with the first one's rows")
+	}
+}
+
+// The same statement really should hit.
+func TestCacheKeyMatchesAnIdenticalQuery(t *testing.T) {
+	build := func() *Session {
+		return &Session{
+			Data:       []byte("Q\x00\x00\x00\x00SELECT 1\x00"),
+			Normalized: "SELECT ?",
+			State:      &protocol.SessionState{User: "app", Database: "main"},
+		}
+	}
+	if CacheKey(build()) != CacheKey(build()) {
+		t.Error("an identical query does not hit its own cache entry")
 	}
 }
