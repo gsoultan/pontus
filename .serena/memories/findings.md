@@ -384,7 +384,20 @@ Everything else is open. None of the open items are precedent to copy.
 - **C16 [STALE].** The blocked-word firewall no longer exists in the tree — there is no
   `fwConfig`, no firewall middleware and no blocked-word matcher. Nothing to fix.
 
-- **D1–D6. Build & ops.** `/go.sum` gitignored and incomplete; CI runs Go tests before the web
+- **D1–D6 [RE-VERIFIED 2026-08-17].** D2 (CI ordering) is fixed — Web Build is step 65,
+  Go Test step 82. D4 (`.golangci.yml`) exists. D5 (`EnsureUIBuilt`) is gone from the tree.
+  D1 (`/go.sum` gitignored) stands **by the maintainer's explicit decision** — clean-checkout
+  builds are solved with `go mod download all`, not by committing the file.
+
+  D6 was still live and was blocking releases, not just untidy: `goreleaser check` **failed**
+  ("configuration is valid, but uses deprecated properties"), and CI runs that check, so the
+  release job was red on the config rather than the code. `archives.format` and
+  `archives.format_overrides.format` are now the v2 `formats` lists. Verified with
+  goreleaser 2.17.1: check passes.
+
+  The original note follows.
+
+- **D1–D6 [historical]. Build & ops.** `/go.sum` gitignored and incomplete; CI runs Go tests before the web
   build; `web/src/logs/` was never committed so `bun run build` fails (D1b); no
   `.golangci.yml`; `EnsureUIBuilt()` shells out to bun at server startup; `.goreleaser.yaml`
   uses `archives.format` where v2 wants `formats`.

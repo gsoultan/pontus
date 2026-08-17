@@ -40,7 +40,10 @@ builds:
       - -s -w -X github.com/gsoultan/pontus/pkg/version.Version={{.Version}} -X github.com/gsoultan/pontus/pkg/version.Commit={{.Commit}} -X github.com/gsoultan/pontus/pkg/version.BuildTime={{.Date}}
 
 archives:
-  - format: tar.gz
+  # `formats` (a list), not `format`. GoReleaser v2 deprecated the singular
+  # form, and `goreleaser check` — which CI runs — fails on a deprecated
+  # property, so the release job was red on the config rather than the code.
+  - formats: [tar.gz]
     # this name template makes the OS and Arch compatible with what make it easier to download
     name_template: >-
       {{ .ProjectName }}_
@@ -51,7 +54,7 @@ archives:
       {{- if .Arm }}v{{ .Arm }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
 checksum:
   name_template: 'checksums.txt'
