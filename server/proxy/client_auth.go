@@ -3,12 +3,20 @@ package proxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 
 	"github.com/gsoultan/pontus/server/internal/credentials"
 	"github.com/gsoultan/pontus/server/internal/protocol"
 )
+
+// ErrWrongIdentity marks a connection that belongs to a different user or
+// database than the session asking for it.
+//
+// Never reported to the client as such: it is an internal routing fault, and
+// the session retries on another connection.
+var ErrWrongIdentity = errors.New("connection belongs to another identity")
 
 // authenticateClient verifies the client and keeps the credential its backend
 // connections will need.
@@ -62,13 +70,25 @@ func (g *Gateway) openAuthenticatedBackend(
 ) error {
 	// A connection that has already completed a startup exchange must not be
 	// given another: the backend is past that phase and would read a
-	// StartupMessage as a malformed command. Acquisition has already guaranteed
-	// it belongs to this user and database, so it is ready to carry queries as
-	// it stands — this is the case that makes pooling worth anything.
+	// StartupMessage as a malformed command. Reusing it as it stands is what
+	// makes pooling worth anything.
+	//
+	// But only for the identity it authenticated as. This check was missing when
+	// reuse was introduced, and the result was not a performance problem: a
+	// session was handed a connection belonging to another user and every one of
+	// its queries ran with that user's privileges. `SELECT current_user`
+	// returned the wrong name. Acquisition is expected to have filtered already;
+	// this refuses to depend on that, because the cost of being wrong here is
+	// cross-user data access.
 	if carrier, ok := server.(interface {
 		Ready() bool
 		Startup() *protocol.Startup
+		BelongsTo(user, database string) bool
 	}); ok && carrier.Ready() {
+		if !carrier.BelongsTo(req.User, req.Database) {
+			return fmt.Errorf("%w: connection is authenticated for another identity",
+				ErrWrongIdentity)
+		}
 		return protocol.CompleteClientStartup(client, carrier.Startup())
 	}
 

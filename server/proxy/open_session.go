@@ -2,9 +2,11 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 
+	observability2 "github.com/gsoultan/pontus/pkg/observability"
 	balancer2 "github.com/gsoultan/pontus/server/internal/balancer"
 	pool2 "github.com/gsoultan/pontus/server/internal/pool"
 	"github.com/gsoultan/pontus/server/internal/protocol"
@@ -54,27 +56,64 @@ func (g *Gateway) openSession(
 		}
 	}
 
-	backend, server, err := g.acquireBackend(ctx, balancer2.Hint{
+	hint := balancer2.Hint{
 		CallerZone: g.current().localZone,
 		ReadOnly:   false,
 		Key:        remoteAddr,
-	})
-	if err != nil {
-		slog.Error("Failed to acquire backend for handshake", "client", remoteAddr, "error", err)
-		return nil, nil, err
 	}
 
-	switch {
-	case identityFirst && g.credentials != nil && req != nil:
-		// Pontus authenticated the client itself, so the backend gets its own
-		// exchange rather than a forwarded packet.
-		err = g.openAuthenticatedBackend(client, server, req, state)
-	case identityFirst:
-		err = reader.CompleteHandshake(ctx, client, server, req, state)
-	default:
-		err = g.handler.Handshake(ctx, client, server, state)
-	}
-	if err != nil {
+	// Pools hold every identity together, so an idle connection belonging to a
+	// different user can be handed back repeatedly. Each miss is discarded
+	// rather than returned to the idle set, which guarantees progress; a bound
+	// keeps a pool full of one busy user's connections from spinning here.
+	//
+	// This churns, and per-identity pools are what remove the churn. Correctness
+	// does not wait for them: without this loop a session either fails or, worse,
+	// runs on somebody else's credentials.
+	const identityAttempts = 8
+
+	var backend pool2.Backend
+	var server net.Conn
+	var err error
+
+	for attempt := range identityAttempts {
+		backend, server, err = g.acquireBackend(ctx, hint)
+		if err != nil {
+			slog.Error("Failed to acquire backend for handshake", "client", remoteAddr, "error", err)
+			return nil, nil, err
+		}
+
+		switch {
+		case identityFirst && g.credentials != nil && req != nil:
+			// Pontus authenticated the client itself, so the backend gets its own
+			// exchange rather than a forwarded packet.
+			err = g.openAuthenticatedBackend(client, server, req, state)
+		case identityFirst:
+			err = reader.CompleteHandshake(ctx, client, server, req, state)
+		default:
+			err = g.handler.Handshake(ctx, client, server, state)
+		}
+		if err == nil {
+			break
+		}
+
+		if errors.Is(err, ErrWrongIdentity) {
+			// Destroy it rather than release it: returning another user's
+			// connection to the idle set is how the next attempt draws the same
+			// one and the loop makes no progress.
+			if broken, ok := server.(interface{ MarkBroken() }); ok {
+				broken.MarkBroken()
+			}
+			backend.Release(server)
+			observability2.IdentityMismatches.WithLabelValues(backend.Address()).Inc()
+			if attempt == identityAttempts-1 {
+				slog.Warn("Gave up finding a connection for this session's identity",
+					"client", remoteAddr, "user", state.User, "attempts", identityAttempts)
+				return nil, nil, err
+			}
+			continue
+		}
+
 		// This connection never completed a startup exchange, so it was never
 		// marked ready and the pool destroys it on release rather than handing
 		// an unusable socket to the next caller.

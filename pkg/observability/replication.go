@@ -59,6 +59,18 @@ var (
 		Help: "Requests routed to a backend, by intended access and the role that served it",
 	}, []string{"address", "intent", "role"})
 
+	// IdentityMismatches counts pooled connections drawn for one user and found
+	// to belong to another.
+	//
+	// Zero is the expected value once pools are keyed by identity. Anything else
+	// is churn: each one is a connection destroyed and an acquisition retried,
+	// and a rising rate means users are contending for the same undifferentiated
+	// pool.
+	IdentityMismatches = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "pontus_pool_identity_mismatches_total",
+		Help: "Pooled connections drawn for one identity and found to belong to another",
+	}, []string{"address"})
+
 	// FailoverState mirrors the failover manager's state machine.
 	FailoverState = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "pontus_failover_state",

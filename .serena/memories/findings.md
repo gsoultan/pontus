@@ -6,6 +6,30 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A11 [FIXED 2026-08-10, and it was self-inflicted]. A session could be served on another
+  user's connection.**
+
+  Enabling connection reuse (W2/W4) added an identity check to the mid-session acquisition
+  path and **not** to the session-open path. `openAuthenticatedBackend` reused any connection
+  that had completed a startup exchange, without asking whose it was — so a session was handed
+  a connection belonging to a different user and every query on it ran with that user's
+  privileges. Measured directly: `SELECT current_user` returned `pontus_alice` for a session
+  that had authenticated as `pontus_bob`.
+
+  Reuse only became possible on 2026-08-09, so the exposure is that day's builds with
+  `auth.mode: pontus` and more than one role. Passthrough was never affected.
+
+  Fixed by checking `BelongsTo` before reusing, and by retrying acquisition when the pool
+  hands back another identity's connection — the mismatch is destroyed rather than returned
+  to the idle set, or the next attempt draws the same one and makes no progress.
+  `pontus_pool_identity_mismatches_total` counts them; zero is the expected value once pools
+  are keyed by identity.
+
+  **This is the argument for per-identity pools stated as a defect rather than a design
+  preference.** A pool holding every identity together will keep offering the wrong
+  connection; the check turns that from a data leak into churn, and only the keying removes
+  the churn.
+
 - **A10 [FIXED 2026-08-10]. A Flush-terminated batch hung the proxy forever.**
 
   Pontus decided a reply was finished by looking for ReadyForQuery and nothing else. A client
