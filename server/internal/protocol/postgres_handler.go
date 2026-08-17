@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
@@ -359,19 +360,49 @@ func (p *PostgresHandler) extractQueryBytes(data []byte) []byte {
 		return nil
 	}
 
-	msgType := data[0]
-	switch msgType {
-	case 'Q': // Simple query
-		return data[5:]
-	case 'P': // Parse
-		// Skip msgType (1) + length (4)
-		// Next is statement name (null-terminated string)
-		nullIdx := bytes.IndexByte(data[5:], 0)
-		if nullIdx != -1 {
-			return data[5+nullIdx+1:]
+	// Honour the length prefix instead of reading to the end of the buffer.
+	//
+	// One read is not one message. A client may pipeline several messages into
+	// a single segment, and taking everything after the header appended the
+	// *next* statement to this one — so a batch beginning with a SELECT was
+	// classified, cached and routed as though the writes behind it were not
+	// there. The prefix is also client-controlled, so it is bounded against
+	// what actually arrived rather than trusted.
+	length := int(binary.BigEndian.Uint32(data[1:5]))
+	if length < 4 || 1+length > len(data) {
+		return nil
+	}
+	end := 1 + length
+
+	// The terminator is not part of the query.
+	//
+	// Returning it left a NUL on the end of every extracted statement, which
+	// travelled into the normalized text used for metrics and top-query
+	// display, and into the value stored for each tracked SET. Session replay
+	// then rebuilt `SET k = v\x00` and appended its own terminator, so the
+	// message it sent to the new backend was malformed — replay could not have
+	// worked for any variable a client actually set.
+	switch data[0] {
+	case 'Q': // Simple query: one NUL-terminated string.
+		return trimTerminator(data[5:end])
+	case 'P': // Parse: statement name, the query, then the parameter types.
+		body := data[5:end]
+		nameEnd := bytes.IndexByte(body, 0)
+		if nameEnd < 0 {
+			return nil
 		}
+		return trimTerminator(body[nameEnd+1:])
 	}
 	return nil
+}
+
+// trimTerminator cuts a NUL-terminated string out of a message body, dropping
+// anything the protocol packs in behind it.
+func trimTerminator(body []byte) []byte {
+	if end := bytes.IndexByte(body, 0); end >= 0 {
+		return body[:end]
+	}
+	return body
 }
 
 // IsTerminate reports a client's Terminate message.
@@ -401,18 +432,31 @@ func (p *PostgresHandler) TrackSessionState(state *SessionState, data []byte) {
 		return
 	}
 
-	// 1. Detect Session Pinning (LISTEN, LOCK, TEMPORARY)
-	if p.hasPrefixFold(query, []byte("LISTEN ")) ||
-		p.hasPrefixFold(query, []byte("LOCK ")) ||
-		bytes.Contains(bytes.ToLower(query), []byte("temporary ")) ||
-		bytes.Contains(bytes.ToLower(query), []byte("temp ")) {
-		state.Pinned = true
-	}
+	// 1. Session pinning, by reason so each can be lifted independently.
+	state.PinnedBy |= pinReasonFor(query)
+	state.PinnedBy &^= unpinReasonFor(query)
 
 	// 2. Track SET commands
 	if p.hasPrefixFold(query, []byte("SET ")) {
 		if state.Vars == nil {
 			state.Vars = make(map[string]string)
+		}
+
+		// Bound the map. Its keys come from the client, one per SET, and it was
+		// kept for the life of the session and replayed in full on every
+		// backend switch — so a client could grow it until Pontus ran out of
+		// memory, and make every switch slower on the way.
+		//
+		// Refusing to record past the cap would silently lose session state,
+		// which is worse: the session would be replayed onto a new connection
+		// missing settings it had asked for. Instead the session stops being
+		// movable. It keeps its connection and stays correct, and the cost of
+		// the overrun falls on the client that caused it.
+		if len(state.Vars) >= maxSessionVars {
+			if _, known := state.Vars[p.setVarKey(query)]; !known {
+				state.PinnedBy |= PinUntrackedState
+				return
+			}
 		}
 		// Simplified parsing of SET key = value using bytes to avoid allocations
 		trimmed := bytes.TrimSpace(query[4:])
@@ -581,12 +625,38 @@ func (p *PostgresHandler) Identify() Metadata {
 	}
 }
 
-// IsPinned returns true if the session must not be unpooled.
+// IsPinned reports whether the session must keep its backend connection.
 func (p *PostgresHandler) IsPinned(state *SessionState) bool {
 	if state == nil {
 		return false
 	}
-	return state.Pinned
+	return state.Pinned || state.PinnedBy != 0
+}
+
+// ReleaseTransactionPins lifts the reasons that end with a transaction.
+//
+// Called at a transaction boundary, which is the only place the handler learns
+// that a LOCK has been released — the statement that takes one is visible on
+// the request path, but nothing on that path marks the end.
+func (p *PostgresHandler) ReleaseTransactionPins(state *SessionState) {
+	if state != nil {
+		state.PinnedBy &^= transactionScoped
+	}
+}
+
+// maxSessionVars bounds how many SET variables a session may accumulate.
+//
+// The map is keyed by client input and replayed in full on every backend
+// switch, so it needs both a cap and a defined behaviour at the cap. 64 is far
+// above what a driver sets on connect — libpq sends a handful, an ORM a few
+// more — and far below a number that matters for memory.
+const maxSessionVars = 64
+
+// setVarKey returns the variable a SET statement assigns, or "" if the
+// statement does not parse as one.
+func (p *PostgresHandler) setVarKey(query []byte) string {
+	name, _ := nextToken(query[4:])
+	return strings.ToLower(string(name))
 }
 
 // DeepCheck executes a simple SELECT 1 to verify database liveness.

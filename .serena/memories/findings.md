@@ -279,12 +279,37 @@ Everything else is open. None of the open items are precedent to copy.
 - **C13. `maxWaiters` per shard** — obsolete, the engine has no wait queue (see
   `mem:pool_engine`). Retained here only so the old note is not mistaken for current.
 
-- **C14. Session pinning is a substring match and never cleared.** `SELECT temp FROM sensors`
-  pins the session; nothing sets `Pinned` back to false, so it holds its backend for life.
+- **C14 [FIXED 2026-08-17]. Session pinning is by reason and can be lifted.**
+  `PinReason` is a bitmask — LISTEN, temp table, WITH HOLD cursor, LOCK, session advisory
+  lock, and "more SET state than Pontus will track". `DISCARD ALL`, `UNLISTEN *`,
+  `DISCARD TEMP` and `CLOSE ALL` each clear what they actually clear, and transaction-scoped
+  reasons drop at the transaction boundary. The old rule was
+  `bytes.Contains(lower(query), "temp ")`, so `SELECT temp FROM sensors` pinned a session
+  for life; a pool whose connections are pinned one at a time and never returned drains to
+  nothing under ordinary traffic. Detection is also now allocation-free — the old rule
+  lowered the whole query twice per statement, on the hot path.
 
-- **C15. One `client.Read` is assumed to be one whole message** on the query path.
-  `extractQueryBytes` still ignores the length prefix. (The *startup* phase is now framed
-  correctly — see W1 — but the transaction loop is not.)
+  Advisory locks and WITH HOLD cursors were not detected at all, so a session holding one
+  could have its connection returned to the pool — silently releasing the lock.
+
+- **C15 [FIXED 2026-08-17, partly]. `extractQueryBytes` honours the length prefix.**
+  Pipelined messages no longer bleed into the statement being classified, and the prefix is
+  bounded against what arrived rather than trusted. The terminator is stripped: it had been
+  travelling into normalized text used for metrics *and* into every tracked SET value, so
+  session replay rebuilt `SET k = v\x00` and appended its own terminator — a malformed
+  message, meaning replay could not have worked for any variable a client set.
+
+  **Remaining:** a message *split across* reads still is not reassembled. It now fails safe
+  (unreadable ⇒ not read-only ⇒ primary, uncached) instead of mis-parsing, but a statement
+  larger than the read buffer is never classified accurately. Real reassembly needs a
+  framing loop in the gateway.
+
+- **B10/B11 [FIXED 2026-08-17, `state.Vars` half]. Tracked SET variables are bounded.**
+  `maxSessionVars = 64`. Past the cap a session stops being *movable* rather than silently
+  losing settings: it takes `PinUntrackedState` and keeps its connection, so the cost of the
+  overrun falls on the client that caused it. Refusing to record while still claiming the
+  session was replayable would have moved it to a new backend missing settings it asked for.
+  `state.Stmts` and the rate-limiter map are still unbounded.
 
 - **C16. Blocked words match with `strings.Contains`**, so a column named `dropdown` trips a
   `DROP` rule.

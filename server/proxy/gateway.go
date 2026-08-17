@@ -437,7 +437,18 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 		s.Backend.ReevaluateRole()
 	}
 
-	// Update session state
+	// Update session state.
+	//
+	// A transaction ending is the only signal that transaction-scoped pins —
+	// an explicit LOCK — have been released. Nothing on the request path marks
+	// the end, so a session that took one lock stayed pinned for life.
+	if state == protocol.StateIdle && s.State.TxState != protocol.StateIdle {
+		if releaser, ok := m.handler.(interface {
+			ReleaseTransactionPins(*protocol.SessionState)
+		}); ok {
+			releaser.ReleaseTransactionPins(s.State)
+		}
+	}
 	s.State.TxState = state
 
 	// 2. Intelligent Consistency: Capture LSN after a write

@@ -35,5 +35,12 @@ type SessionState struct {
 	// different result.
 	Database string
 	LastLSN  string // Log Sequence Number for consistency tracking
-	Pinned   bool   // If true, the session must not be unpooled (e.g., LISTEN, Temp Tables)
+	// Pinned forces the session to keep its backend connection regardless of
+	// any tracked reason. Set by the protocol handler for states it cannot
+	// describe; PinnedBy carries the reasons it can.
+	Pinned bool
+
+	// PinnedBy records *why* the session is tied to its connection, so each
+	// reason can be lifted when it stops applying. See PinReason.
+	PinnedBy PinReason
 }

@@ -6,8 +6,12 @@ import (
 	"testing"
 )
 
+// query builds a well-formed simple-query message. The length prefix has to be
+// real: the handler bounds its read by it rather than running to the end of the
+// buffer, because one read is not necessarily one message.
 func query(sql string) []byte {
-	b := []byte{'Q', 0, 0, 0, 0}
+	length := 4 + len(sql) + 1
+	b := []byte{'Q', byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)}
 	b = append(b, sql...)
 	return append(b, 0)
 }
