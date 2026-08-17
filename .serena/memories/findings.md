@@ -321,8 +321,30 @@ Everything else is open. None of the open items are precedent to copy.
   any deployment with a burst under 50 had every JOIN-heavy query rejected outright by a
   setting that reads like "allow N at once". Cost is now clamped to the limiter's burst.
 
-  **Remaining:** the collapser buffers whole result sets with no bound, and
-  stale-while-revalidate has no singleflight.
+- **C19 [FIXED 2026-08-17]. The capture buffer is bounded.**
+  A reply is streamed to the client but *held* here while it is captured for the cache and
+  the request collapser, and nothing bounded it: one `SELECT * FROM events` buffered the
+  whole result set in the proxy's heap, per concurrent client, on the way to a cache that
+  would never have kept something that size. `cache.max_entry_size` bounds it, default 8 MiB.
+
+  Passing the bound is not an error — the client still gets every byte, only the
+  *remembering* stops. Two things had to follow from that: the buffer is released on
+  overflow rather than merely abandoned, and the overflow is reported to collapsed followers
+  as a failure so they run the query themselves. A follower handed a truncated buffer writes
+  a partial reply and leaves its client waiting for the rest of a message that never comes.
+
+  **Root cause of a self-inflicted bug worth remembering:** the first version read
+  `cfg.Cache.MaxEntrySize` with no nil check. `config.Options.Cache` is a **pointer**, so an
+  omitted `cache:` block — the most ordinary configuration there is, and what every test
+  uses via `&config.Options{}` — faulted inside `NewGateway`. It presented as a *hang*, not a
+  panic: the goroutine sat `[running]` at that line and a `panic()` placed immediately after
+  never fired. Do not read a pointer config block in `reconfigure` without checking it;
+  several others there are pointers too.
+
+  **Remaining:** stale-while-revalidate has no singleflight.
+
+- **C16 [STALE].** The blocked-word firewall no longer exists in the tree — there is no
+  `fwConfig`, no firewall middleware and no blocked-word matcher. Nothing to fix.
 
 - **D1–D6. Build & ops.** `/go.sum` gitignored and incomplete; CI runs Go tests before the web
   build; `web/src/logs/` was never committed so `bun run build` fails (D1b); no

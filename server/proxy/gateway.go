@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -60,8 +61,10 @@ type Gateway struct {
 	collapserMu    sync.Mutex
 	inFlight       map[string]*inflightCall
 	queryTimeout   time.Duration
-	chain          middleware.Chain
-	runtime        atomic.Pointer[runtimeConfig]
+	// maxCaptureBytes bounds a reply held for the cache or the collapser.
+	maxCaptureBytes int
+	chain           middleware.Chain
+	runtime         atomic.Pointer[runtimeConfig]
 
 	// streamCtx is cancelled to end every replication stream at once. Guarded
 	// by streamCtxMu because failover replaces it rather than reusing a
@@ -106,6 +109,7 @@ func NewGateway(h protocol.Handler, b balancer2.Balancer, orch FailoverOrchestra
 	g.orchestrator = orch
 	g.inFlight = make(map[string]*inflightCall)
 	g.queryTimeout = 30 * time.Second // Default query timeout
+	g.maxCaptureBytes = defaultMaxCaptureBytes
 	g.config = cfg
 	g.monitor = m
 	g.backendTLS = backendTLS
@@ -123,6 +127,13 @@ func (g *Gateway) withQueryTimeout(ctx context.Context) (context.Context, contex
 }
 
 func (g *Gateway) reconfigure(cfg *config.Options) {
+	// Nil-checked: Cache is a pointer and an unset `cache:` block leaves it nil.
+	// The bound applies even with the cache disabled, because request
+	// collapsing captures replies too.
+	if cfg.Cache != nil && cfg.Cache.MaxEntrySize > 0 {
+		g.maxCaptureBytes = cfg.Cache.MaxEntrySize
+	}
+
 	// A negative value disables the bound; see config.Options.QueryTimeout for
 	// why that is spelled with a sign rather than a zero.
 	if cfg.QueryTimeout != 0 {
@@ -401,12 +412,17 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	// collapser its own buffer left ResponseCapture empty, so the cache's Set
 	// never ran and every lookup missed: the cache was enabled, consulted on
 	// every query, and structurally incapable of holding anything.
-	var capture *bytes.Buffer
+	//
+	// Bounded, because a reply is streamed to the client but *held* here: an
+	// unbounded capture buffers a whole result set in the proxy's heap, per
+	// concurrent client, to serve a cache that would never store something
+	// that size anyway.
+	var capture *responseCapture
 	switch {
 	case s.ResponseCapture != nil:
-		capture = s.ResponseCapture
+		capture = newResponseCapture(s.ResponseCapture, m.maxCaptureBytes)
 	case call != nil:
-		capture = new(bytes.Buffer)
+		capture = newResponseCapture(new(bytes.Buffer), m.maxCaptureBytes)
 	}
 
 	requestStart := time.Now()
@@ -414,7 +430,7 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 		s.QueryInfo.ReadOnly, m.handler.ResponseEndFor(s.Data))
 	if call != nil {
 		call.data = capture.Bytes()
-		call.err = err
+		call.err = cmp.Or(err, capture.Err())
 	}
 	if rtt > 0 {
 		s.Backend.ReportRTT(rtt)
@@ -925,7 +941,7 @@ func (g *Gateway) CacheManager() *cache.Manager {
 	return g.cacheManager
 }
 
-func (g *Gateway) proxyResponse(ctx context.Context, client, server net.Conn, buf []byte, capture *bytes.Buffer, readOnly bool, end protocol.ResponseEnd) (protocol.TransactionState, bool, time.Duration, error) {
+func (g *Gateway) proxyResponse(ctx context.Context, client, server net.Conn, buf []byte, capture *responseCapture, readOnly bool, end protocol.ResponseEnd) (protocol.TransactionState, bool, time.Duration, error) {
 	// query_timeout, made real.
 	//
 	// The deadline was carried on the context and the read loop never consulted
@@ -989,7 +1005,7 @@ func midSequenceState(state protocol.TransactionState, end protocol.ResponseEnd)
 	return state
 }
 
-func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, capture *bytes.Buffer, end protocol.ResponseEnd) (protocol.TransactionState, bool, time.Duration, error) {
+func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, capture *responseCapture, end protocol.ResponseEnd) (protocol.TransactionState, bool, time.Duration, error) {
 	isReadOnlyErr := false
 	var rtt time.Duration
 	start := time.Now()
@@ -1002,9 +1018,7 @@ func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, 
 				rtt = time.Since(start)
 				firstByte = false
 			}
-			if capture != nil {
-				capture.Write(buf[:n])
-			}
+			capture.Write(buf[:n])
 			if _, werr := client.Write(buf[:n]); werr != nil {
 				return protocol.StateError, false, rtt, werr
 			}
