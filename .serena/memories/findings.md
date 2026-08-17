@@ -153,7 +153,17 @@ Everything else is open. None of the open items are precedent to copy.
   the inspected text and the executed bytes is a bypass by construction. The durable fix is
   to inspect the bytes that are actually sent.
 
-- **B3. The tokenizer has no comment handling**, so `UNION/**/SELECT` evades the UNION rule.
+- **B3 [PARTLY FIXED 2026-08-17].** The classifier already sees through comments — a
+  `/*hint*/ UPDATE`, a `-- lead` line and `UPDATE/**/t` all classify as writes, so no comment
+  shape found routes a write to a replica (now covered by a test). Pin detection did *not*:
+  `/*app:reports*/ LISTEN events` went unrecognised, so the session was left unpinned and its
+  connection returned to the pool — the client stopped receiving notifications with nothing
+  logged. Query-annotation tools (sqlcommenter and the tracing libraries after it) prepend a
+  comment to every statement an ORM emits, so this is the common case, not an exotic one.
+  Token scanning now skips line and block comments, honouring PostgreSQL's *nesting* block
+  comments. The original note follows.
+
+- **B3 [historical]. The tokenizer has no comment handling**, so `UNION/**/SELECT` evades the UNION rule.
   No `--`, no `/* */`, no dollar-quoting, no `E'...'`. Every rule matching *adjacent* tokens
   is defeated by an inline comment.
 
@@ -171,7 +181,15 @@ Everything else is open. None of the open items are precedent to copy.
   distinguishing "connection refused" from "no route to host" from a timeout is precisely the
   signal a scan wants. The detail goes to the log.
 
-- **B5–B9. Auth defaults.** Hardcoded JWT secret fallback `"pontus-secret-key"`
+- **B5–B9 [ALL FIXED — re-verified 2026-08-17].** The hardcoded `"pontus-secret-key"`
+  fallback is gone (`auth.NewIssuer` returns `ErrNoKey`, fatal at startup); the interceptor
+  no longer calls through unauthenticated; `admin`/`admin123` is replaced by a generated
+  password; CORS reads `AllowedOrigins` from config with `Authorization` in `AllowedHeaders`.
+  Algorithm confusion is gone *structurally*: HS256 JWT was replaced by PASETO v4.local,
+  which has no `alg` header to confuse and is encrypted rather than merely signed. The
+  original text follows for history.
+
+- **B5–B9 [historical]. Auth defaults.** Hardcoded JWT secret fallback `"pontus-secret-key"`
   (`manager/auth.go:22`); auth interceptor returns `next(...)` unauthenticated when
   `adminToken == ""` (`middleware/auth.go:35`, `:58`); default `admin`/`admin123`
   (`app.go:80`); `jwt.Parse` without `WithValidMethods`; CORS `AllowedOrigins: ["*"]` over

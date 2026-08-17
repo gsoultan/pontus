@@ -147,21 +147,81 @@ func containsPhrase(s []byte, words ...string) bool {
 	return false
 }
 
-// nextToken splits off the next whitespace-delimited token.
+// nextToken splits off the next token, skipping whitespace and SQL comments.
+//
+// Comments have to be skipped because query-annotation tools — sqlcommenter and
+// the tracing libraries that follow it — prepend one to every statement an ORM
+// emits. A `/*app:reports*/ LISTEN events` whose verb went unrecognised left the
+// session unpinned, so its connection returned to the pool and the client
+// stopped receiving notifications with nothing logged anywhere.
 //
 // Punctuation that terminates a statement is trimmed, so `DISCARD ALL;` reads
 // the same as `DISCARD ALL`.
 func nextToken(s []byte) (token, rest []byte) {
-	i := 0
-	for i < len(s) && isSpace(s[i]) {
-		i++
-	}
+	i := skipNoise(s, 0)
 	start := i
-	for i < len(s) && !isSpace(s[i]) {
+	for i < len(s) && !isSpace(s[i]) && !startsComment(s, i) {
 		i++
 	}
 	token = bytes.TrimRight(s[start:i], ";\x00")
 	return token, s[i:]
+}
+
+// skipNoise advances past whitespace and comments.
+func skipNoise(s []byte, i int) int {
+	for i < len(s) {
+		switch {
+		case isSpace(s[i]):
+			i++
+		case startsLineComment(s, i):
+			for i < len(s) && s[i] != '\n' {
+				i++
+			}
+		case startsBlockComment(s, i):
+			i = skipBlockComment(s, i)
+		default:
+			return i
+		}
+	}
+	return i
+}
+
+// skipBlockComment consumes a /* ... */ comment, honouring nesting.
+//
+// PostgreSQL block comments nest, unlike C's: `/* a /* b */ c */` is one
+// comment. Stopping at the first `*/` would leave ` c */` to be read as
+// statement text.
+func skipBlockComment(s []byte, i int) int {
+	depth := 0
+	for i < len(s) {
+		switch {
+		case startsBlockComment(s, i):
+			depth++
+			i += 2
+		case i+1 < len(s) && s[i] == '*' && s[i+1] == '/':
+			depth--
+			i += 2
+			if depth == 0 {
+				return i
+			}
+		default:
+			i++
+		}
+	}
+	// Unterminated: the rest of the statement is inside the comment.
+	return i
+}
+
+func startsComment(s []byte, i int) bool {
+	return startsLineComment(s, i) || startsBlockComment(s, i)
+}
+
+func startsLineComment(s []byte, i int) bool {
+	return i+1 < len(s) && s[i] == '-' && s[i+1] == '-'
+}
+
+func startsBlockComment(s []byte, i int) bool {
+	return i+1 < len(s) && s[i] == '/' && s[i+1] == '*'
 }
 
 func isSpace(b byte) bool {
