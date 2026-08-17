@@ -398,6 +398,16 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	// connection is what stops a later replay re-parsing a name it already has.
 	m.handler.TrackSessionState(s.State, s.Data)
 	m.handler.TrackPreparedStatement(s.State, s.Data)
+
+	// A statement the client closed must be forgotten, or the map grows for the
+	// life of the session and replay re-parses statements the backend has
+	// already been told to drop. A driver with a bounded statement cache closes
+	// them continuously.
+	if forgetter, ok := m.handler.(interface {
+		ForgetPreparedStatement(*protocol.SessionState, []byte)
+	}); ok {
+		forgetter.ForgetPreparedStatement(s.State, s.Data)
+	}
 	if name := protocol.ParseStatementName(s.Data); name != "" {
 		if holder, ok := s.Server.(protocol.StatementHolder); ok {
 			holder.AddStatement(name)

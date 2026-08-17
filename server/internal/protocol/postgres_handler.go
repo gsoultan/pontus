@@ -522,9 +522,33 @@ func (p *PostgresHandler) ReplaySessionState(ctx context.Context, conn net.Conn,
 	return nil
 }
 
-// TrackPreparedStatement tracks prepared statements in the session.
+// maxSessionStmts bounds how many prepared statements a session may accumulate.
+//
+// Both the name and the query text come from the client, and every entry is
+// replayed on a backend switch. A driver's statement cache holds tens; 256 is
+// well clear of that and well short of a number that matters for memory.
+const maxSessionStmts = 256
+
+// TrackPreparedStatement records a Parse so the statement can be replayed if
+// the session moves to another backend.
 func (p *PostgresHandler) TrackPreparedStatement(state *SessionState, data []byte) {
 	if len(data) < 6 || data[0] != 'P' {
+		return
+	}
+
+	// Message format: 'P' + length(4) + name(NUL) + query(NUL) + parameter types.
+	body := messageBody(data)
+	if body == nil {
+		return
+	}
+	nameEnd := bytes.IndexByte(body, 0)
+	if nameEnd == -1 {
+		return
+	}
+	name := string(body[:nameEnd])
+	rest := body[nameEnd+1:]
+	queryEnd := bytes.IndexByte(rest, 0)
+	if queryEnd == -1 {
 		return
 	}
 
@@ -532,19 +556,51 @@ func (p *PostgresHandler) TrackPreparedStatement(state *SessionState, data []byt
 		state.Stmts = make(map[string]string)
 	}
 
-	// Message format: 'P' + length(4) + name(null-terminated) + query(null-terminated)
-	nameEnd := bytes.IndexByte(data[5:], 0)
-	if nameEnd == -1 {
+	// Bound the map, and stop claiming the session can be moved once it holds
+	// more than Pontus will remember. Dropping entries silently would replay a
+	// session onto a new connection missing statements it had prepared, and the
+	// failure would surface as a Bind against a statement that does not exist.
+	if _, known := state.Stmts[name]; !known && len(state.Stmts) >= maxSessionStmts {
+		state.PinnedBy |= PinUntrackedState
 		return
 	}
-	name := string(data[5 : 5+nameEnd])
-	queryStart := 5 + nameEnd + 1
-	queryEnd := bytes.IndexByte(data[queryStart:], 0)
-	if queryEnd == -1 {
+
+	state.Stmts[name] = string(rest[:queryEnd])
+}
+
+// ForgetPreparedStatement drops a statement the client has closed.
+//
+// Nothing removed entries, so a session that prepared and closed statements in
+// a loop — which is what a driver with a bounded statement cache does — grew
+// the map for the life of the connection and replayed statements the backend
+// had already been told to forget.
+func (p *PostgresHandler) ForgetPreparedStatement(state *SessionState, data []byte) {
+	if state == nil || len(data) < 7 || data[0] != 'C' {
 		return
 	}
-	query := string(data[queryStart : queryStart+queryEnd])
-	state.Stmts[name] = query
+
+	// Close: 'C' + length(4) + 'S' for a statement or 'P' for a portal + name.
+	body := messageBody(data)
+	if len(body) < 2 || body[0] != 'S' {
+		return
+	}
+	name, _, found := bytes.Cut(body[1:], []byte{0})
+	if !found {
+		return
+	}
+	delete(state.Stmts, string(name))
+}
+
+// messageBody returns the payload of a message, bounded by its length prefix.
+func messageBody(data []byte) []byte {
+	if len(data) < 5 {
+		return nil
+	}
+	length := int(binary.BigEndian.Uint32(data[1:5]))
+	if length < 4 || 1+length > len(data) {
+		return nil
+	}
+	return data[5 : 1+length]
 }
 
 // ReplayPreparedStatements replays tracked prepared statements.

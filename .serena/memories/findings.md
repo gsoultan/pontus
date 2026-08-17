@@ -327,7 +327,13 @@ Everything else is open. None of the open items are precedent to copy.
   losing settings: it takes `PinUntrackedState` and keeps its connection, so the cost of the
   overrun falls on the client that caused it. Refusing to record while still claiming the
   session was replayable would have moved it to a new backend missing settings it asked for.
-  `state.Stmts` and the rate-limiter map are still unbounded.
+  `state.Stmts` is bounded too (`maxSessionStmts = 256`, same overrun behaviour), and Close
+  ('C' with the 'S' subtype) now *removes* an entry — nothing did, so a session that prepared
+  and closed statements in a loop, which is what a driver with a bounded statement cache
+  does, grew the map for the life of the connection and replayed statements the backend had
+  already been told to drop. The rate-limiter map was already bounded (see C18–C20).
+
+  **B10/B11 is now closed.**
 
 - **C16. Blocked words match with `strings.Contains`**, so a column named `dropdown` trips a
   `DROP` rule.
