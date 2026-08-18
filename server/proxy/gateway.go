@@ -1117,6 +1117,7 @@ func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte, end
 	firstByte := true
 	var rtt time.Duration
 	scan := protocol.NewReplyScanner(end)
+	var pump *copyPump
 
 	for {
 		n, err := server.Read(buf)
@@ -1130,7 +1131,21 @@ func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte, end
 				return protocol.StateError, false, rtt, werr
 			}
 
-			if done, state := scan.Feed(buf[:n]); done {
+			done, state := scan.Feed(buf[:n])
+
+			// COPY turns the exchange around: the backend is now waiting for
+			// the client, so the client's data has to start moving or neither
+			// side speaks again.
+			if scan.SawCopyIn() && pump == nil {
+				pump = g.startCopyPump(client, server)
+			}
+
+			if done {
+				if pump != nil {
+					if perr := pump.stop(client); perr != nil {
+						return protocol.StateError, false, rtt, perr
+					}
+				}
 				return midSequenceState(state, end), false, rtt, nil
 			}
 		}
@@ -1159,6 +1174,7 @@ func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, 
 	start := time.Now()
 	firstByte := true
 	scan := protocol.NewReplyScanner(end)
+	var pump *copyPump
 	for {
 		n, err := server.Read(buf)
 		if n > 0 {
@@ -1178,7 +1194,18 @@ func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, 
 			// The reply ends at ReadyForQuery when the client sent a Sync, and
 			// at the answer to its last message when it sent a Flush. Waiting
 			// for ReadyForQuery either way blocks forever on the second.
-			if done, state := scan.Feed(buf[:n]); done {
+			done, state := scan.Feed(buf[:n])
+
+			if scan.SawCopyIn() && pump == nil {
+				pump = g.startCopyPump(client, server)
+			}
+
+			if done {
+				if pump != nil {
+					if perr := pump.stop(client); perr != nil {
+						return protocol.StateError, isReadOnlyErr, rtt, perr
+					}
+				}
 				return midSequenceState(state, end), isReadOnlyErr, rtt, nil
 			}
 		}

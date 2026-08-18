@@ -46,3 +46,15 @@ func (p *PostgresHandler) MessageLength(data []byte) (total int, ok bool) {
 	}
 	return 1 + length, true
 }
+
+// PostgresFramer frames PostgreSQL messages without needing a whole handler.
+//
+// The handler carries connection state and configuration; framing needs
+// neither, and a caller that only wants to find message boundaries should not
+// have to construct one.
+type PostgresFramer struct{}
+
+// MessageLength implements MessageFramer.
+func (PostgresFramer) MessageLength(data []byte) (total int, ok bool) {
+	return (*PostgresHandler)(nil).MessageLength(data)
+}

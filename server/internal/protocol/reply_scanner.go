@@ -144,6 +144,10 @@ type replyScanner struct {
 	// to callers that act on a failed reply — the proxy forwards the bytes
 	// either way and lets the client decide.
 	sawError bool
+
+	// sawCopyIn records a CopyInResponse, which reverses the direction of the
+	// exchange for the rest of the statement.
+	sawCopyIn bool
 }
 
 // NewReplyScanner builds a scanner for one request's reply.
@@ -154,6 +158,9 @@ type ReplyScanner = replyScanner
 
 // Feed consumes a chunk. See feed.
 func (s *replyScanner) Feed(chunk []byte) (bool, TransactionState) { return s.feed(chunk) }
+
+// SawCopyIn reports whether the backend asked the client for COPY data.
+func (s *replyScanner) SawCopyIn() bool { return s.sawCopyIn }
 
 // SawError reports whether an ErrorResponse appeared in the reply.
 //
@@ -206,8 +213,15 @@ func (s *replyScanner) feed(chunk []byte) (done bool, state TransactionState) {
 		}
 		s.skip = length - 4
 
-		if tag == 'E' {
+		switch tag {
+		case 'E':
 			s.sawError = true
+		case 'G':
+			// CopyInResponse: the backend has stopped talking and is waiting
+			// for the client. Whoever is reading the backend has to know, or it
+			// waits for a reply that cannot come until it forwards the data it
+			// is sitting on.
+			s.sawCopyIn = true
 		}
 
 		switch {

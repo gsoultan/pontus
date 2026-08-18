@@ -6,6 +6,32 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A14 [FIXED 2026-08-18]. `COPY ... FROM STDIN` hung until `query_timeout`.**
+
+  Every other statement is request-then-reply, which is why the proxy forwards a request and
+  then reads the backend until the reply ends. COPY is not: the backend answers with
+  CopyInResponse and then *stops talking*, because it is waiting for the client. A proxy
+  sitting on the backend socket has nothing to read, and the data it is waiting for is on the
+  other side of it. Every `\copy`, every `pg_restore`, every bulk loader sat there for 30
+  seconds and then had its session killed.
+
+  Found by predicting it from the shape of the 32 KiB bug and then measuring, not by reading
+  the code. COPY TO STDOUT was fine throughout — it is a plain server→client flow that ends
+  at ReadyForQuery — which is why nothing had noticed.
+
+  The relay runs **alongside** the backend reader, not in place of it. A sequential pump
+  deadlocks on the ordinary failure: the backend rejects a row, sends ErrorResponse and stops
+  reading, the client keeps sending, the backend's receive buffer fills, and the proxy's
+  write blocks with that error unread on the other socket. There is a test for exactly that
+  (20 000 duplicate keys) and it would hang without the concurrency.
+
+  Two details that are load-bearing. The relay forwards **whole messages**, because it has to
+  recognise CopyDone: reading past it would swallow the start of the next statement, stopping
+  short of it would leave the backend waiting forever. And a relay interrupted on purpose
+  discards what it had half-read — those bytes belong to a COPY the backend has finished
+  with, and injecting them would put them at the front of the next statement. There is a test
+  that a ~10 MB COPY is followed by a working session.
+
 - **C15 [NOW FULLY FIXED 2026-08-18]. Pontus could not execute a statement larger than
   32 KiB. At all.**
 
