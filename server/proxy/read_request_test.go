@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gsoultan/pontus/pkg/config"
 	"github.com/gsoultan/pontus/server/internal/protocol"
@@ -117,5 +118,64 @@ func TestReadRequestHandlesASplitHeader(t *testing.T) {
 	}
 	if len(got) != len(msg) {
 		t.Errorf("assembled %d bytes, sent %d", len(got), len(msg))
+	}
+}
+
+// A read can end part-way through a *later* message when a client pipelines.
+// Assembling only the first would forward a fragment of the second and leave
+// the backend waiting for the rest of it — the same hang, one message along.
+func TestReadRequestCompletesALaterMessage(t *testing.T) {
+	g := framingGateway(t, 0)
+
+	small := simpleQuery("SELECT 1")
+	big := simpleQuery("SELECT '" + strings.Repeat("z", 100<<10) + "'")
+	stream := append(append([]byte{}, small...), big...)
+
+	client, peer := net.Pipe()
+	defer client.Close()
+	go func() {
+		defer peer.Close()
+		for i := 0; i < len(stream); i += 8192 {
+			_, _ = peer.Write(stream[i:min(i+8192, len(stream))])
+		}
+	}()
+
+	got, err := g.readRequest(client, make([]byte, 32*1024))
+	if err != nil {
+		t.Fatalf("assembling a pipelined pair failed: %v", err)
+	}
+	if len(got) < len(stream) {
+		t.Fatalf("returned %d bytes with a message left unfinished; sent %d",
+			len(got), len(stream))
+	}
+	if trailingNeed(protocol.NewPostgresHandler(), got) != 0 {
+		t.Error("the returned buffer still ends part-way through a message")
+	}
+}
+
+// Nothing here may loop forever on a client that stops mid-message.
+func TestReadRequestStopsWhenTheClientGoesAway(t *testing.T) {
+	g := framingGateway(t, 0)
+	msg := simpleQuery("SELECT '" + strings.Repeat("q", 100<<10) + "'")
+
+	client, peer := net.Pipe()
+	defer client.Close()
+	go func() {
+		_, _ = peer.Write(msg[:40<<10]) // less than promised, then hang up
+		peer.Close()
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if _, err := g.readRequest(client, make([]byte, 32*1024)); err == nil {
+			t.Error("a truncated message was reported as complete")
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("readRequest did not return after the client disconnected mid-message")
 	}
 }

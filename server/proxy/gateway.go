@@ -149,43 +149,69 @@ func (g *Gateway) readRequest(client net.Conn, buf []byte) ([]byte, error) {
 		return buf[:n], nil
 	}
 
-	if total, known := framer.MessageLength(buf[:n]); known && total <= n {
+	if trailingNeed(framer, buf[:n]) == 0 {
 		return buf[:n], nil
 	}
 	return g.readWholeMessage(client, buf[:n], framer)
 }
 
-// readWholeMessage assembles a message that spans reads.
+// trailingNeed reports how many more bytes are needed before every message in
+// data is complete, or 0 if they already are.
+//
+// Every message, not just the first: a client may pipeline several, and a read
+// can end part-way through any of them. Stopping at the first complete message
+// would forward a fragment of the second and leave the backend waiting for the
+// rest of it — the same hang, one message further along.
+func trailingNeed(framer protocol.MessageFramer, data []byte) int {
+	for len(data) > 0 {
+		total, ok := framer.MessageLength(data)
+		if !ok {
+			// The header itself is incomplete; one more byte at least.
+			return 1
+		}
+		if total > len(data) {
+			return total - len(data)
+		}
+		data = data[total:]
+	}
+	return 0
+}
+
+// readWholeMessage keeps reading until nothing in the buffer is half-finished.
 func (g *Gateway) readWholeMessage(client net.Conn, first []byte, framer protocol.MessageFramer) ([]byte, error) {
 	data := slices.Clone(first)
 
 	for {
-		total, known := framer.MessageLength(data)
-		switch {
-		case !known:
-			// Not even the header has arrived. Read a little more and re-ask.
-			var probe [postgresHeaderProbe]byte
-			n, err := client.Read(probe[:])
-			data = append(data, probe[:n]...)
-			if err != nil {
-				return data, err
-			}
-
-		case total > g.maxMessageBytes:
-			// The length is client-supplied, so it bounds an allocation an
-			// attacker chose. Refuse rather than reserve it.
-			return data, fmt.Errorf("client message of %d bytes exceeds max_message_bytes of %d",
-				total, g.maxMessageBytes)
-
-		case len(data) >= total:
+		need := trailingNeed(framer, data)
+		if need == 0 {
 			return data, nil
+		}
 
-		default:
-			rest := make([]byte, total-len(data))
-			if _, err := io.ReadFull(client, rest); err != nil {
-				return data, err
+		// The size being reserved comes from a length the client supplied, so
+		// it is bounded rather than trusted.
+		if len(data)+need > g.maxMessageBytes {
+			return data, fmt.Errorf("client message of %d bytes exceeds max_message_bytes of %d",
+				len(data)+need, g.maxMessageBytes)
+		}
+
+		// need is 1 only when a header arrived split, where the real shortfall
+		// is not yet knowable — read a little in that case rather than one byte
+		// at a time.
+		if need == 1 {
+			need = postgresHeaderProbe
+		}
+
+		start := len(data)
+		data = append(data, make([]byte, need)...)
+		read, err := io.ReadFull(client, data[start:])
+		data = data[:start+read]
+		if err != nil {
+			// A short read is only an error if it left a message unfinished,
+			// which the next pass through the loop decides.
+			if trailingNeed(framer, data) == 0 {
+				return data, nil
 			}
-			return append(data, rest...), nil
+			return data, err
 		}
 	}
 }
