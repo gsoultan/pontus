@@ -40,6 +40,12 @@ type SessionState struct {
 	// describe; PinnedBy carries the reasons it can.
 	Pinned bool
 
+	// BackendKey is the BackendKeyData this session's backend sent — the
+	// process id and secret Pontus forwarded to the client. A cancel request
+	// arrives on a different connection carrying these, and the only way to
+	// route it is to have remembered which server they came from.
+	BackendKey []byte
+
 	// PinnedBy records *why* the session is tied to its connection, so each
 	// reason can be lifted when it stops applying. See PinReason.
 	PinnedBy PinReason

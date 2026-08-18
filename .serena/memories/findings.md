@@ -6,6 +6,28 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A15 [FIXED 2026-08-18]. A running query could not be cancelled.**
+  `ReadStartup` refused a CancelRequest outright — *"cancel request is not a session
+  startup"* — so Ctrl+C in psql, a client-side statement timeout, and every "cancel this
+  report" button did nothing at all. A runaway query could only be stopped by killing the
+  session or waiting for `query_timeout`.
+
+  Cancellation is out-of-band by design: it arrives on a **second** connection carrying the
+  process id and secret from the one it means to interrupt, and gets no reply. Pontus already
+  forwarded each backend's own BackendKeyData to the client rather than inventing one, so the
+  values are real and the backend honours them. The only thing missing was the *routing* —
+  nothing in that packet says which of several servers the process is on.
+
+  `cancelRegistry` remembers process id → backend address for the life of a session. It has
+  to be populated in **two** places, which is what made the first attempt fail: under
+  Pontus-side auth the key is one Pontus writes to the client itself, and under a relayed
+  handshake it only ever passes through `relayAuth` on its way past. Both are covered by
+  tests, because fixing one and assuming the other is exactly the mistake that was made.
+
+  Pontus routes but never authorises: the packet is forwarded byte for byte and the secret is
+  the backend's to check. An unknown process id is dropped silently — answering differently
+  would tell an unauthenticated caller which process ids exist.
+
 - **A14 [FIXED 2026-08-18]. `COPY ... FROM STDIN` hung until `query_timeout`.**
 
   Every other statement is request-then-reply, which is why the proxy forwards a request and

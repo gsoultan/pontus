@@ -53,6 +53,19 @@ func (g *Gateway) openSession(
 		// session loop — has to go through the upgraded connection.
 		if req.Conn != nil {
 			client = req.Conn
+			clientOut = client
+		}
+
+		// A cancel request is not a session. It names a query running on
+		// another connection, gets no reply, and needs no backend of its own —
+		// so it is routed and the connection closed, without ever touching the
+		// pool.
+		if req.Cancel != nil {
+			if cerr := g.routeCancel(req.Cancel); cerr != nil {
+				slog.Warn("Could not deliver a cancel request",
+					"client", remoteAddr, "error", cerr)
+			}
+			return nil, nil, clientOut, errCancelHandled
 		}
 
 		// Authenticate the client before a backend is chosen. An unauthenticated
@@ -143,3 +156,7 @@ func (g *Gateway) openSession(
 
 	return backend, server, clientOut, nil
 }
+
+// errCancelHandled reports that the connection carried a cancel request, which
+// has been routed. Not a failure: the connection is simply finished.
+var errCancelHandled = errors.New("cancel request handled")

@@ -15,6 +15,17 @@ type StartupRequest struct {
 	Database    string
 	Replication string
 
+	// Cancel is set when the client opened this connection to cancel a running
+	// query rather than to start a session.
+	//
+	// Cancellation is out-of-band by design: it arrives on a *new* connection
+	// carrying the process id and secret from the one it means to interrupt,
+	// and gets no reply. A proxy that treats it as a malformed startup — which
+	// this one did, refusing it with "cancel request is not a session startup"
+	// — makes Ctrl+C in psql, a client-side statement timeout, and every
+	// "cancel this report" button do nothing at all.
+	Cancel *CancelKey
+
 	// Conn is the connection to use from here on.
 	//
 	// A client that asked for TLS has been upgraded, and the plaintext socket it

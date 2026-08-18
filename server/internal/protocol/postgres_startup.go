@@ -122,7 +122,7 @@ func authRequest(m *message) (subtype uint32, needsClientReply bool) {
 
 // relayAuth carries the startup exchange between client and server to
 // completion, in both directions, until the server reports ReadyForQuery.
-func relayAuth(client, server net.Conn) error {
+func relayAuth(client, server net.Conn, state *SessionState) error {
 	for {
 		msg, err := readMessage(server)
 		if err != nil {
@@ -134,6 +134,16 @@ func relayAuth(client, server net.Conn) error {
 		}
 
 		switch msg.kind {
+		case 'K': // BackendKeyData
+			// Remember the process id and secret on their way past.
+			//
+			// The client will quote them back on a *separate* connection to
+			// cancel a query, and that packet says nothing about which server
+			// the process is on. Under a relayed handshake this is the only
+			// point at which Pontus sees them at all.
+			if state != nil && len(msg.raw) >= 5 {
+				state.BackendKey = append([]byte(nil), msg.raw[5:]...)
+			}
 		case 'Z': // ReadyForQuery — the startup phase is over.
 			return nil
 		case 'E': // ErrorResponse — the server rejected this client.

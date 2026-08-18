@@ -89,6 +89,7 @@ func (g *Gateway) openAuthenticatedBackend(
 			return fmt.Errorf("%w: connection is authenticated for another identity",
 				ErrWrongIdentity)
 		}
+		rememberBackendKey(state, carrier.Startup())
 		return protocol.CompleteClientStartup(client, carrier.Startup())
 	}
 
@@ -109,6 +110,7 @@ func (g *Gateway) openAuthenticatedBackend(
 
 	// The client is waiting for the parameters, the backend key and the
 	// ReadyForQuery that a relayed handshake would have delivered.
+	rememberBackendKey(state, startup)
 	return protocol.CompleteClientStartup(client, startup)
 }
 
@@ -118,4 +120,16 @@ func (g *Gateway) openAuthenticatedBackend(
 // auth block configured at all.
 func (g *Gateway) SetCredentialStore(store credentials.Store) {
 	g.credentials = store
+}
+
+// rememberBackendKey records the BackendKeyData Pontus is about to hand the
+// client.
+//
+// The client will quote these values back on a *separate* connection when it
+// wants to cancel a query, and that packet says nothing about which server the
+// process is on. Remembering it here is the only chance to learn that.
+func rememberBackendKey(state *protocol.SessionState, startup *protocol.Startup) {
+	if state != nil && startup != nil && len(startup.BackendKey) > 0 {
+		state.BackendKey = startup.BackendKey
+	}
 }

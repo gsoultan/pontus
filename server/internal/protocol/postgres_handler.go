@@ -58,6 +58,13 @@ func (p *PostgresHandler) ReadStartup(client net.Conn, state *SessionState) (*St
 
 	state.User, state.Database, state.Replication = user, database, replication
 
+	// A cancel request is not a session: it names a running query on another
+	// connection and expects no reply. Handed straight back for the caller to
+	// route.
+	if startup.code == cancelRequestCode {
+		return &StartupRequest{Cancel: parseCancelKey(startup.raw), Conn: client}, nil
+	}
+
 	// A replication stream cannot use the pooled path.
 	//
 	// It is a persistent CopyBoth feed, not a sequence of request/response
@@ -93,7 +100,7 @@ func (p *PostgresHandler) CompleteHandshake(ctx context.Context, client, server 
 	// Carry the exchange in both directions until ReadyForQuery. Authentication
 	// methods that take more than one round trip only work because the client's
 	// reply is forwarded back to the server here.
-	return relayAuth(client, server)
+	return relayAuth(client, server, state)
 }
 
 // readClientStartup returns the client's StartupMessage, answering any
@@ -128,7 +135,9 @@ func (p *PostgresHandler) readClientStartup(client net.Conn) (*startupPacket, ne
 				return nil, nil, fmt.Errorf("failed to decline GSSAPI encryption: %w", err)
 			}
 		case cancelRequestCode:
-			return nil, nil, fmt.Errorf("cancel request is not a session startup")
+			// Not a session. The caller routes it to the backend running the
+			// query and closes the connection; there is no reply.
+			return pkt, client, nil
 		default:
 			return pkt, client, nil
 		}
@@ -1248,7 +1257,7 @@ func (p *PostgresHandler) StartReplication(ctx context.Context, client, server n
 	if _, err := server.Write(state.StartupPacket); err != nil {
 		return fmt.Errorf("forward replication startup: %w", err)
 	}
-	return relayAuth(client, server)
+	return relayAuth(client, server, state)
 }
 
 // CreateLogicalReplicationSlot creates a logical slot with the given output

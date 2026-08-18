@@ -68,8 +68,12 @@ type Gateway struct {
 	maxCaptureBytes int
 	// maxMessageBytes bounds a single client message assembled across reads.
 	maxMessageBytes int
-	chain           middleware.Chain
-	runtime         atomic.Pointer[runtimeConfig]
+
+	// cancels maps a backend process id to the server it runs on, so an
+	// out-of-band cancel request can be routed to it.
+	cancels *cancelRegistry
+	chain   middleware.Chain
+	runtime atomic.Pointer[runtimeConfig]
 
 	// streamCtx is cancelled to end every replication stream at once. Guarded
 	// by streamCtxMu because failover replaces it rather than reusing a
@@ -116,6 +120,7 @@ func NewGateway(h protocol.Handler, b balancer2.Balancer, orch FailoverOrchestra
 	g.queryTimeout = 30 * time.Second // Default query timeout
 	g.maxCaptureBytes = defaultMaxCaptureBytes
 	g.maxMessageBytes = defaultMaxMessageBytes
+	g.cancels = newCancelRegistry()
 	g.config = cfg
 	g.monitor = m
 	g.backendTLS = backendTLS
@@ -762,6 +767,11 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 	defer buffer.Put(buf)
 
 	backend, server, client, err := g.openSession(ctx, client, sessionState, remoteAddr)
+	if errors.Is(err, errCancelHandled) {
+		// The connection existed only to carry a cancel request. Nothing to
+		// pool, nothing to reply to.
+		return
+	}
 	if err != nil {
 		// A replication stream is not a failure: it needs the node holding its
 		// slot rather than the balanced one, so it is carried on its own path.
@@ -771,6 +781,14 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		}
 		slog.Error("Handshake error", "client", remoteAddr, "error", err)
 		return
+	}
+
+	// Remember where this session's backend process lives, so a cancel request
+	// arriving later on a different connection can be routed to it. Dropped
+	// when the session ends; the map is bounded by live sessions, not by
+	// anything a client sends.
+	if cancelPID := g.cancels.remember(sessionState.BackendKey, backendAddr(backend)); cancelPID != 0 {
+		defer g.cancels.forget(cancelPID)
 	}
 
 	// The startup exchange completed, so this connection can carry queries and
