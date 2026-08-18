@@ -119,6 +119,35 @@ func NewGateway(h protocol.Handler, b balancer2.Balancer, orch FailoverOrchestra
 }
 
 // withQueryTimeout bounds one statement, unless the bound is disabled.
+// replaySession restores the client's session onto a freshly acquired
+// connection, and refuses to proceed if it cannot.
+//
+// The connection is destroyed rather than returned: a replay that failed
+// part-way leaves it holding some of one session's settings, which is worse
+// for the next borrower than no connection at all.
+func (g *Gateway) replaySession(ctx context.Context, s *middleware.Session) error {
+	err := g.handler.ReplaySessionState(ctx, s.Server, s.State)
+	if err == nil {
+		err = g.handler.ReplayPreparedStatements(ctx, s.Server, s.State)
+	}
+	if err == nil {
+		return nil
+	}
+
+	slog.Error("Could not restore the session on a new backend connection",
+		"client", s.RemoteAddr, "error", err)
+
+	if broken, ok := s.Server.(interface{ MarkBroken() }); ok {
+		broken.MarkBroken()
+	}
+
+	_, _ = s.Client.Write(protocol.ErrorResponse(
+		protocol.SeverityFatal, protocol.SQLStateAdminShutdown,
+		"terminating connection: Pontus could not restore this session on a new backend connection"))
+
+	return err
+}
+
 func (g *Gateway) withQueryTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	if g.queryTimeout <= 0 {
 		return context.WithCancel(ctx)
@@ -377,13 +406,17 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 		})
 	}
 
-	// Replay session state if needed
+	// Rebuild the session on this connection.
+	//
+	// A failure here is fatal to the session, not a warning. Both calls were
+	// logged and stepped over, so the statement then ran on a connection that
+	// had not been configured — with the search_path of whoever used it last,
+	// or, if the SET ROLE was the one that failed, with the privileges of the
+	// pool identity rather than the session's. A session that cannot be
+	// rebuilt has to end, not continue somewhere it was never set up.
 	if s.ShouldReplay {
-		if err := m.handler.ReplaySessionState(ctx, s.Server, s.State); err != nil {
-			slog.Warn("Failed to replay session state", "client", s.RemoteAddr, "error", err)
-		}
-		if err := m.handler.ReplayPreparedStatements(ctx, s.Server, s.State); err != nil {
-			slog.Warn("Failed to replay prepared statements", "client", s.RemoteAddr, "error", err)
+		if err := m.replaySession(ctx, s); err != nil {
+			return err
 		}
 	}
 
