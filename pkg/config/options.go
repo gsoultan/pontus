@@ -43,6 +43,15 @@ type Options struct {
 	// holds its connection until the database finishes, and a pool of them is
 	// how a slow query on one client becomes an outage for the rest.
 	QueryTimeout time.Duration `json:"query_timeout,omitzero" yaml:"query_timeout"`
+
+	// MaxMessageBytes bounds a single client message, in bytes.
+	//
+	// A message larger than one TCP read is assembled before being forwarded,
+	// and the length driving that assembly is a number the client chose — so it
+	// needs a ceiling or a client can make Pontus reserve memory on request.
+	// Unset means 64 MiB, far above any real statement and far below a number
+	// that threatens the process.
+	MaxMessageBytes int `json:"max_message_bytes,omitzero" yaml:"max_message_bytes"`
 	// SlowQueryThreshold is the duration above which a query is logged
 	// individually. Below it, queries are recorded by the tracker and logged
 	// only at debug level: one INFO line per query with its full SQL text is

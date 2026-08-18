@@ -6,6 +6,33 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **C15 [NOW FULLY FIXED 2026-08-18]. Pontus could not execute a statement larger than
+  32 KiB. At all.**
+
+  The earlier note said the remaining half "fails safe". It does not, and the note was
+  wrong — measured, not inspected. The transaction loop read once into a 32 KiB buffer and
+  forwarded whatever arrived as a whole request, so a larger statement reached the backend
+  as a fragment. The backend waited for the rest and sent nothing, and the session sat until
+  `query_timeout` killed it 30 seconds later. Past a few hundred KiB it failed instantly
+  with a closed connection instead.
+
+  Measured through pgx against a live backend: 1 KiB and 30 KiB fine; **64 KiB, 256 KiB and
+  4 MiB all failed**, on both the simple and the extended protocol. That is a bulk INSERT, a
+  generated IN list, a long text parameter — ordinary traffic, not an edge case.
+
+  `Gateway.readRequest` now assembles a whole message however many reads it takes, via an
+  optional `protocol.MessageFramer` (a handler that cannot frame keeps the old behaviour
+  rather than being given a wrong answer). The common case — one or more whole messages in
+  one read — returns the read buffer itself and allocates nothing; there is a test asserting
+  the returned slice *is* the buffer. Assembly is bounded by `max_message_bytes`, default
+  64 MiB, because the length driving the allocation is a number the client chose.
+
+  After the fix the same sizes complete in hundredths of a second.
+
+- **pgjdbc [VERIFIED 2026-08-18].** No longer UNVERIFIED: openjdk 26 + pgjdbc 42.7.4, passing
+  against Pontus-side SCRAM. The driver matrix is now four independent implementations —
+  pgx, libpq, asyncpg, pgjdbc.
+
 - **A13 [FIXED 2026-08-18]. Session replay was reconstructed, unverified and unbounded in
   time — three ways to move a session onto a connection it was not set up on.**
 

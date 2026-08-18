@@ -6,9 +6,12 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -63,6 +66,8 @@ type Gateway struct {
 	queryTimeout   time.Duration
 	// maxCaptureBytes bounds a reply held for the cache or the collapser.
 	maxCaptureBytes int
+	// maxMessageBytes bounds a single client message assembled across reads.
+	maxMessageBytes int
 	chain           middleware.Chain
 	runtime         atomic.Pointer[runtimeConfig]
 
@@ -110,6 +115,7 @@ func NewGateway(h protocol.Handler, b balancer2.Balancer, orch FailoverOrchestra
 	g.inFlight = make(map[string]*inflightCall)
 	g.queryTimeout = 30 * time.Second // Default query timeout
 	g.maxCaptureBytes = defaultMaxCaptureBytes
+	g.maxMessageBytes = defaultMaxMessageBytes
 	g.config = cfg
 	g.monitor = m
 	g.backendTLS = backendTLS
@@ -119,6 +125,75 @@ func NewGateway(h protocol.Handler, b balancer2.Balancer, orch FailoverOrchestra
 }
 
 // withQueryTimeout bounds one statement, unless the bound is disabled.
+// readRequest reads one whole client message, however many TCP reads that takes.
+//
+// A read is not a message. This loop used to forward whatever a single 32 KiB
+// read produced, so a statement larger than the buffer reached the backend as a
+// fragment; the backend waited for the rest, sent nothing, and the session hung
+// until query_timeout killed it. Every statement over 32 KiB failed that way.
+//
+// The common case — a whole message, or several, in one read — returns the read
+// buffer untouched and allocates nothing. Only a message that genuinely spans
+// reads is assembled, and only up to maxMessageBytes: the length driving that
+// allocation is a number the client chose.
+func (g *Gateway) readRequest(client net.Conn, buf []byte) ([]byte, error) {
+	n, err := client.Read(buf)
+	if err != nil || n == 0 {
+		return buf[:n], err
+	}
+
+	framer, ok := g.handler.(protocol.MessageFramer)
+	if !ok {
+		// A protocol that cannot frame keeps the older behaviour rather than
+		// being given a wrong answer about where its messages end.
+		return buf[:n], nil
+	}
+
+	if total, known := framer.MessageLength(buf[:n]); known && total <= n {
+		return buf[:n], nil
+	}
+	return g.readWholeMessage(client, buf[:n], framer)
+}
+
+// readWholeMessage assembles a message that spans reads.
+func (g *Gateway) readWholeMessage(client net.Conn, first []byte, framer protocol.MessageFramer) ([]byte, error) {
+	data := slices.Clone(first)
+
+	for {
+		total, known := framer.MessageLength(data)
+		switch {
+		case !known:
+			// Not even the header has arrived. Read a little more and re-ask.
+			var probe [postgresHeaderProbe]byte
+			n, err := client.Read(probe[:])
+			data = append(data, probe[:n]...)
+			if err != nil {
+				return data, err
+			}
+
+		case total > g.maxMessageBytes:
+			// The length is client-supplied, so it bounds an allocation an
+			// attacker chose. Refuse rather than reserve it.
+			return data, fmt.Errorf("client message of %d bytes exceeds max_message_bytes of %d",
+				total, g.maxMessageBytes)
+
+		case len(data) >= total:
+			return data, nil
+
+		default:
+			rest := make([]byte, total-len(data))
+			if _, err := io.ReadFull(client, rest); err != nil {
+				return data, err
+			}
+			return append(data, rest...), nil
+		}
+	}
+}
+
+// postgresHeaderProbe is how much to read when a message header itself arrived
+// split. Headers are five bytes, so one small read always completes one.
+const postgresHeaderProbe = 8
+
 // replaySession restores the client's session onto a freshly acquired
 // connection, and refuses to proceed if it cannot.
 //
@@ -159,6 +234,10 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	// Nil-checked: Cache is a pointer and an unset `cache:` block leaves it nil.
 	// The bound applies even with the cache disabled, because request
 	// collapsing captures replies too.
+	if cfg.MaxMessageBytes > 0 {
+		g.maxMessageBytes = cfg.MaxMessageBytes
+	}
+
 	if cfg.Cache != nil && cfg.Cache.MaxEntrySize > 0 {
 		g.maxCaptureBytes = cfg.Cache.MaxEntrySize
 	}
@@ -713,16 +792,16 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		// for longer than query_timeout got an already-expired context for its
 		// next statement and failed instantly. An idle connection is not a slow
 		// query, and connection-pooling clients hold them idle by design.
-		n, err := client.Read(buf)
+		data, err := g.readRequest(client, buf)
 		if err != nil {
 			releaseToPool(session.Backend, session.Server)
-			if n > 0 || err != net.ErrClosed {
+			if len(data) > 0 || err != net.ErrClosed {
 				slog.Debug("Client read error or close", "client", remoteAddr, "error", err)
 			}
 			return
 		}
 
-		session.Data = buf[:n]
+		session.Data = data
 
 		// A client saying goodbye must not take the backend connection with it —
 		// but only when Pontus can authenticate the next borrower itself.

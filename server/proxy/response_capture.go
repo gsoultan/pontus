@@ -18,6 +18,15 @@ import (
 // that threatens the process.
 const defaultMaxCaptureBytes = 8 << 20
 
+// defaultMaxMessageBytes bounds a single client message assembled across reads.
+//
+// The length that drives that assembly comes from the client, so without a
+// ceiling a client can claim an enormous message and make Pontus reserve the
+// memory for it. PostgreSQL's own message limit is 1 GB; 64 MiB is far above
+// any real statement — a bulk INSERT of tens of thousands of rows is a few
+// megabytes — and far below a number that threatens the process.
+const defaultMaxMessageBytes = 64 << 20
+
 // errCaptureTooLarge marks a reply that outgrew the capture bound.
 //
 // It is reported to collapsed followers as a failure so they run the query
