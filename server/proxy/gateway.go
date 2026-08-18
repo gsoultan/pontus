@@ -836,7 +836,21 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		// for longer than query_timeout got an already-expired context for its
 		// next statement and failed instantly. An idle connection is not a slow
 		// query, and connection-pooling clients hold them idle by design.
+		// A session that LISTENs is waiting for messages nobody asked for, and
+		// they arrive precisely while it is idle here. Scoped to listeners: no
+		// other session has anything to receive, so no other session pays for
+		// a watcher.
+		var watcher *asyncWatcher
+		if session.Server != nil && sessionState.PinnedBy.Has(protocol.PinListen) {
+			watcher = g.watchAsync(client, session.Server)
+		}
+
 		data, err := g.readRequest(client, buf)
+
+		if watcher != nil {
+			watcher.stop(session.Server)
+		}
+
 		if err != nil {
 			releaseToPool(session.Backend, session.Server)
 			if len(data) > 0 || err != net.ErrClosed {

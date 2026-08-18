@@ -6,6 +6,31 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A16 [FIXED 2026-08-18]. LISTEN/NOTIFY delivered nothing.**
+  A notification is sent when the notifying transaction commits, which is almost always while
+  the listening session is sitting idle — and idle is exactly when a request/reply proxy is
+  blocked reading its *client*, not its backend. The notification sat unread in the socket
+  until that client happened to run another query, which for a listener may be never.
+
+  Pontus already pinned a LISTEN session to its connection (finding C14), so the connection
+  was held — it just was not being watched. `asyncWatcher` reads the backend while the
+  session waits for its next statement, forwarding only the messages a backend may send
+  unprompted ('A', 'N', 'S') and treating anything else as the stream being out of step.
+  Scoped to sessions pinned by LISTEN: no other session has anything to receive.
+
+  **The interruption is the whole difficulty, and the first version deadlocked.** `stop()`
+  set a read deadline on the same socket the watcher was managing deadlines on, and the
+  watcher's own `defer SetReadDeadline(time.Time{})` could clear the deadline `stop()` had
+  just set — after which the watcher blocked forever and `stop()` waited on it forever. It
+  passed every notification test and hung the *whole suite* on unrelated tests, twice, which
+  is what a lock-ordering bug looks like from the outside.
+
+  The watcher now owns every deadline and polls a 50 ms interval to notice the stop flag;
+  `stop()` touches nothing. One owner, no race. It also never abandons a message it has begun
+  — the only safe place to leave is *between* messages, since dropping four bytes of a header
+  leaves the next reader looking at the middle of one. 200 queries interleaved with
+  continuous notifications covers that.
+
 - **A15 [FIXED 2026-08-18]. A running query could not be cancelled.**
   `ReadStartup` refused a CancelRequest outright — *"cancel request is not a session
   startup"* — so Ctrl+C in psql, a client-side statement timeout, and every "cancel this
