@@ -139,6 +139,11 @@ type replyScanner struct {
 	// wantStatus is set when a ReadyForQuery header has been seen but its
 	// status byte has not arrived yet.
 	wantStatus bool
+
+	// sawError records that the backend sent an ErrorResponse. Only meaningful
+	// to callers that act on a failed reply — the proxy forwards the bytes
+	// either way and lets the client decide.
+	sawError bool
 }
 
 // NewReplyScanner builds a scanner for one request's reply.
@@ -149,6 +154,13 @@ type ReplyScanner = replyScanner
 
 // Feed consumes a chunk. See feed.
 func (s *replyScanner) Feed(chunk []byte) (bool, TransactionState) { return s.feed(chunk) }
+
+// SawError reports whether an ErrorResponse appeared in the reply.
+//
+// Observed on the framing pass because it is the only place message boundaries
+// are known — searching the raw bytes for an 'E' finds every byte of row data
+// that happens to be 0x45.
+func (s *replyScanner) SawError() bool { return s.sawError }
 
 func newReplyScanner(end ResponseEnd) *replyScanner {
 	return &replyScanner{end: end, header: make([]byte, 0, 5)}
@@ -193,6 +205,10 @@ func (s *replyScanner) feed(chunk []byte) (done bool, state TransactionState) {
 			return true, state
 		}
 		s.skip = length - 4
+
+		if tag == 'E' {
+			s.sawError = true
+		}
 
 		switch {
 		case tag == 'Z':

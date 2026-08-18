@@ -132,7 +132,7 @@ func TestSessionVarsAreBounded(t *testing.T) {
 	// A variable already tracked must still update at the cap, or the replayed
 	// value goes stale.
 	h.TrackSessionState(state, simpleQuery("SET var0 = 99"))
-	if got := state.Vars["var0"]; got != "= 99" {
+	if got := state.Vars["var0"]; got != "SET var0 = 99" {
 		t.Errorf("var0 = %q after re-SET at the cap; the update was dropped", got)
 	}
 }

@@ -67,7 +67,10 @@ func TestTrackedSetValueIsClean(t *testing.T) {
 	pipelined := append(query("SET application_name = 'reporting'"), query("SELECT 1")...)
 	h.TrackSessionState(state, pipelined)
 
-	if got, want := state.Vars["application_name"], "= 'reporting'"; got != want {
+	// The whole statement is stored, and it must be *just* the statement —
+	// the pipelined SELECT behind it must not have been swept in, because
+	// replay writes these bytes back to a fresh connection verbatim.
+	if got, want := state.Vars["application_name"], "SET application_name = 'reporting'"; got != want {
 		t.Errorf("tracked %q, want %q", got, want)
 	}
 }

@@ -6,6 +6,38 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A13 [FIXED 2026-08-18]. Session replay was reconstructed, unverified and unbounded in
+  time — three ways to move a session onto a connection it was not set up on.**
+
+  *The statement was rebuilt rather than remembered.* `TrackSessionState` stored a key and a
+  value and replay rebuilt `SET <k> <v>`. Every form the split had not anticipated was lost
+  or mangled: `SET search_path=public` (no spaces) recorded nothing, because splitting on
+  whitespace produced one field; `SET SESSION statement_timeout = '5s'` was recorded under
+  the key **"session"**, so any two `SET SESSION` statements collided and the first setting
+  vanished; `SET LOCAL` was recorded as session state although it ends with the transaction.
+  Pontus now stores the statement as sent and writes those bytes back — see `parseSet`, which
+  parses only enough to know which statement supersedes which, and pins the session when it
+  cannot name one.
+
+  *A refusal read as a success.* The replay loop scanned for ReadyForQuery and stepped past
+  an ErrorResponse, so a `SET` the backend rejected was reported as a successful replay. Its
+  message framing also restarted at the top of every read, so a reply split across reads was
+  misparsed. `awaitReply` uses the same `replyScanner` as the proxy path and reports the
+  backend's own message.
+
+  *No deadline anywhere.* Both replay functions took a `ctx` and never used it. A backend
+  that accepted the statement and then went quiet held the session forever.
+
+  *And the caller stepped over all of it.* `gateway.go` logged a replay failure at warn level
+  and ran the statement anyway — on a connection carrying the previous borrower's
+  `search_path`, or, when the failed statement was the `SET ROLE`, with the pool identity's
+  privileges instead of the session's. A session that cannot be rebuilt now ends, with an
+  ErrorResponse saying so, and its connection is destroyed rather than pooled half-configured.
+
+  Also fixed alongside: both replay loops called `buffer.Get()` inside the loop with a
+  deferred `Put`, so every variable and every statement held another pooled buffer until the
+  function returned.
+
 - **A12 [FIXED 2026-08-17, most severe finding in this tree]. The result cache returned
   another row's data.**
 

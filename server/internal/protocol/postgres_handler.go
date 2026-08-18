@@ -436,43 +436,46 @@ func (p *PostgresHandler) TrackSessionState(state *SessionState, data []byte) {
 	state.PinnedBy |= pinReasonFor(query)
 	state.PinnedBy &^= unpinReasonFor(query)
 
-	// 2. Track SET commands
-	if p.hasPrefixFold(query, []byte("SET ")) {
-		if state.Vars == nil {
-			state.Vars = make(map[string]string)
-		}
-
-		// Bound the map. Its keys come from the client, one per SET, and it was
-		// kept for the life of the session and replayed in full on every
-		// backend switch — so a client could grow it until Pontus ran out of
-		// memory, and make every switch slower on the way.
-		//
-		// Refusing to record past the cap would silently lose session state,
-		// which is worse: the session would be replayed onto a new connection
-		// missing settings it had asked for. Instead the session stops being
-		// movable. It keeps its connection and stays correct, and the cost of
-		// the overrun falls on the client that caused it.
-		if len(state.Vars) >= maxSessionVars {
-			if _, known := state.Vars[p.setVarKey(query)]; !known {
-				state.PinnedBy |= PinUntrackedState
-				return
-			}
-		}
-		// Simplified parsing of SET key = value using bytes to avoid allocations
-		trimmed := bytes.TrimSpace(query[4:])
-		parts := bytes.Fields(trimmed)
-		if len(parts) >= 2 {
-			key := strings.ToLower(string(parts[0]))
-			// If it's a multi-part value, join them
-			var val string
-			if len(parts) == 2 {
-				val = string(parts[1])
-			} else {
-				val = string(bytes.Join(parts[1:], []byte(" ")))
-			}
-			state.Vars[key] = val
-		}
+	// 2. Track SET, so the session can be rebuilt on another connection.
+	//
+	// The statement itself is stored, not a key and a value to rebuild it
+	// from. See parseSet: every form the old reconstruction had not
+	// anticipated was either dropped or replayed wrong.
+	name, scope := parseSet(query)
+	switch scope {
+	case scopeNotSet:
+		return
+	case scopeTransaction:
+		// Ends with the transaction, and a session in a transaction is not
+		// released, so a new connection never needs it.
+		return
+	case scopeUnknown:
+		// A SET that cannot be named cannot be replayed faithfully, so the
+		// session stops being movable rather than being moved without it.
+		state.PinnedBy |= PinUntrackedState
+		return
 	}
+
+	if state.Vars == nil {
+		state.Vars = make(map[string]string)
+	}
+
+	// Bound the map. Its keys come from the client, one per SET, and it is
+	// kept for the life of the session and replayed in full on every backend
+	// switch — so a client could grow it until Pontus ran out of memory, and
+	// make every switch slower on the way.
+	//
+	// Refusing to record past the cap would silently lose session state, which
+	// is worse: the session would be replayed onto a new connection missing
+	// settings it had asked for. Instead the session stops being movable. It
+	// keeps its connection and stays correct, and the cost of the overrun
+	// falls on the client that caused it.
+	if _, known := state.Vars[name]; !known && len(state.Vars) >= maxSessionVars {
+		state.PinnedBy |= PinUntrackedState
+		return
+	}
+
+	state.Vars[name] = string(query)
 }
 
 // ReplaySessionState replays tracked SET commands to a new connection.
@@ -481,8 +484,14 @@ func (p *PostgresHandler) ReplaySessionState(ctx context.Context, conn net.Conn,
 		return nil
 	}
 
-	for k, v := range state.Vars {
-		query := fmt.Sprintf("SET %s %s", k, v)
+	// One buffer for the whole replay. This was acquired inside the loop with
+	// a deferred Put, so every variable held another buffer from the pool
+	// until the function returned.
+	buf := buffer.Get()
+	defer buffer.Put(buf)
+
+	for _, query := range state.Vars {
+		// Written back exactly as the client sent it.
 		payload := make([]byte, 1+4+len(query)+1)
 		payload[0] = 'Q'
 		length := 4 + len(query) + 1
@@ -497,27 +506,9 @@ func (p *PostgresHandler) ReplaySessionState(ctx context.Context, conn net.Conn,
 			return err
 		}
 
-		// Read response until ReadyForQuery
-		buf := buffer.Get()
-		defer buffer.Put(buf)
-		for {
-			n, err := conn.Read(buf)
-			if err != nil {
-				return err
-			}
-			for i := 0; i < n; {
-				msgType := buf[i]
-				if msgType == 'Z' {
-					goto nextVar
-				}
-				if i+5 > n {
-					break
-				}
-				msgLen := int(uint32(buf[i+1])<<24 | uint32(buf[i+2])<<16 | uint32(buf[i+3])<<8 | uint32(buf[i+4]))
-				i += 1 + msgLen
-			}
+		if err := awaitReply(ctx, conn, buf, "replaying "+query); err != nil {
+			return err
 		}
-	nextVar:
 	}
 	return nil
 }
@@ -611,6 +602,12 @@ func (p *PostgresHandler) ReplayPreparedStatements(ctx context.Context, conn net
 
 	holder, tracksStatements := conn.(StatementHolder)
 
+	// One buffer for the whole replay. This was acquired inside the loop with
+	// a deferred Put, so every statement held another buffer from the pool
+	// until the function returned.
+	buf := buffer.Get()
+	defer buffer.Put(buf)
+
 	for name, query := range state.Stmts {
 		// Only replay what this particular connection is missing. Re-parsing a
 		// name the server already has fails with 42P05 and poisons the session.
@@ -644,27 +641,9 @@ func (p *PostgresHandler) ReplayPreparedStatements(ctx context.Context, conn net
 			return err
 		}
 
-		// Read response until ReadyForQuery
-		buf := buffer.Get()
-		defer buffer.Put(buf)
-		for {
-			n, err := conn.Read(buf)
-			if err != nil {
-				return err
-			}
-			for i := 0; i < n; {
-				msgType := buf[i]
-				if msgType == 'Z' {
-					goto nextStmt
-				}
-				if i+5 > n {
-					break
-				}
-				msgLen := int(uint32(buf[i+1])<<24 | uint32(buf[i+2])<<16 | uint32(buf[i+3])<<8 | uint32(buf[i+4]))
-				i += 1 + msgLen
-			}
+		if err := awaitReply(ctx, conn, buf, "re-preparing "+name); err != nil {
+			return err
 		}
-	nextStmt:
 		if tracksStatements {
 			holder.AddStatement(name)
 		}
