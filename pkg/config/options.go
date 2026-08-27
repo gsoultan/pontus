@@ -44,6 +44,15 @@ type Options struct {
 	// how a slow query on one client becomes an outage for the rest.
 	QueryTimeout time.Duration `json:"query_timeout,omitzero" yaml:"query_timeout"`
 
+	// PoolWaitTimeout is how long a session waits for a backend connection
+	// when the pool is at its ceiling, before being refused.
+	//
+	// It bounds the queue rather than the query. Too short and a brief burst
+	// is turned into errors a retry would have avoided; too long and a client
+	// waits on a pool that is not going to free up, holding a goroutine and a
+	// client socket while it does. Unset means 5s.
+	PoolWaitTimeout time.Duration `json:"pool_wait_timeout,omitzero" yaml:"pool_wait_timeout"`
+
 	// MaxMessageBytes bounds a single client message, in bytes.
 	//
 	// A message larger than one TCP read is assembled before being forwarded,
@@ -167,6 +176,9 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.SlowQueryThreshold > 0 {
 		c.SlowQueryThreshold = other.SlowQueryThreshold
+	}
+	if other.PoolWaitTimeout > 0 {
+		c.PoolWaitTimeout = other.PoolWaitTimeout
 	}
 	if other.QueryTimeout != 0 {
 		c.QueryTimeout = other.QueryTimeout

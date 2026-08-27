@@ -123,7 +123,7 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 		breaker:     health2.NewCircuitBreaker(5, 30*time.Second),
 		ctx:         ctx,
 		cancel:      cancel,
-		waitTimeout: 5 * time.Second,
+		waitTimeout: configuredWaitTimeout(),
 		monitor:     monitor,
 	}
 
@@ -791,4 +791,34 @@ func (p *Server) Close() error {
 		_ = p.agentConn.Close()
 	}
 	return nil
+}
+
+// DefaultWaitTimeout is how long an acquisition waits for a connection before
+// the pool refuses it. See config.Options.PoolWaitTimeout.
+const DefaultWaitTimeout = 5 * time.Second
+
+// waitTimeoutNanos is the configured queue bound, applied to pools as they are
+// built.
+//
+// A package-level setting rather than a fourteenth constructor parameter, and
+// rather than plumbing through the three places a Server is built — the same
+// shape as SetAutoReattach and balancer.SetMaxReplicaLag, which exist for the
+// same reason. Atomic because a reload can land while a pool is being created.
+var waitTimeoutNanos atomic.Int64
+
+// SetWaitTimeout sets how long an acquisition may queue before the pool
+// refuses it. A non-positive value restores the default.
+func SetWaitTimeout(d time.Duration) {
+	if d <= 0 {
+		d = DefaultWaitTimeout
+	}
+	waitTimeoutNanos.Store(int64(d))
+}
+
+// configuredWaitTimeout reports the current queue bound.
+func configuredWaitTimeout() time.Duration {
+	if n := waitTimeoutNanos.Load(); n > 0 {
+		return time.Duration(n)
+	}
+	return DefaultWaitTimeout
 }

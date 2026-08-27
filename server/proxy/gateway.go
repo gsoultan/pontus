@@ -303,6 +303,10 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	// Whether a replica that lost its WAL receiver is pulled from the read pool,
 	// and how long it must stream cleanly before it is trusted again.
 	pool2.SetAutoReattach(*fo.AutoReattach, fo.AutoReattachInterval)
+	// How long a session may queue for a connection when the pool is at its
+	// ceiling. Applied on reload as well as at startup: an operator riding out
+	// a burst should not have to restart the proxy to widen the queue.
+	pool2.SetWaitTimeout(cfg.PoolWaitTimeout)
 	if cfg.RateLimit != nil && cfg.RateLimit.Enabled {
 		g.limiter = rate.NewLimiter(rate.Limit(cfg.RateLimit.RPS), cfg.RateLimit.Burst)
 		// Per-tenant limiters share the configured rate and live in a bounded,
