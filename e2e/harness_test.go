@@ -75,14 +75,51 @@ type stack struct {
 // freePort asks the kernel for an unused port and immediately releases it.
 // A short race remains between release and bind, which is why startup also
 // waits for the listener rather than assuming it is up.
+// freePort reserves one loopback port and releases it immediately.
+//
+// Fine for a caller that binds it straight away and has only one to take. Use
+// freePorts when a process must bind several: see the note there on why
+// allocating them one at a time can hand back the same port twice.
 func freePort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("allocate port: %v", err)
+	ports, release := freePorts(t, 1)
+	release()
+	return ports[0]
+}
+
+// freePorts reserves n distinct loopback ports and returns them with a release
+// function to be called immediately before the process that will bind them.
+//
+// Every listener is held until *all* the ports have been chosen. Allocating
+// them one at a time and closing each before asking for the next let the kernel
+// hand back a port it had just released, so the proxy and the management server
+// were occasionally told to bind the same one — the proxy took it, the
+// management server could not, and the harness sat in waitListening until it
+// timed out. It looked exactly like a hung suite.
+//
+// The window between release and bind cannot be closed from here; holding the
+// reservation as long as possible is what narrows it.
+func freePorts(t *testing.T, n int) (ports []int, release func()) {
+	t.Helper()
+
+	listeners := make([]net.Listener, 0, n)
+	for range n {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			for _, held := range listeners {
+				_ = held.Close()
+			}
+			t.Fatalf("allocate port: %v", err)
+		}
+		listeners = append(listeners, l)
+		ports = append(ports, l.Addr().(*net.TCPAddr).Port)
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+
+	return ports, func() {
+		for _, l := range listeners {
+			_ = l.Close()
+		}
+	}
 }
 
 // requireBackend skips the whole suite when there is no database to talk to,
@@ -111,8 +148,9 @@ func startStackWith(t *testing.T, adjust func(string) string) *stack {
 	dataDir := t.TempDir()
 	binary := filepath.Join(dataDir, "pontus")
 
-	proxyAddr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
-	mgmtAddr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
+	ports, releasePorts := freePorts(t, 2)
+	proxyAddr := fmt.Sprintf("127.0.0.1:%d", ports[0])
+	mgmtAddr := fmt.Sprintf("127.0.0.1:%d", ports[1])
 
 	build := exec.Command("go", "build", "-o", binary, "./cmd/pontus")
 	build.Dir = root
@@ -128,6 +166,10 @@ func startStackWith(t *testing.T, adjust func(string) string) *stack {
 	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
+
+	// Hand the ports over only now. The build above is the slow step, and
+	// holding the reservation across it costs nothing.
+	releasePorts()
 
 	logs := &logSink{}
 	cmd := exec.Command(binary, "-config", configPath)
