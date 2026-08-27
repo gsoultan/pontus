@@ -580,7 +580,7 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 
 	requestStart := time.Now()
 	state, isReadOnlyErr, rtt, err := m.proxyResponse(ctx, s.Client, s.Server, s.Buffer, capture,
-		s.QueryInfo.ReadOnly, m.handler.ResponseEndFor(s.Data))
+		s.QueryInfo.ReadOnly, m.handler.ResponseEndFor(s.Data), &s.ReplyFailed)
 	if call != nil {
 		call.data = capture.Bytes()
 		call.err = cmp.Or(err, capture.Err())
@@ -1121,7 +1121,7 @@ func (g *Gateway) CacheManager() *cache.Manager {
 	return g.cacheManager
 }
 
-func (g *Gateway) proxyResponse(ctx context.Context, client, server net.Conn, buf []byte, capture *responseCapture, readOnly bool, end protocol.ResponseEnd) (protocol.TransactionState, bool, time.Duration, error) {
+func (g *Gateway) proxyResponse(ctx context.Context, client, server net.Conn, buf []byte, capture *responseCapture, readOnly bool, end protocol.ResponseEnd, failed *bool) (protocol.TransactionState, bool, time.Duration, error) {
 	// query_timeout, made real.
 	//
 	// The deadline was carried on the context and the read loop never consulted
@@ -1138,13 +1138,13 @@ func (g *Gateway) proxyResponse(ctx context.Context, client, server net.Conn, bu
 
 	// Fast Path: a read-only query with nothing to capture can be steered straight through.
 	if readOnly && capture == nil {
-		return g.proxyResponseFastPath(client, server, buf, end)
+		return g.proxyResponseFastPath(client, server, buf, end, failed)
 	}
 
-	return g.proxyResponseWithCapture(client, server, buf, capture, end)
+	return g.proxyResponseWithCapture(client, server, buf, capture, end, failed)
 }
 
-func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte, end protocol.ResponseEnd) (protocol.TransactionState, bool, time.Duration, error) {
+func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte, end protocol.ResponseEnd, failed *bool) (protocol.TransactionState, bool, time.Duration, error) {
 	start := time.Now()
 	firstByte := true
 	var rtt time.Duration
@@ -1178,6 +1178,7 @@ func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte, end
 						return protocol.StateError, false, rtt, perr
 					}
 				}
+				setFailed(failed, scan.SawError())
 				return midSequenceState(state, end), false, rtt, nil
 			}
 		}
@@ -1193,6 +1194,13 @@ func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte, end
 // client still owes a Sync — so reporting Idle here would return the connection
 // to the pool between a Parse and its Bind, and hand the next statement to a
 // backend that never saw the statement being bound.
+// setFailed records whether the backend answered with an ErrorResponse.
+func setFailed(failed *bool, sawError bool) {
+	if failed != nil {
+		*failed = sawError
+	}
+}
+
 func midSequenceState(state protocol.TransactionState, end protocol.ResponseEnd) protocol.TransactionState {
 	if !end.OnReadyForQuery {
 		return protocol.StateInTransaction
@@ -1200,7 +1208,7 @@ func midSequenceState(state protocol.TransactionState, end protocol.ResponseEnd)
 	return state
 }
 
-func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, capture *responseCapture, end protocol.ResponseEnd) (protocol.TransactionState, bool, time.Duration, error) {
+func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, capture *responseCapture, end protocol.ResponseEnd, failed *bool) (protocol.TransactionState, bool, time.Duration, error) {
 	isReadOnlyErr := false
 	var rtt time.Duration
 	start := time.Now()
@@ -1238,6 +1246,7 @@ func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, 
 						return protocol.StateError, isReadOnlyErr, rtt, perr
 					}
 				}
+				setFailed(failed, scan.SawError())
 				return midSequenceState(state, end), isReadOnlyErr, rtt, nil
 			}
 		}

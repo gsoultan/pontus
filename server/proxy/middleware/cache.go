@@ -80,7 +80,17 @@ func (m *Cache) Handle(ctx context.Context, s *Session, next HandlerFunc) error 
 		return err
 	}
 
-	if s.QueryInfo.InTransaction {
+	// Nothing about a statement inside a transaction may be cached, in either
+	// direction.
+	//
+	// Serving one is wrong because a transaction sees its own uncommitted rows,
+	// which no other session may be shown. *Storing* one is wrong for the same
+	// reason, and it was the more visible half: this tested only
+	// QueryInfo.InTransaction, which is read from the statement text, so it
+	// caught `BEGIN` and `COMMIT` and nothing that merely *ran* between them.
+	// The session's actual transaction state is the thing that matters, and it
+	// is right here.
+	if s.QueryInfo.InTransaction || inTransaction(s) {
 		return next(ctx, s)
 	}
 
@@ -103,8 +113,23 @@ func (m *Cache) Handle(ctx context.Context, s *Session, next HandlerFunc) error 
 
 	// Cache miss: prepare to capture response
 	s.ResponseCapture = new(bytes.Buffer)
+	s.ReplyFailed = false
 	err := next(ctx, s)
-	if err == nil && s.ResponseCapture.Len() > 0 {
+
+	// A failure is not a result.
+	//
+	// `err` here is a transport error, so a backend that answered normally with
+	// an ErrorResponse looked like a success and its error was stored — then
+	// replayed to every client asking the same question for the whole TTL. A
+	// deadlock, a serialization failure, a statement timeout or a permission
+	// error is a property of one attempt, not of the query.
+	//
+	// The case that found this was worse than a stale failure. A statement
+	// inside an aborted transaction is refused with 25P02, which says nothing
+	// about the statement and everything about the connection it ran on;
+	// cached, it was handed back to the same session *after* it had rolled
+	// back, so the session could never recover.
+	if err == nil && !s.ReplyFailed && s.ResponseCapture.Len() > 0 {
 		m.manager.Set(key, s.ResponseCapture.Bytes(), m.config.TTL, s.QueryInfo.AffectedTables)
 		observability.QueriesTotal.WithLabelValues("cache", "write", "miss").Inc()
 	}
@@ -221,4 +246,15 @@ func (m *Cache) backgroundRefresh(key string, data []byte, state *protocol.Sessi
 		m.manager.Set(key, capture.Bytes(), m.config.TTL, tables)
 		slog.Debug("Background refresh completed")
 	}
+}
+
+// inTransaction reports whether the session is inside a transaction, or inside
+// one that has aborted.
+//
+// Both are disqualifying. An open transaction may have uncommitted rows only it
+// can see; an aborted one answers everything with 25P02, which describes the
+// connection rather than the query.
+func inTransaction(s *Session) bool {
+	return s.State != nil && s.State.TxState != protocol.StateIdle &&
+		s.State.TxState != protocol.StatePartial
 }

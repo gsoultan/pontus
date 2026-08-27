@@ -6,6 +6,37 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A17 [FIXED 2026-08-18]. The result cache stored failures, and stored statements that ran
+  inside a transaction.**
+
+  Two guards were missing from the same `Set`.
+
+  *A failure is not a result.* The condition was `err == nil`, and `err` there is a
+  **transport** error — a backend that answers normally with an ErrorResponse does not
+  produce one. So the error was captured, forwarded, and stored, then replayed to every
+  client asking the same question for the whole TTL. A deadlock, a serialization failure, a
+  statement timeout or a permission error pinned itself to the query text that provoked it.
+
+  *A transaction sees rows nobody else may see.* The only guard was
+  `QueryInfo.InTransaction`, which is read from the **statement text** — so it caught `BEGIN`
+  and `COMMIT` and nothing that merely *ran* between them. The session's real `TxState` was
+  right there and unused.
+
+  Together they produced a session that could not recover: `SELECT 1` inside an aborted
+  transaction is refused with 25P02, which describes the *connection*, not the query. That
+  25P02 was cached, and handed back to the same session after it had rolled back — so every
+  later statement failed with an error about a transaction that no longer existed. Found by
+  probing transaction-abort recovery, and isolated by running the same sequence directly
+  against PostgreSQL (fine) and through Pontus with the cache off (fine).
+
+  **A note on proving it.** The first regression test — create a table after a query failed
+  against it, then re-run — *passed with the guard removed*, because `CREATE TABLE` names the
+  table and evicts anything keyed to it. It demonstrated invalidation, not the error guard.
+  The guards are proved in `server/proxy/middleware/cache_failure_test.go`, each shown
+  failing with its own guard reverted; the E2E test was reworded to claim only what it shows.
+  Same trap as the A10 regression tests. **Check that a new test fails against the unfixed
+  code before believing it.**
+
 - **A16 [FIXED 2026-08-18]. LISTEN/NOTIFY delivered nothing.**
   A notification is sent when the notifying transaction commits, which is almost always while
   the listening session is sitting idle — and idle is exactly when a request/reply proxy is

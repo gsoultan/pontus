@@ -29,4 +29,11 @@ type Session struct {
 	Data            []byte
 	ShouldReplay    bool
 	ResponseCapture *bytes.Buffer
+
+	// ReplyFailed records that the backend answered with an ErrorResponse.
+	//
+	// Set by the gateway, which frames the reply anyway, rather than rescanned
+	// here: a result set is megabytes and a second pass over it to find one
+	// message type is a pass nobody needs.
+	ReplyFailed bool
 }
