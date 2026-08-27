@@ -95,66 +95,49 @@ UI dev loop: `bun run --cwd web dev`, then `PONTUS_DEV=true go run ./cmd/pontus 
 
 ---
 
-## Known state of the repo (reviewed 2026-08-06)
+## Known state of the repo (reviewed 2026-08-18)
 
-Findings from a full read of the tree. Fix what you touch; do not treat these as
-precedent to copy.
+Findings from a full read of the tree, re-verified. Fix what you touch; do not treat what
+remains as precedent to copy.
 
-**Blocking — the repo does not build from a clean checkout**
+**Still true**
 
-1. `.gitignore:1` ignores `/go.sum`, and `go.sum` is untracked. `go build ./...` fails
-   locally today with `missing go.sum entry` for essentially every dependency, and CI's
-   `go mod download` fails on a fresh clone. Remove `/go.sum` from `.gitignore`, run
-   `go mod tidy`, commit `go.sum`. A `go.sum` in version control is the supply-chain
-   integrity record — it is not build output.
-2. `.github/workflows/ci.yml` runs **Go Test** before **Web Build**. Package `web` embeds
-   `all:dist`, and `web/dist` is gitignored, so `go test ./...` cannot compile. Move the
-   `bun run --cwd web build` step above every Go step.
+1. `.gitignore:1` ignores `/go.sum`, and `go.sum` is untracked, so `go build ./...` on a
+   clean checkout fails with `missing go.sum entry`. **This is deliberate** — the maintainer
+   has decided `go.sum` stays out of version control. Run `go mod download all` after
+   cloning. Do not "fix" it by committing `go.sum`.
 
-**Security**
+2. `NewGateway` starts a resource-sampling goroutine. `Gateway.Stop` ends it, but
+   `g.cancel()` alone does not — a test that builds a gateway must call `Stop`, or it leaks
+   one ticker for the life of the test binary.
 
-3. `server/management/infrastructure/manager/auth.go` — `NewAuth` falls back to the literal
-   secret `"pontus-secret-key"` when `jwt_secret` is unset. Anyone who reads this repo can
-   mint an admin JWT against a default deployment. Fail closed at startup instead.
-4. `server/management/middleware/auth.go` — the interceptor returns `next(ctx, req)`
-   unauthenticated whenever `adminToken == ""`. Combined with (3), the management API,
-   `/metrics`, and every mutating RPC are open by default.
-5. `internal/app/app.go` — auto-creates `admin` / `admin123` when the user table is empty.
-   Generate a random password and log it once, or require `pontus create-user` to bootstrap.
-6. `jwt.Parse` is called with no `jwt.WithValidMethods([]string{"HS256"})`.
-7. `internal/app/app.go` — CORS is `AllowedOrigins: ["*"]` over the mux that serves the
-   ConnectRPC handler and `/metrics`; `Authorization` is also missing from `AllowedHeaders`,
-   so a genuinely cross-origin dashboard can't authenticate anyway.
+**Fixed since the 2026-08-06 review** — recorded so an old note is not mistaken for the
+current state. Each has a regression test unless marked otherwise.
 
-**Correctness & isolation**
-
-8. `server/proxy/middleware/cache.go` keys the result cache on the normalized query text
-   alone, and `gateway.go`'s in-flight collapser keys on `string(s.Data)`. Neither includes
-   the backend, database, user, or session state — so a client can be served another
-   client's rows whenever the two send the same SQL. This is the highest-severity
-   behavioral bug in the tree.
-9. `config.Cache.MaxSize` is parsed but never read, and `cache.Manager.Cleanup()` has no
-   caller. The cache is an unbounded map keyed by client-supplied query text.
-10. `server/proxy/middleware/rate_limit.go` — per-tenant limiters live in a `sync.Map` keyed
-    by `s.State.User`, never evicted, at a hardcoded 100 rps / 200 burst that ignores config.
-11. `server/proxy/gateway.go` — `reconfigure()` writes `chain`, `limiter`, `fwConfig`,
-    `cacheConfig`, `shadowBackends`, and `pauseCond` under `configMu`, but `handleClient`
-    reads `g.chain` (line ~422) and `g.fwConfig` (lines ~555, ~598) with no lock. Hot reload
-    is a data race. Separately, replacing `pauseCond` strands any goroutine already in
-    `pauseCond.Wait()`.
-13. `cache.go` discards the error from `s.Client.Write(cachedResponse)` on the hit path.
-
-**Ops**
-
-14. No `.golangci.yml`, though CI runs `golangci-lint-action`. Only the default linter set
-    is enforced. Add a config that encodes the `.junie/guidelines.md` limits (`funlen`,
-    `cyclop`, `nestif`, `goconst`) and gate new work on changed files.
-15. `EnsureUIBuilt()` shells out to `bun install` + `bun run build` at **server startup**
-    unless `PONTUS_DEV=true` — inverted, and a shipped binary should never build its own UI.
-16. `.goreleaser.yaml` uses `archives.format` / `format_overrides.format`; GoReleaser v2
-    expects `formats`. Confirm with `goreleaser check`.
-
----
+- **CI ordering.** `bun run --cwd web build` now runs before every Go step, so `//go:embed
+  all:dist` has something to embed.
+- **The management API's token secret.** HS256 JWT is gone entirely, replaced by PASETO
+  v4.local (`pkg/auth/token.go`). There is no `alg` header to confuse, so the missing
+  `jwt.WithValidMethods` is moot rather than outstanding, and `NewIssuer` returns `ErrNoKey`
+  rather than falling back to a literal — a startup failure, not a shared secret.
+- **The auth interceptor** returns `Unauthenticated` when authentication is not configured,
+  instead of passing the request through.
+- **Bootstrap credentials.** No `admin`/`admin123`.
+- **CORS.** `allowed_origins` is configuration, `"*"` is refused at startup with the reason,
+  `AllowCredentials` is gated on an origin actually being listed, and `Authorization` is in
+  `AllowedHeaders`.
+- **The result cache** is keyed by the bytes that ran — namespaced by backend, database, user
+  and session state — bounded by `max_size` with a janitor, bounded per entry by
+  `max_entry_size`, never stores a reply that failed or one that ran inside a transaction,
+  and no longer discards the error from its write to the client.
+- **Rate limiting.** Per-tenant limiters live in a bounded, self-evicting map and use the
+  configured rate; a statement is never charged more than the limiter's burst can grant.
+- **Hot reload.** Runtime configuration is swapped through an `atomic.Pointer`, and
+  `pauseCond` is built once so a waiter cannot be stranded on a replaced condition.
+- **`.golangci.yml`** exists and CI gates new work on changed files.
+- **The server no longer builds its own UI at startup.** It never could have served the
+  result — the dashboard comes from a compile-time embed.
+- **`.goreleaser.yaml`** passes `goreleaser check`.
 
 ## Replication, failover and the agent — config surface
 

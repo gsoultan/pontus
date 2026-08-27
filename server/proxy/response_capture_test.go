@@ -88,7 +88,9 @@ func TestGatewayBuildsFromAnEmptyConfig(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			g := NewGateway(&mockHandler{}, &mockBalancer{}, nil, cfg, nil)
-			defer g.cancel()
+			// Stop, not cancel: cancel leaves the resource monitor's ticker
+			// running for the life of the test binary.
+			defer func() { _ = g.Stop(t.Context()) }()
 
 			if g.maxCaptureBytes <= 0 {
 				t.Errorf("capture bound is %d; an unbounded capture buffers whole "+
@@ -102,7 +104,7 @@ func TestGatewayBuildsFromAnEmptyConfig(t *testing.T) {
 func TestConfiguredCaptureBoundIsApplied(t *testing.T) {
 	g := NewGateway(&mockHandler{}, &mockBalancer{}, nil,
 		&config.Options{Cache: &config.Cache{MaxEntrySize: 4096}}, nil)
-	defer g.cancel()
+	defer func() { _ = g.Stop(t.Context()) }()
 
 	if g.maxCaptureBytes != 4096 {
 		t.Errorf("capture bound = %d, want the configured 4096", g.maxCaptureBytes)
