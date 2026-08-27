@@ -6,6 +6,33 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **D5 [FIXED 2026-08-18]. The server built its own UI at startup, and could never have
+  served the result.**
+
+  `EnsureUIBuilt()` shelled out to `bun install` and `bun run build` on every start unless
+  `PONTUS_DEV=true`. `web/ui.go` serves the dashboard from `//go:embed all:dist`, which is
+  fixed at **compile** time — so the files that build wrote to disk were read by nothing. It
+  was not merely misplaced work, it was work that could not have had an effect.
+
+  On a real deployment it also cannot succeed: a released binary has no `web/` source tree,
+  no bun and no reason to have network access, so it logged
+  `Warning: UI build failed or skipped` on every start — teaching operators to ignore
+  warnings on a database proxy.
+
+  The cost was being paid in full by the E2E harness, which runs the binary with its working
+  directory at the repo root, where `web/` *does* exist. Every one of the 73 tests ran a
+  bun install and a bun build before its proxy could listen. Removing it took the same three
+  tests from 19.6s to 8.7s and the whole suite from **497s to 293s**.
+
+  It is also the better explanation for the `waitListening` timeouts that kept making the
+  suite look hung: a bun build competing with a `go test -race ./...` on the same machine can
+  exceed the 30s startup budget. The port-collision fix in the same area was real but was
+  probably the smaller half.
+
+  Nothing is lost by removing it. `//go:embed all:dist` fails the build outright when
+  `web/dist` is missing, so the prerequisite is already enforced where it belongs — at
+  compile time, by the compiler, rather than at run time, by a warning.
+
 - **A17 [FIXED 2026-08-18]. The result cache stored failures, and stored statements that ran
   inside a transaction.**
 

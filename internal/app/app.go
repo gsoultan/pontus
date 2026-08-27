@@ -51,13 +51,6 @@ func NewApp(cfg *config.Options) *App {
 
 // Run starts the Pontus application and blocks until the context is canceled.
 func (a *App) Run(ctx context.Context) error {
-	// Ensure UI is built if not in dev mode
-	if os.Getenv("PONTUS_DEV") != "true" {
-		if err := management.EnsureUIBuilt(); err != nil {
-			log.Printf("Warning: UI build failed or skipped: %v", err)
-		}
-	}
-
 	var err error
 	a.backendTLS, _ = proxy.CreateTLSConfig(a.cfg.BackendTLS)
 
