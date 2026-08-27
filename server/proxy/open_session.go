@@ -106,7 +106,24 @@ func (g *Gateway) openSession(
 			return nil, nil, clientOut, err
 		}
 
+		// Two of these three branches perform the startup exchange by writing
+		// the client's own packet to the backend. Only the first can use a
+		// connection that has already completed one.
+		relaysStartupPacket := !(identityFirst && g.credentials != nil && req != nil)
+
 		switch {
+		case relaysStartupPacket && alreadyStarted(server):
+			// A StartupMessage has no type byte — it opens with a four-byte
+			// length. Sent down a connection that is past its startup, the
+			// backend reads that length's first byte as a message type and
+			// answers `invalid frontend message type 0`, which kills the
+			// connection and takes the client's session with it.
+			//
+			// The pool has no notion of "fresh", so under concurrent connects
+			// a handshake could draw a connection some finished session had
+			// released. Sequentially it never did, which is why every existing
+			// test passed: it takes two sessions arriving at once.
+			err = errNeedsFreshConnection
 		case identityFirst && g.credentials != nil && req != nil:
 			// Pontus authenticated the client itself, so the backend gets its own
 			// exchange rather than a forwarded packet.
@@ -120,7 +137,7 @@ func (g *Gateway) openSession(
 			break
 		}
 
-		if errors.Is(err, ErrWrongIdentity) {
+		if errors.Is(err, ErrWrongIdentity) || errors.Is(err, errNeedsFreshConnection) {
 			// Destroy it rather than release it: returning another user's
 			// connection to the idle set is how the next attempt draws the same
 			// one and the loop makes no progress.
@@ -160,3 +177,19 @@ func (g *Gateway) openSession(
 // errCancelHandled reports that the connection carried a cancel request, which
 // has been routed. Not a failure: the connection is simply finished.
 var errCancelHandled = errors.New("cancel request handled")
+
+// errNeedsFreshConnection reports that a connection cannot carry a startup
+// exchange because it has already carried one.
+//
+// Retried like an identity mismatch: the connection goes back destroyed rather
+// than idle, so the next attempt cannot draw the same one, and the loop makes
+// progress.
+var errNeedsFreshConnection = errors.New("connection has already completed a startup exchange")
+
+// alreadyStarted reports whether a pooled connection has completed a startup
+// exchange. A connection that cannot say is assumed fresh, which is what a
+// plain net.Conn from a test double is.
+func alreadyStarted(server net.Conn) bool {
+	carrier, ok := server.(interface{ Ready() bool })
+	return ok && carrier.Ready()
+}

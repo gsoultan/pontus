@@ -6,6 +6,38 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A18 [FIXED 2026-08-28]. Roughly a quarter of *concurrent* connections were corrupted on
+  the wire.**
+
+  A StartupMessage has no type byte — it opens with a four-byte length. Written down a
+  connection that has already completed its startup, the backend reads that length's first
+  byte as a message type and answers `invalid frontend message type 0` (08P01), which kills
+  the connection and the client's session with it. Measured: **8/32 with a roomy pool, 10/32
+  with a small one.**
+
+  The pool has no notion of a *fresh* connection. `AcquireFor` returns whatever is available,
+  and under passthrough the client's own packet is what performs the handshake — so a
+  handshake could draw a connection that a finished session had released. `client_auth.go`
+  checks `Ready()`, but only on the Pontus-auth path; the two branches that *relay* a startup
+  packet checked nothing.
+
+  Sequentially it never happened, which is why every existing test passed: connecting is the
+  one thing every client does and the one thing nothing did concurrently. Found while probing
+  pool exhaustion — the exhaustion behaviour turned out to be fine.
+
+  The guard reuses the identity-mismatch retry: the connection goes back **destroyed** rather
+  than idle, so the next attempt cannot draw the same one and the loop makes progress.
+
+  Ruled out along the way, and worth recording so nobody re-runs them: it is not a memory
+  race (a `-race` build of the proxy reports nothing) and not the buffer pool (`pkg/buffer`
+  refuses a resized buffer).
+
+- **Pool pressure [MEASURED 2026-08-28, no defect].** With `max_conns: 2` and clients queuing,
+  a third session waits ~6s and gets through; 20 concurrent clients against a ceiling of 3
+  all succeed; clients that give up while waiting do not leak their slots. `waitTimeout` is
+  5s and hardcoded — it has no config path, which is the one thing here that does not meet
+  the "every tunable has a config path" rule.
+
 - **D5 [FIXED 2026-08-18]. The server built its own UI at startup, and could never have
   served the result.**
 
