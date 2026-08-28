@@ -1,6 +1,6 @@
 # Pontus
 
-Pontus is a high-performance, cloud-native database connection pooler and load balancer written in Go 1.26. It is designed to scale database workloads by managing connection pools efficiently, providing advanced observability, and ensuring high availability.
+Pontus is a high-performance, cloud-native database connection pooler and load balancer written in Go 1.27. It is designed to scale database workloads by managing connection pools efficiently, providing advanced observability, and ensuring high availability.
 
 ## Features
 - **Multi-Protocol Support**: PostgreSQL and MySQL/MariaDB with robust SQL parsing.
@@ -36,7 +36,7 @@ Pontus consists of three main components:
 The Pontus Server can be installed as a standalone binary or as a system service.
 
 #### Prerequisites
-- **Go 1.26+**
+- **Go 1.27+**
 - **Bun** (required for building the Web Dashboard)
 
 #### Building from Source

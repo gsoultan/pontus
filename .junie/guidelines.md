@@ -13,7 +13,7 @@ All the code generated must follow all the points of these guidelines.
 - No nested if
 - Avoid unnecessary IF-THEN statements in loops, you can use strategy pattern, pre filtering, etc.
 - Must be Object Oriented
-- Must use Modern Go 1.26 syntax
+- Must use Modern Go 1.27 syntax
 - **Avoid stuttering** — filenames must not have a suffix that matches their parent folder name (e.g., use `backend.go` instead of `backend_service.go` in a `service/` folder). Similarly, symbol names (structs, interfaces) must not repeat the package name (e.g., use `service.Backend` instead of `service.BackendService`).
 - **Reliability** — ensure no error, no panic, and no unexpected behavior in production. Avoid panic code and ensure error handling is robust (no raw error codes).
 - **Security** — ensure no exploit code, no vulnerable code, and no zero-day vulnerabilities code follow secure coding practices.
@@ -26,7 +26,7 @@ All the code generated must follow all the points of these guidelines.
 
 ## Performance & Lightweight
 - **No memory leaks** — always `Close()` connections and response bodies; `Cancel()` contexts when done; avoid goroutine leaks by using bounded workers or select-with-context; prioritize **low memory code**.
-- **Modern Idioms (Go 1.26)** — use `new(val)`, `for i := range n`, `strings.SplitSeq`, iterators (`maps.Keys/Values`, `slices.Collect/Sorted`), `slices` package helpers, `errors.Is/AsType/Join`, `wg.Go(fn)`, `t.Context()`, `b.Loop()`, and `omitzero` JSON tags
+- **Modern Idioms (Go 1.27 baseline)** — use `new(val)`, `for i := range n`, `strings.SplitSeq`, iterators (`maps.Keys/Values`, `slices.Collect/Sorted`), `slices` package helpers, `errors.Is/AsType/Join`, `wg.Go(fn)`, `t.Context()`, `b.Loop()`, and `omitzero` JSON tags
 - **High performance** — avoid allocations in hot paths; reuse buffers; prefer `sync.Pool` for frequently allocated objects; use `strings.Builder` for string concatenation; profile before optimizing
 - **Lightweight** — keep dependencies minimal; prefer stdlib; avoid heavy reflection or codegen where simple code suffices
 - **Protobuf Integration** — follow the [Protobuf Best Practices](proto-guidelines.mdc) for all `.proto` files and generated code. Must use `buf` to generate protobuf.

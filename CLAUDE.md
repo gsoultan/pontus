@@ -2,7 +2,7 @@
 
 @AGENTS.md
 
-Pontus is a **database connection pooler, proxy and load balancer** (Go 1.26 + React 19,
+Pontus is a **database connection pooler, proxy and load balancer** (Go 1.27 + React 19,
 one binary). The full profile panel, per-surface vetoes, known findings and definition of
 done live in `AGENTS.md`. Code style rules live in `.junie/guidelines.md`.
 
@@ -95,7 +95,7 @@ Plus the profile-specific **Proof** column in `AGENTS.md` for the surface you to
 - Name **Driver** and **Challenger** profiles in every non-trivial task summary
   (`Driver: cache · Challenger: sec`) — roster in `AGENTS.md`.
 - Follow `.junie/guidelines.md` for Go and React style: one struct per file, one interface
-  per file (≤7 methods), no stuttering names, no nested `if`, Go 1.26 idioms
+  per file (≤7 methods), no stuttering names, no nested `if`, Go 1.27 idioms
   (`new(val)`, `for i := range n`, iterators, `wg.Go`, `omitzero`), functional React
   components with one hook per file.
 - `buf generate` is the only way generated code changes. Never hand-edit `*.pb.go`,

@@ -1,6 +1,6 @@
 # Pontus — Agent Guidelines
 
-Pontus is a **database connection pooler and load balancer** (Go 1.26) that sits on the
+Pontus is a **database connection pooler and load balancer** (Go 1.27) that sits on the
 wire between untrusted SQL clients and production databases. Every byte on the data path
 came from a client you do not trust, and every connection you hand out is a connection a
 real workload is blocked on. That is the whole design constraint.
