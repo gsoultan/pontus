@@ -6,6 +6,32 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A19 [FIXED 2026-08-30]. A paused writer slept through the failover it was waiting for.**
+
+  `waitWhilePaused` parks writes on a `sync.Cond` while a failover resolves. Both resolve
+  paths did `inFailover.Store(false)` then `pauseCond.Broadcast()` **without holding
+  `failoverMu`**, and the context-cancellation goroutine broadcast without it too.
+
+  `sync.Cond` only guarantees delivery when the predicate change and the broadcast happen
+  under the lock the waiter holds. A waiter holds the *read* lock from the moment it decides
+  to pause until `Wait()` releases it; a broadcast landing in that window is dropped, because
+  `Wait` registers on the notify list *after* `Broadcast` has already walked it. The waiter
+  then sleeps until some later broadcast — and once a failover has resolved there is no later
+  broadcast, so it waits out its own `query_timeout` instead. **Thirty seconds by default, on
+  every write in flight when the primary was promoted, counted from after the new primary was
+  already serving.**
+
+  Both broadcasts now happen under the write lock (`resolveFailover`, `wakePaused`). Acquiring
+  it is the proof that no waiter is inside the window.
+
+  **Measured, not argued.** Racing the window from outside does not reproduce it — 16 000
+  attempts with a swept `runtime.Gosched` delay found nothing, because the window is a few
+  instructions wide. The test steps into it through a `beforeWait` seam (nil outside tests)
+  and starts a real resolver on its own goroutine, because a resolver called inline would
+  deadlock against the read lock the waiter is holding. Before: the writer resumes **3.001s**
+  after the failover resolved. After: **0.10s**. Reverting only the `Lock`/`Unlock` in
+  `resolveFailover` puts it back to 3.001s.
+
 - **A18 [FIXED 2026-08-28]. Roughly a quarter of *concurrent* connections were corrupted on
   the wire.**
 

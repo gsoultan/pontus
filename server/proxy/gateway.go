@@ -1026,7 +1026,7 @@ func (g *Gateway) waitWhilePaused(ctx context.Context) error {
 	go func() {
 		select {
 		case <-ctx.Done():
-			g.pauseCond.Broadcast()
+			g.wakePaused()
 		case <-done:
 		}
 	}()
@@ -1038,9 +1038,52 @@ func (g *Gateway) waitWhilePaused(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		// A seam into the gap between deciding to wait and waiting.
+		//
+		// That gap is a few instructions wide and cannot be hit reliably from
+		// outside, so without it a lost wakeup here is arguable but not
+		// demonstrable — and this loop is exactly where a client hangs for the
+		// life of its connection if it is wrong. nil outside tests.
+		if beforeWait != nil {
+			beforeWait()
+		}
 		g.pauseCond.Wait()
 	}
 	return nil
+}
+
+// beforeWait runs between the pause predicate and the wait, for tests that need
+// to land inside that window. Never set outside a test.
+var beforeWait func()
+
+// wakePaused wakes every writer parked in waitWhilePaused.
+//
+// Taking the write lock is the whole point. A waiter holds the read lock from
+// the moment it decides to pause until Wait() releases it, so acquiring the
+// write lock here proves no waiter is inside that window. Broadcasting without
+// it drops the wakeup for any waiter that is: Wait registers on the condition's
+// notify list *after* Broadcast has already walked it, so that waiter sleeps
+// through the signal meant for it.
+func (g *Gateway) wakePaused() {
+	g.failoverMu.Lock()
+	defer g.failoverMu.Unlock()
+	g.pauseCond.Broadcast()
+}
+
+// resolveFailover ends the pause and releases every writer waiting on it.
+//
+// The state change and the broadcast go together under the write lock, which is
+// what makes "the failover is over" and "wake up and notice" indivisible. Done
+// separately, a writer that had just decided to pause slept through the
+// broadcast — and once a failover has resolved there is no later broadcast, so
+// it waited out its own query_timeout instead. That is a thirty second stall,
+// by default, on every write that was in flight when the primary was promoted,
+// counted from *after* the new primary was already serving.
+func (g *Gateway) resolveFailover() {
+	g.failoverMu.Lock()
+	defer g.failoverMu.Unlock()
+	g.inFailover.Store(false)
+	g.pauseCond.Broadcast()
 }
 
 func (g *Gateway) triggerFailover() {
@@ -1073,14 +1116,12 @@ func (g *Gateway) triggerFailover() {
 						balancer2.Hint{ReadOnly: false, CallerZone: g.current().localZone})
 					if err == nil && backend.IsHealthy() && backend.Role() == pool2.RolePrimary {
 						slog.Info("New primary detected, resolving failover", "address", backend.Address())
-						g.inFailover.Store(false)
-						g.pauseCond.Broadcast()
+						g.resolveFailover()
 						return
 					}
 				case <-timeout:
 					slog.Error("Failover wait timed out")
-					g.inFailover.Store(false)
-					g.pauseCond.Broadcast()
+					g.resolveFailover()
 					return
 				}
 			}
