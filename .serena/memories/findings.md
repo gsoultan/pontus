@@ -6,6 +6,38 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A20 [OPEN, availability]. No new session can be opened while the primary is down —
+  including a read-only one.**
+
+  Measured with `PONTUS_E2E_DISRUPTIVE=1` against a real primary+replica pair, primary
+  stopped:
+
+  | | with the primary down |
+  | :--- | :--- |
+  | a session established **before** the outage | reads keep working, served by the replica |
+  | a **new** session | cannot connect at all — fails after ~60s |
+  | a write on an established session | refused after 30s, `57014`, and resumes on its own when the primary returns |
+
+  The cause is that a session's *handshake* connection is acquired with a **write** hint,
+  because nothing is known about a session before it has spoken, and a write-hinted
+  acquisition waits on the failover pause. With no primary there is nothing to give it.
+
+  So a warm connection pool keeps reading through a primary outage, but anything that
+  reconnects or scales up is dead — which turns a primary outage into a total outage for a
+  read-heavy deployment that keeps replicas precisely to avoid one.
+
+  **Not fixed here: it is a product decision, not a defect to patch quietly.** Letting the
+  handshake fall back to a replica would admit read-only sessions during an outage, but under
+  passthrough a session is pinned to the connection that carried its handshake — so such a
+  session could never write, even after the primary returned. `e2e/primary_loss_test.go`
+  pins the behaviour as it is, so a change in either direction is deliberate and visible.
+  What it does assert unconditionally is the *bound*: failing is a decision, hanging is not.
+
+- **Automatic promotion is still unmeasured end to end.** `PromoteToPrimary` runs `pg_ctl
+  promote` through the agent sidecar on the database host, and the E2E containers are plain
+  postgres images with no agent in them. Covering it needs the agent built into the test
+  image — the largest remaining gap in `ha`.
+
 - **A19 [FIXED 2026-08-30]. A paused writer slept through the failover it was waiting for.**
 
   `waitWhilePaused` parks writes on a `sync.Cond` while a failover resolves. Both resolve
