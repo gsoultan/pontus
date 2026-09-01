@@ -41,8 +41,11 @@ func (p *postgresProvisioner) ProvisionReplica(ctx context.Context, req *endpoin
 	}
 
 	// 2. Connect to Primary Agent
+	// Two different addresses, deliberately: the agent to ask, and the database
+	// host for pg_basebackup to stream from. They are usually the same machine
+	// and never the same port.
 	sourceHost := p.getHost(req.SourceAddress)
-	sourceAgentAddr := fmt.Sprintf("%s:9091", sourceHost)
+	sourceAgentAddr := agentAddressFor(primary, sourceHost)
 	sourceAgent, err := NewAgentClient(sourceAgentAddr, req.SourceAgentToken)
 	if err != nil {
 		return fmt.Errorf("failed to connect to source agent: %w", err)
@@ -62,7 +65,11 @@ func (p *postgresProvisioner) ProvisionReplica(ctx context.Context, req *endpoin
 
 	// 5. Connect to Target Agent
 	targetHost := p.getHost(req.TargetAddress)
-	targetAgentAddr := fmt.Sprintf("%s:9091", targetHost)
+	// The target is not a backend yet — it is the node being turned into one —
+	// so there is no configured address to read. The agent's own default is the
+	// only sensible guess, and a freshly provisioned host is where that guess
+	// is most likely to be right.
+	targetAgentAddr := net.JoinHostPort(targetHost, defaultAgentPort)
 	targetAgent, err := NewAgentClient(targetAgentAddr, req.TargetAgentToken)
 	if err != nil {
 		return fmt.Errorf("failed to connect to target agent: %w", err)
@@ -121,8 +128,7 @@ func (p *postgresProvisioner) PromoteToPrimary(ctx context.Context, backendAddr 
 		return fmt.Errorf("backend %s not found", backendAddr)
 	}
 
-	host := p.getHost(backendAddr)
-	agentAddr := fmt.Sprintf("%s:9091", host)
+	agentAddr := agentAddressFor(target, p.getHost(backendAddr))
 	agent, err := NewAgentClient(agentAddr, target.AgentToken())
 	if err != nil {
 		return fmt.Errorf("failed to connect to agent at %s: %w", agentAddr, err)
@@ -193,8 +199,7 @@ func (p *postgresProvisioner) DemoteToReplica(ctx context.Context, backendAddr s
 		return fmt.Errorf("backend %s not found", backendAddr)
 	}
 
-	host := p.getHost(backendAddr)
-	agentAddr := fmt.Sprintf("%s:9091", host)
+	agentAddr := agentAddressFor(target, p.getHost(backendAddr))
 	agent, err := NewAgentClient(agentAddr, target.AgentToken())
 	if err != nil {
 		return fmt.Errorf("failed to connect to agent at %s: %w", agentAddr, err)
@@ -245,4 +250,28 @@ func (p *postgresProvisioner) createReplicationSlot(ctx context.Context, b pool.
 		return ph.CreateReplicationSlot(ctx, conn, slotName)
 	}
 	return fmt.Errorf("unsupported handler type for replication slot")
+}
+
+// defaultAgentPort is where an agent listens when a backend has not said
+// otherwise. It is the agent's own default, so it is the right guess for a node
+// being provisioned — one that is not a backend yet has nothing to be asked.
+const defaultAgentPort = "9091"
+
+// agentAddressFor returns where to reach a backend's agent.
+//
+// Every one of these call sites used to build `<database host>:9091` and ignore
+// the configured address entirely, while taking the *token* from the very same
+// backend. So `agent_addr` was mandatory, validated at startup, honoured by the
+// pool's own health and lag checks — and silently dropped by promotion,
+// demotion and provisioning. Point an agent anywhere but the database host's
+// default port and health checks kept working while failover could not promote
+// anything, which is the worst possible time to discover a setting was not
+// being read.
+func agentAddressFor(b pool.Backend, fallbackHost string) string {
+	if b != nil {
+		if addr := b.AgentAddr(); addr != "" {
+			return addr
+		}
+	}
+	return net.JoinHostPort(fallbackHost, defaultAgentPort)
 }

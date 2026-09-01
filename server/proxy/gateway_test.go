@@ -144,6 +144,7 @@ func (m *mockBackend) SetHealthy(bool)                         {}
 func (m *mockBackend) ReportResult(error)                      {}
 func (m *mockBackend) AgentClient() service.AgentServiceClient { return nil }
 func (m *mockBackend) AgentToken() string                      { return "" }
+func (m *mockBackend) AgentAddr() string                       { return "" }
 func (m *mockBackend) Close() error                            { return nil }
 func (m *mockBackend) InstalledVersion() string                { return "" }
 func (m *mockBackend) RecommendedVersion() string              { return "" }

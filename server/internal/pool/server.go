@@ -269,6 +269,11 @@ func (p *Server) AgentClient() service.AgentServiceClient {
 	return p.agentClient
 }
 
+// AgentAddr returns the configured address of this backend's agent.
+func (p *Server) AgentAddr() string {
+	return p.agentAddr
+}
+
 func (p *Server) AgentToken() string {
 	return p.agentToken
 }

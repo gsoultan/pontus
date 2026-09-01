@@ -73,6 +73,7 @@ func (m *mockIntegrationBackend) SetHealthy(h bool)                       { m.he
 func (m *mockIntegrationBackend) ReportResult(error)                      {}
 func (m *mockIntegrationBackend) AgentClient() service.AgentServiceClient { return nil }
 func (m *mockIntegrationBackend) AgentToken() string                      { return "" }
+func (m *mockIntegrationBackend) AgentAddr() string                       { return "" }
 func (m *mockIntegrationBackend) Close() error                            { return nil }
 func (m *mockIntegrationBackend) InstalledVersion() string                { return "" }
 func (m *mockIntegrationBackend) RecommendedVersion() string              { return "" }

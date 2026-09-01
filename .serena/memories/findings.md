@@ -6,6 +6,30 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A21 [FIXED 2026-09-01]. `agent_addr` was mandatory, validated, and ignored by every
+  failover action.**
+
+  Five call sites in `postgres_provisioner.go` built the agent address as
+  `fmt.Sprintf("%s:9091", <database host>)` — while reading the *token* from the very same
+  backend. So the setting was required at startup (`NewServer` refuses an empty one) and
+  honoured by the pool's own health and lag checks, and silently dropped by promotion,
+  demotion and replica provisioning.
+
+  Run the agent anywhere but the database host's port 9091 — a container publishing it
+  elsewhere, a host with two clusters on it — and health checks kept working while failover
+  **could not promote anything**. Discovered at the worst possible moment, by definition.
+
+  Exactly the defect class `pkg/config`'s wiring test exists for, and one it cannot catch:
+  `agent_addr` *is* referenced, just not where it matters. The interface had `AgentToken()`
+  and no `AgentAddr()`, which is what made the omission easy to write.
+
+  Second bug on the same line: `fmt.Sprintf("%s:9091", host)` produces `::1:9091` for an
+  IPv6 host, which is not an address. `net.JoinHostPort` gives `[::1]:9091`. Covered.
+
+  The one place still defaulting is the node *being provisioned* — it is not a backend yet,
+  so there is nothing configured to read, and the agent's own default is the only guess
+  available. Documented at the site.
+
 - **A20 [OPEN, availability]. No new session can be opened while the primary is down —
   including a read-only one.**
 

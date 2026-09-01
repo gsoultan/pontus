@@ -121,6 +121,13 @@ type Backend interface {
 	// AgentToken returns the authentication token for the backend's agent.
 	AgentToken() string
 
+	// AgentAddr returns the address of the agent managing this backend's host.
+	//
+	// Configured per backend and mandatory, because an agent is not always on
+	// the database host's default port — a container publishes it somewhere
+	// else, and a host running two clusters cannot give both the same one.
+	AgentAddr() string
+
 	// Close shuts down the backend and closes all connections.
 	Close() error
 }
