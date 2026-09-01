@@ -6,6 +6,44 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A22 [FIXED 2026-09-01]. Automatic promotion could never have worked.**
+
+  `PromoteToPrimary` ran `pg_ctl promote` through the agent. The agent runs as **root** —
+  it installs packages and manages services — and `pg_ctl` refuses to run as root:
+
+      pg_ctl: cannot be run as root
+      Please log in (using, e.g., "su") as the (unprivileged) user that will
+      own the server process.
+
+  So the headline HA feature failed on every deployment, and reported
+  `promotion failed with exit code 1:` — a number and an empty string — because the code
+  interpolated `msg.Stderr` and pg_ctl had written none. Fixing the *message* is what
+  revealed the cause, within one run.
+
+  Promotion is now `SELECT pg_promote(true, 60)` over `Backend.Admin()`, the channel Pontus
+  authenticates for itself and already uses for health probes. It needs neither root nor the
+  data directory. The agent path is kept as a fallback and now reports the command, the data
+  directory, the address and the exit code.
+
+  Two more defects surfaced on the way and are fixed with it:
+
+  - The data directory was found by walking a fixed list of candidate paths for a
+    `PG_VERSION` file. That finds a default install and misses a cluster on a mounted volume,
+    a second cluster on one host, or anything a packager moved. It is now read from the
+    server (`SHOW data_directory`), which has always known.
+  - The first attempt at SQL promotion used `b.Acquire()` and got `EOF`: a pooled connection
+    carries a client's credentials under passthrough, or has never completed a startup
+    exchange at all. `Admin()` is the right channel and the one health checks already use.
+
+  **Proved end to end**, not argued: `e2e/promotion_test.go` stops a real primary and asserts
+  the replica leaves recovery *and* that writes then reach it through the proxy. 14s.
+  Before the fix the same test failed for 155s with the root error in the log.
+
+  It needs a cluster it may destroy — promotion is one way — so it runs against a disposable
+  pair with agents inside the containers, built by `scripts/e2e-cluster.sh` with
+  `AGENT_BINARY`/`AGENT_TOKEN`/`*_AGENT_PORT` set. It refuses to run against the shared pair
+  even if the variables are pointed at it by mistake.
+
 - **A21 [FIXED 2026-09-01]. `agent_addr` was mandatory, validated, and ignored by every
   failover action.**
 

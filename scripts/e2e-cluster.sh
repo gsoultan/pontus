@@ -31,6 +31,22 @@ PG_USER="${PG_USER:-postgres}"
 PG_PASSWORD="${PG_PASSWORD:-postgres}"
 PG_DB="${PG_DB:-postgres}"
 
+# Optional agent sidecar, off unless asked for.
+#
+# Promotion runs `pg_ctl promote` through an agent on the database host, so a
+# test that exercises a real failover needs one inside the container and its
+# port published. Unset by default: the ordinary cluster has no agent and does
+# not need one, and adding it unasked would change what every other test runs
+# against.
+#
+#   AGENT_BINARY=/path/to/linux-pontus-agent \
+#   AGENT_TOKEN=secret PRIMARY_AGENT_PORT=19191 REPLICA_AGENT_PORT=19193 \
+#     ./scripts/e2e-cluster.sh up
+AGENT_BINARY="${AGENT_BINARY:-}"
+AGENT_TOKEN="${AGENT_TOKEN:-}"
+PRIMARY_AGENT_PORT="${PRIMARY_AGENT_PORT:-}"
+REPLICA_AGENT_PORT="${REPLICA_AGENT_PORT:-}"
+
 B=$'\033[1m'; R=$'\033[31m'; G=$'\033[32m'; Y=$'\033[33m'; DIM=$'\033[2m'; N=$'\033[0m'
 step() { printf '\n%s==>%s %s%s%s\n' "$B" "$N" "$B" "$1" "$N"; }
 info() { printf '    %s\n' "$1"; }
@@ -38,6 +54,40 @@ ok()   { printf '    %s✓%s %s\n' "$G" "$N" "$1"; }
 warn() { printf '    %s!%s %s\n' "$Y" "$N" "$1"; }
 die()  { printf '\n%serror:%s %s\n\n' "$R" "$N" "$1" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# agent_publish emits a -p flag when an agent port was asked for, and nothing
+# otherwise. Unquoted at the call site on purpose: an empty expansion has to
+# disappear rather than become an empty argument.
+agent_publish() {
+  if [ -n "$1" ]; then
+    printf -- '-p %s:9091' "$1"
+  fi
+  return 0
+}
+
+# install_agent copies the agent into a container and starts it.
+#
+# Plaintext with a token rather than TLS: the agent accepts that combination and
+# warns, which is the right trade for a throwaway container on loopback and
+# keeps a certificate out of the test harness. It is not a pattern to copy into
+# a deployment — see the agent_tls block in AGENTS.md.
+install_agent() {
+  local name="$1" port="$2"
+  [ -n "$AGENT_BINARY" ] && [ -n "$port" ] || return 0
+
+  [ -f "$AGENT_BINARY" ] || die "AGENT_BINARY $AGENT_BINARY does not exist"
+
+  "$CR" cp "$AGENT_BINARY" "$name:/usr/local/bin/pontus-agent" \
+    || die "could not copy the agent into $name"
+  "$CR" exec "$name" chmod 0755 /usr/local/bin/pontus-agent >/dev/null 2>&1 || true
+
+  # Detached, and told to bind every interface so the published port reaches it.
+  "$CR" exec -d "$name" /usr/local/bin/pontus-agent \
+    -addr ":9091" -token "$AGENT_TOKEN" >/dev/null 2>&1 \
+    || die "could not start the agent in $name"
+
+  ok "agent listening on :$port for $name"
+}
 
 CR=""; CR_KIND=""
 
@@ -96,11 +146,13 @@ start_primary() {
         -e POSTGRES_HOST_AUTH_METHOD=scram-sha-256 \
         -e POSTGRES_INITDB_ARGS="--auth-host=scram-sha-256" \
         -p "$PRIMARY_PORT:5432" \
+        $(agent_publish "$PRIMARY_AGENT_PORT") \
         "$PG_IMAGE" >/dev/null
       info "created $PRIMARY_NAME from $PG_IMAGE"
     fi
   fi
   wait_ready "$PRIMARY_NAME" "primary"
+  install_agent "$PRIMARY_NAME" "$PRIMARY_AGENT_PORT"
 
   # pg_hba's `all` in the database column does not cover replication connections
   # — that needs its own line, and the stock file only allows localhost. Adding
@@ -130,6 +182,7 @@ start_replica() {
   "$CR" rm -f "$REPLICA_NAME" >/dev/null 2>&1 || true
 
   "$CR" run -d --name "$REPLICA_NAME" \
+    $(agent_publish "$REPLICA_AGENT_PORT") \
     -e PGPASSWORD="$PG_PASSWORD" \
     -p "$REPLICA_PORT:5432" \
     "$PG_IMAGE" \
@@ -146,6 +199,7 @@ start_replica() {
       exec gosu postgres postgres -D /tmp/standby -c listen_addresses=0.0.0.0" >/dev/null
 
   wait_ready "$REPLICA_NAME" "replica"
+  install_agent "$REPLICA_NAME" "$REPLICA_AGENT_PORT"
 
   local i=0
   while [ "$i" -lt 60 ]; do

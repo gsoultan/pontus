@@ -3,6 +3,7 @@ package orchestration
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"time"
 
@@ -142,25 +143,121 @@ func (p *postgresProvisioner) PromoteToPrimary(ctx context.Context, backendAddr 
 	// In this simplified implementation, we'll try a common path or ideally the agent would know.
 	// For now, let's use a default or better, we could have stored it in the backend state.
 
-	// Better: Agent should handle finding the data directory if not specified.
-	info, err := agent.GetSystemInfo(ctx)
-	dataDir := "/var/lib/postgresql/data"
-	if err == nil && info.PostgresDataDir != "" {
-		dataDir = info.PostgresDataDir
+	// Ask the standby to promote itself before reaching for a shell.
+	//
+	// `pg_ctl promote` through the agent cannot work as the agent runs it:
+	// pg_ctl refuses to run as root, and the agent is root because it installs
+	// packages and manages services. So automatic promotion failed on every
+	// deployment — with `exit code 1` and, until the message below, no reason
+	// at all. pg_promote() needs neither root nor the data directory, and runs
+	// on a connection Pontus already holds.
+	if err := p.promoteViaSQL(ctx, target); err == nil {
+		slog.Info("Standby promoted itself", "address", backendAddr)
+		return nil
+	} else {
+		slog.Warn("pg_promote() did not succeed; falling back to the agent",
+			"address", backendAddr, "error", err)
 	}
+
+	dataDir := p.dataDirectoryFor(ctx, target, agent)
 
 	out, err := agent.ExecuteCommand(ctx, "pg_ctl", []string{"promote", "-D", dataDir}, nil)
 	if err != nil {
 		return fmt.Errorf("failed to execute promote command: %w", err)
 	}
 
+	// Say what failed and where.
+	//
+	// This reported `promotion failed with exit code 1:` — a number and an
+	// empty string — for the most consequential command Pontus runs. The reason
+	// it was empty is that the interesting failures write to stdout, or say
+	// nothing at all when -D simply is not a data directory.
+	var stderr string
 	for msg := range out {
+		if msg.Stderr != "" {
+			stderr = msg.Stderr
+		}
 		if msg.ExitCode != 0 {
-			return fmt.Errorf("promotion failed with exit code %d: %s", msg.ExitCode, msg.Stderr)
+			return fmt.Errorf("pg_ctl promote -D %s on %s failed with exit code %d: %s",
+				dataDir, backendAddr, msg.ExitCode, orNoOutput(stderr))
 		}
 	}
 
 	return nil
+}
+
+// orNoOutput names an empty stderr rather than trailing off after a colon.
+func orNoOutput(s string) string {
+	if s == "" {
+		return "(no output; the usual cause is -D pointing somewhere that is " +
+			"not this server's data directory)"
+	}
+	return s
+}
+
+// promoteViaSQL promotes a standby over Pontus's own admin channel.
+//
+// Admin() is the connection Pontus authenticates for itself, the one health
+// probes and role detection already use. A pooled connection is the wrong tool
+// here: under passthrough it carries a client's credentials, or has never
+// completed a startup exchange at all, and a query written to it simply gets
+// EOF.
+func (p *postgresProvisioner) promoteViaSQL(ctx context.Context, b pool.Backend) error {
+	if b == nil {
+		return fmt.Errorf("no backend to promote")
+	}
+	admin := b.Admin()
+	if admin == nil || !admin.Available() {
+		return fmt.Errorf("no admin connection to %s; set admin_dsn for it", b.Address())
+	}
+
+	// wait => true, so a reply means the promotion finished rather than that it
+	// was merely accepted; wait_seconds bounds it, because a standby replaying
+	// a backlog can take a while and this must not hang the failover.
+	var promoted bool
+	if err := admin.QueryRow(ctx, "SELECT pg_promote(true, 60)").Scan(&promoted); err != nil {
+		return fmt.Errorf("pg_promote on %s: %w", b.Address(), err)
+	}
+	if !promoted {
+		return fmt.Errorf("pg_promote on %s returned false; it did not leave "+
+			"recovery within its wait", b.Address())
+	}
+	return nil
+}
+
+// dataDirectoryFor works out where a backend's data directory is.
+//
+// Asked of the server first, because the server knows. The agent detects it by
+// walking a fixed list of candidate paths looking for a PG_VERSION file, which
+// finds a default install and misses a cluster on a mounted volume, a second
+// cluster on one host, or anything a packager put elsewhere.
+func (p *postgresProvisioner) dataDirectoryFor(ctx context.Context, b pool.Backend, agent AgentClient) string {
+	if dir := askServerForDataDir(ctx, b); dir != "" {
+		return dir
+	}
+	if info, err := agent.GetSystemInfo(ctx); err == nil && info.PostgresDataDir != "" {
+		return info.PostgresDataDir
+	}
+	return "/var/lib/postgresql/data"
+}
+
+// askServerForDataDir reads data_directory over Pontus's own admin channel.
+func askServerForDataDir(ctx context.Context, b pool.Backend) string {
+	if b == nil {
+		return ""
+	}
+	admin := b.Admin()
+	if admin == nil || !admin.Available() {
+		return ""
+	}
+
+	var dir string
+	if err := admin.QueryRow(ctx, "SHOW data_directory").Scan(&dir); err != nil {
+		slog.Debug("Could not read data_directory from the server",
+			"backend", b.Address(), "error", err)
+		return ""
+	}
+	return dir
 }
 
 func (p *postgresProvisioner) CheckReplicationLag(ctx context.Context, backendAddr string) (time.Duration, error) {
