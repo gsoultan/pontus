@@ -6,6 +6,32 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **A23 [OPEN, ops]. There is no graceful shutdown. Every restart drops in-flight work.**
+
+  Measured: with `SELECT pg_sleep(8)` in flight, SIGINT leaves the proxy gone in **5ms** and
+  the client holding `conn closed`. An idle proxy exits in 4ms. So a deploy, a
+  `systemctl restart`, or a container rollout aborts whatever every session was doing.
+
+  It is unfinished wiring rather than a decision, and it is wrong in two independent places:
+
+  1. **Nothing reaches the drain from a signal.** There is no `signal.Notify` anywhere in
+     `cmd/`, `internal/app/` or `pkg/service/`. `kardianos/service` calls
+     `PontusService.Stop`, which calls `s.cancel()` and returns. `Gateway.Stop` — the method
+     whose comment says it *"waits for all active connections to close"* — is only reachable
+     from `GatewayManager.RemoveProject`, i.e. removing a proxy through the management API.
+  2. **`Gateway.Stop` would not drain if it were reached.** It calls `g.cancel()` *before*
+     `g.wg.Wait()`, which aborts the sessions it is about to wait for. The wait then returns
+     immediately because there is nothing left running.
+
+  What a fix needs: stop accepting first, wait for active sessions with a bounded drain
+  period, cancel only after that; a `GatewayManager.StopAll(ctx)`; `App` exposing a
+  `Shutdown(ctx)` that `PontusService.Stop` calls before cancelling; and a config path for
+  the drain timeout, since "how long a deploy may wait" is an operator's decision.
+
+  `e2e/shutdown_test.go` pins today's behaviour and asserts the two things a supervisor
+  needs regardless of policy: the process must exit, and the client must learn the outcome
+  rather than wait on a socket nobody is serving.
+
 - **A22 [FIXED 2026-09-01]. Automatic promotion could never have worked.**
 
   `PromoteToPrimary` ran `pg_ctl promote` through the agent. The agent runs as **root** —
