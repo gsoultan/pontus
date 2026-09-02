@@ -964,7 +964,15 @@ func (g *Gateway) acquire(ctx context.Context, hint balancer2.Hint, user, databa
 	for i := range 3 {
 		// If in failover, wait for resolution — but no longer than the caller
 		// is prepared to wait.
-		if !hint.ReadOnly {
+		//
+		// Only a caller that genuinely needs a primary waits. One that will
+		// settle for a replica has somewhere to go already, and making it wait
+		// buys nothing: refusing to wait cannot cost it a primary it was never
+		// going to be given. This is what a session's startup connection asks
+		// for, and pausing that was why a primary outage stopped every new
+		// connection rather than only the writes.
+		needsPrimary := !hint.ReadOnly && !hint.AcceptReplica
+		if needsPrimary {
 			if err := g.waitWhilePaused(ctx); err != nil {
 				return nil, nil, err
 			}
@@ -982,7 +990,7 @@ func (g *Gateway) acquire(ctx context.Context, hint balancer2.Hint, user, databa
 		}
 
 		// If we can't find a primary, trigger failover wait
-		if !hint.ReadOnly && lastErr != nil {
+		if needsPrimary && lastErr != nil {
 			if errors.Is(lastErr, balancer2.ErrNoHealthyBackends) || i == 2 {
 				g.triggerFailover()
 				// After triggering failover, if it's the first or second attempt,

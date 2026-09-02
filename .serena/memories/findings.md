@@ -94,32 +94,48 @@ Everything else is open. None of the open items are precedent to copy.
   so there is nothing configured to read, and the agent's own default is the only guess
   available. Documented at the site.
 
-- **A20 [OPEN, availability]. No new session can be opened while the primary is down —
-  including a read-only one.**
+- **A20 [FIXED 2026-09-02]. A primary outage stopped every new connection, read-only ones
+  included.**
 
-  Measured with `PONTUS_E2E_DISRUPTIVE=1` against a real primary+replica pair, primary
-  stopped:
+  A session's startup connection was acquired with a write hint, and a write-hinted
+  acquisition both demands a healthy primary and waits on the failover pause. With no primary
+  there was nothing to give it, so a new session could not be opened at all — measured at
+  ~60s to fail. A warm pool kept reading through an outage; anything that reconnected or
+  scaled up was dead, on a deployment keeping replicas for exactly that outage.
 
-  | | with the primary down |
-  | :--- | :--- |
-  | a session established **before** the outage | reads keep working, served by the replica |
-  | a **new** session | cannot connect at all — fails after ~60s |
-  | a write on an established session | refused after 30s, `57014`, and resumes on its own when the primary returns |
+  That connection is not a write. It exists so the client can authenticate, and nothing is
+  known yet about what the session will ask for. It now carries `Hint.AcceptReplica`: a
+  primary if there is one, a replica rather than nothing, and no waiting on the pause —
+  refusing to wait cannot cost it a primary it was never going to be given.
 
-  The cause is that a session's *handshake* connection is acquired with a **write** hint,
-  because nothing is known about a session before it has spoken, and a write-hinted
-  acquisition waits on the failover pause. With no primary there is nothing to give it.
+  **Writes are untouched.** `AcceptReplica` is set for the startup connection and nowhere
+  else, and a write with no primary still selects nothing; there is a test for exactly that,
+  because a write settling for a replica is the one outcome worse than failing.
 
-  So a warm connection pool keeps reading through a primary outage, but anything that
-  reconnects or scales up is dead — which turns a primary outage into a total outage for a
-  read-heavy deployment that keeps replicas precisely to avoid one.
+  The cost is real and is asserted: under passthrough a session is pinned to the connection
+  that carried its handshake, so one admitted on a replica cannot write. It is told so —
+  PostgreSQL's own `25006 cannot execute ... in a read-only transaction` — rather than having
+  the write silently accepted. Measured after: **11ms to connect and read**, against ~60s to
+  fail before.
 
-  **Not fixed here: it is a product decision, not a defect to patch quietly.** Letting the
-  handshake fall back to a replica would admit read-only sessions during an outage, but under
-  passthrough a session is pinned to the connection that carried its handshake — so such a
-  session could never write, even after the primary returned. `e2e/primary_loss_test.go`
-  pins the behaviour as it is, so a change in either direction is deliberate and visible.
-  What it does assert unconditionally is the *bound*: failing is a decision, hanging is not.
+- **A24 [FIXED 2026-09-02, found while fixing A20]. `failover.enabled: false` did not prevent
+  automatic promotion.**
+
+  The gate lived in `FailoverManager`'s health monitor and nowhere else, while the data plane
+  calls `TriggerFailover` **directly** the moment a write cannot find a primary
+  (`Gateway.triggerFailover`). So a deployment that had deliberately asked for a human in the
+  loop — the only sane setting when promotion starts a new timeline and cannot be undone —
+  got a replica promoted by nothing more than a write arriving during a blip.
+
+  It was invisible because promotion itself was broken (A22: `pg_ctl` as root). **Fixing
+  promotion is what made it bite: it promoted this project's shared test replica**, whose
+  config said `enabled: false`, during an unrelated test run. Found by noticing
+  `received promote request` in that replica's log, not by reading the code.
+
+  The gate is now in `TriggerFailover` itself, so it holds wherever the request comes from.
+  It returns nil rather than an error: the caller asked, configuration answered, nothing
+  failed. An operator-initiated promotion is a different thing and must not be routed through
+  the automatic path.
 
 - **Automatic promotion is still unmeasured end to end.** `PromoteToPrimary` runs `pg_ctl
   promote` through the agent sidecar on the database host, and the E2E containers are plain

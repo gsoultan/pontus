@@ -78,10 +78,23 @@ func (g *Gateway) openSession(
 		}
 	}
 
+	// A primary if there is one, a replica rather than nothing.
+	//
+	// This connection carries the client's authentication, not its first
+	// statement — nothing is known yet about what the session will ask for, so
+	// it is hinted toward a primary to keep the session able to write. But
+	// insisting on one meant that while the primary was down no session could
+	// be opened at all, read-only or otherwise: a deployment kept replicas
+	// exactly for that outage and then could not open a session to use them.
+	//
+	// Settling for a replica cannot cost a session anything it would otherwise
+	// have had. The alternative on this path is not a primary, it is no
+	// connection.
 	hint := balancer2.Hint{
-		CallerZone: g.current().localZone,
-		ReadOnly:   false,
-		Key:        remoteAddr,
+		CallerZone:    g.current().localZone,
+		ReadOnly:      false,
+		AcceptReplica: true,
+		Key:           remoteAddr,
 	}
 
 	// Pools hold every identity together, so an idle connection belonging to a

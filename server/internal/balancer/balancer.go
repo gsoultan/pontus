@@ -22,7 +22,23 @@ var (
 
 // Hint provides information to the balancer for selecting a backend.
 type Hint struct {
-	ReadOnly   bool
+	ReadOnly bool
+
+	// AcceptReplica lets a primary-preferring selection settle for a replica
+	// when no primary is available.
+	//
+	// Set for a session's *startup* connection and nothing else. That
+	// connection is not a write: it exists so the client can authenticate, and
+	// nothing is known yet about what the session will go on to ask for.
+	// Refusing it when there is no primary meant a primary outage stopped every
+	// new connection — including read-only ones — so a deployment that keeps
+	// replicas precisely to survive such an outage could not open a session to
+	// read from them.
+	//
+	// Never set for a statement. A write that settles for a replica is a write
+	// that fails, and the failure is the good case.
+	AcceptReplica bool
+
 	Key        string
 	CallerZone string
 }
@@ -156,27 +172,7 @@ func FilterNodes(nodes []pool.Backend, hint Hint) *[]pool.Backend {
 	targets := *p
 
 	if hint.ReadOnly {
-		maxLag := MaxReplicaLag()
-		// Prefer replicas for read-only, but exclude those with high lag or draining
-		for node := range slices.Values(nodes) {
-			// IsReplicating is the streaming check: a replica whose WAL receiver
-			// has gone is up, healthy and answering, and every row it returns is
-			// older than the last. Lag alone does not catch it — once it has
-			// replayed the little it received, receive==replay and it reports
-			// zero.
-			if node.Role() == pool.RoleReplica && node.IsHealthy() && !node.IsDraining() &&
-				node.IsReplicating() && node.ReplicationLag() <= maxLag {
-				targets = append(targets, node)
-			}
-		}
-		// Fallback to high-lag replicas if no healthy low-lag replicas
-		if len(targets) == 0 {
-			for node := range slices.Values(nodes) {
-				if node.Role() == pool.RoleReplica && node.IsHealthy() && !node.IsDraining() {
-					targets = append(targets, node)
-				}
-			}
-		}
+		targets = appendReplicas(targets, nodes)
 		// If still no healthy replicas, fallback to primary
 		if len(targets) == 0 {
 			for node := range slices.Values(nodes) {
@@ -195,14 +191,51 @@ func FilterNodes(nodes []pool.Backend, hint Hint) *[]pool.Backend {
 				}
 			}
 		}
-		if bestPrimary != nil {
+		switch {
+		case bestPrimary != nil:
 			targets = append(targets, bestPrimary)
+		case hint.AcceptReplica:
+			// Only a startup connection asks for this, and only because there
+			// is no primary to give it. Same order of preference as a read, so
+			// a session that lands here lands on the freshest node available
+			// rather than merely the first healthy one.
+			targets = appendReplicas(targets, nodes)
 		}
 	}
 
 	// Update the pool pointer with the new capacity if it grew
 	*p = targets
 	return p
+}
+
+// appendReplicas adds the replicas worth sending work to, freshest first.
+//
+// Streaming and inside the lag budget if any such replica exists; otherwise any
+// healthy one, because a stale answer beats no answer when the alternative is
+// having nowhere to go at all.
+func appendReplicas(targets []pool.Backend, nodes []pool.Backend) []pool.Backend {
+	maxLag := MaxReplicaLag()
+
+	// IsReplicating is the streaming check: a replica whose WAL receiver has
+	// gone is up, healthy and answering, and every row it returns is older than
+	// the last. Lag alone does not catch it — once it has replayed the little
+	// it received, receive==replay and it reports zero.
+	for node := range slices.Values(nodes) {
+		if node.Role() == pool.RoleReplica && node.IsHealthy() && !node.IsDraining() &&
+			node.IsReplicating() && node.ReplicationLag() <= maxLag {
+			targets = append(targets, node)
+		}
+	}
+	if len(targets) > 0 {
+		return targets
+	}
+
+	for node := range slices.Values(nodes) {
+		if node.Role() == pool.RoleReplica && node.IsHealthy() && !node.IsDraining() {
+			targets = append(targets, node)
+		}
+	}
+	return targets
 }
 
 // PutTargets returns a slice pointer to the pool.

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // What clients see when the primary goes away.
@@ -55,6 +57,39 @@ func pgReachable(addr string) bool {
 	}
 	_ = conn.Close()
 	return true
+}
+
+// pgServing reports whether a Postgres will actually answer a query.
+//
+// Accepting TCP is not being ready: a server that is still starting answers
+// the connection and then refuses it with 57P03. Waiting on the socket alone
+// made the test that runs after a restart fail on the restart rather than on
+// anything it was testing.
+func pgServing(addr string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	conn, err := pgx.Connect(ctx, directDSN(addr))
+	if err != nil {
+		return false
+	}
+	defer conn.Close(context.Background())
+
+	var one int
+	return conn.QueryRow(ctx, "SELECT 1").Scan(&one) == nil && one == 1
+}
+
+// waitServing waits until a Postgres answers queries.
+func waitServing(t *testing.T, addr string, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		if pgServing(addr) {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("%s never started answering queries within %v", addr, within)
 }
 
 // waitReachable waits for a Postgres to answer, or not to.
@@ -116,40 +151,65 @@ func TestPrimaryLossReadsKeepWorking(t *testing.T) {
 	})
 
 	t.Run("new session", func(t *testing.T) {
-		// A new session has to acquire a connection for its handshake, and that
-		// acquisition asks for a *write* backend because nothing is known about
-		// the session yet. With no primary there is nothing to give it, so a
-		// read-only client cannot connect at all while the primary is down —
-		// which turns a primary outage into a total outage for a read-heavy
-		// deployment that has replicas precisely to avoid one.
+		// A new session has to acquire a connection for its handshake. That
+		// acquisition prefers a primary — nothing is known yet about what the
+		// session will ask for — but settles for a replica rather than
+		// refusing, because the alternative on this path is not a primary, it
+		// is no connection at all.
 		//
-		// Asserted as it behaves rather than as it ought to: pinning it here
-		// means a change either way is deliberate and visible. What must not
-		// regress is the *bound* — failing is a decision, hanging is not.
+		// Insisting on a primary turned a primary outage into a total outage:
+		// a read-heavy deployment kept replicas for exactly this and could not
+		// open a session to use them.
 		connCtx, connCancel := context.WithTimeout(ctx, 90*time.Second)
 		defer connCancel()
 
 		start := time.Now()
 		conn, err := connectSimpleOrErr(connCtx, s)
 		elapsed := time.Since(start)
+		if err != nil {
+			t.Fatalf("could not open a session with the primary down and a "+
+				"healthy replica present (%v): %v", elapsed.Round(time.Second), err)
+		}
+		defer conn.Close(context.Background())
 
-		if err == nil {
-			defer conn.Close(context.Background())
-			var got int
-			if rerr := conn.QueryRow(connCtx, "SELECT 1").Scan(&got); rerr != nil {
-				t.Errorf("a new session connected but could not read: %v", rerr)
-			}
-			t.Logf("a new session connected in %v with the primary down",
-				elapsed.Round(time.Millisecond))
-			return
+		var got int
+		if rerr := conn.QueryRow(connCtx, "SELECT 1").Scan(&got); rerr != nil {
+			t.Errorf("a new session connected but could not read: %v", rerr)
+		} else if got != 1 {
+			t.Errorf("read returned %d", got)
 		}
 
-		t.Logf("KNOWN: a new session cannot be opened while the primary is down "+
-			"(%v): %v", elapsed.Round(time.Second), err)
-		if elapsed > 120*time.Second {
-			t.Errorf("connecting with no primary took %v to fail; nothing bounded it",
+		// And promptly: waiting out the failover pause for a connection that
+		// was never going to be given a primary is the stall this removed.
+		if elapsed > 30*time.Second {
+			t.Errorf("connecting took %v with a healthy replica available",
 				elapsed.Round(time.Second))
 		}
+		t.Logf("new session connected in %v and read from the replica",
+			elapsed.Round(time.Millisecond))
+	})
+
+	t.Run("a write on that session is refused, not silently accepted", func(t *testing.T) {
+		// The cost of admitting the session: under passthrough it is pinned to
+		// the connection that carried its handshake, so a session admitted on a
+		// replica cannot write. It must be told so — a write that appears to
+		// succeed on a replica is the one outcome worse than refusing the
+		// connection.
+		wctx, wcancel := context.WithTimeout(ctx, 60*time.Second)
+		defer wcancel()
+
+		conn, err := connectSimpleOrErr(wctx, s)
+		if err != nil {
+			t.Skipf("could not open a session to test the write path: %v", err)
+		}
+		defer conn.Close(context.Background())
+
+		_, err = conn.Exec(wctx, "CREATE TABLE primary_loss_write_probe (id int)")
+		if err == nil {
+			t.Error("a write succeeded while the primary was down")
+			return
+		}
+		t.Logf("write refused as it must be: %v", err)
 	})
 }
 
@@ -207,7 +267,7 @@ func TestPrimaryLossWritesFailFastAndRecover(t *testing.T) {
 
 	// Recovery, without restarting the proxy.
 	restorePrimary(t, rt)
-	waitReachable(t, backendAddr(), true, 90*time.Second)
+	waitServing(t, backendAddr(), 120*time.Second)
 
 	deadline := time.Now().Add(120 * time.Second)
 	var lastErr error
@@ -234,6 +294,17 @@ func TestPrimaryLossWritesFailFastAndRecover(t *testing.T) {
 // call twice — the test calls it explicitly and the cleanup calls it again.
 func restorePrimary(t *testing.T, rt string) {
 	t.Helper()
+	defer func() {
+		// Leave the cluster answering queries, not merely listening. The next
+		// test connects immediately, and a server still starting refuses with
+		// 57P03 — which reads as a failure of whatever that test was doing.
+		if pgReachable(backendAddr()) {
+			deadline := time.Now().Add(120 * time.Second)
+			for time.Now().Before(deadline) && !pgServing(backendAddr()) {
+				time.Sleep(500 * time.Millisecond)
+			}
+		}
+	}()
 	out, err := exec.Command(rt, "start", primaryContainer()).CombinedOutput()
 	if err != nil && !strings.Contains(string(out), "already") {
 		t.Logf("could not restart the primary (%v): %s", err, out)
