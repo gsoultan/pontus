@@ -218,6 +218,28 @@ func (m *FailoverManager) setState(state FailoverState) {
 }
 
 func (m *FailoverManager) TriggerFailover(ctx context.Context) error {
+	// `failover.enabled: false` has to mean it, whoever asks.
+	//
+	// The gate was in the health monitor and nowhere else, and the data plane
+	// calls this directly the moment a write cannot find a primary — so a
+	// deployment that had deliberately asked for a human in the loop got a
+	// replica promoted by nothing more than a write arriving during a blip.
+	// Promotion starts a new timeline and cannot be undone, which is the whole
+	// reason an operator turns it off.
+	//
+	// It stayed invisible because promotion itself was broken: `pg_ctl` refused
+	// to run as the root the agent runs as, so every one of these attempts
+	// failed. Fixing promotion is what made this bite.
+	//
+	// Returning nil rather than an error: the caller asked, configuration
+	// answered, and nothing failed. An operator-initiated promotion is a
+	// different thing and must not be routed through the automatic path.
+	if !m.opts.Enabled {
+		slog.Warn("Not promoting: automatic failover is disabled",
+			"setting", "failover.enabled")
+		return nil
+	}
+
 	m.mu.Lock()
 	if m.state == StatePromoting {
 		m.mu.Unlock()
