@@ -65,10 +65,20 @@ jobs:
       - name: Web Build
         run: bun run --cwd web build
 
+      # golangci/…, not golangci-lint/… — the latter does not exist, and an
+      # action that cannot be resolved fails the job at "Set up job", before a
+      # single step runs. So nothing in this file executed: no build, no vet,
+      # no tests, no end-to-end suite. CI reported failure on every commit and
+      # the failure was always this, which is easy to stop reading after a
+      # while.
+      #
+      # v9 because .golangci.yml is v2 configuration; the v6 action installs
+      # golangci-lint v1, which cannot read it. Pinned rather than "latest" so
+      # a lint release cannot turn a green build red on its own.
       - name: Go Lint
-        uses: golangci-lint/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.13.2
           # Gate new work, not the backlog. .golangci.yml encodes the limits in
           # .junie/guidelines.md and the tree has a few hundred pre-existing
           # findings against them; failing the build on those would mean
