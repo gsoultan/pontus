@@ -32,6 +32,34 @@ jobs:
         with:
           setup_only: true
 
+      # The release build needs both: protoc-gen-es lives in the web
+      # dependencies, and web/dist is a compile-time embed that must exist
+      # before any Go build touches package web.
+      - name: Install dependencies
+        run: |
+          go mod download all
+          bun install --cwd web
+
+      # buf.gen.yaml uses local plugins, so each one has to be on $PATH.
+      # Setting up buf installs the buf CLI and nothing else, which is why
+      # `buf generate` could not run here — and why the release job, whose
+      # goreleaser before-hook runs it, could not either.
+      #
+      # Pinned to the versions that produced the committed output, because the
+      # next step fails if generation yields a diff. Verified locally: these
+      # exact versions regenerate api/ and web/src/gen/ byte for byte.
+      - name: Install protoc plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.19.2
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          # protoc-gen-es comes from web/package.json rather than a go install.
+          echo "$PWD/web/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Build the dashboard
+        run: bun run --cwd web build
+
       - name: Release
         uses: goreleaser/goreleaser-action@v6
         with:
