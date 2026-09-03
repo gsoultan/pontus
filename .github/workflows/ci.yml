@@ -88,26 +88,28 @@ jobs:
           go build -v -o /dev/null ./cmd/agent
           go build -v -o /dev/null ./cmd/pontusctl
 
-      # End-to-end suite against a real PostgreSQL. Skips itself when no
-      # backend is reachable, so it never blocks on infrastructure being down.
-      - name: Start PostgreSQL
-        run: |
-          # wal_level=logical lets the replication-slot tests run rather than
-          # skip; everything else works at the default.
-          docker run -d --name pontus-e2e-pg -p 5433:5432 \
-            -e POSTGRES_PASSWORD=postgres postgres:17-alpine \
-            -c wal_level=logical
-          for i in $(seq 1 30); do
-            docker exec pontus-e2e-pg pg_isready -U postgres && break
-            sleep 2
-          done
+      # End-to-end suite against a real primary *and* a streaming replica.
+      #
+      # A single node was not enough and the shortfall was silent: fourteen call
+      # sites across four files ask for a two-node cluster and skip without one,
+      # so read/write splitting, replica routing, session survival across
+      # backends and primary-loss behaviour never ran here — the exact surface
+      # where the worst defects have been found — while CI stayed green.
+      #
+      # The same script the tests are developed against, so CI and a laptop
+      # build the same topology.
+      - name: Start PostgreSQL cluster
+        run: ./scripts/e2e-cluster.sh up
 
       - name: Go E2E
+        env:
+          PONTUS_E2E_BACKEND: 127.0.0.1:55832
+          PONTUS_E2E_REPLICA: 127.0.0.1:55833
         run: go test -tags e2e -timeout 20m ./e2e/...
 
-      - name: Stop PostgreSQL
+      - name: Stop PostgreSQL cluster
         if: always()
-        run: docker rm -f pontus-e2e-pg || true
+        run: ./scripts/e2e-cluster.sh down || true
 
       - name: GoReleaser Check
         uses: goreleaser/goreleaser-action@v6

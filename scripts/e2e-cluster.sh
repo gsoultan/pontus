@@ -27,6 +27,11 @@ REPLICA_NAME="${REPLICA_NAME:-pontus-e2e-replica}"
 PRIMARY_PORT="${PRIMARY_PORT:-55832}"
 REPLICA_PORT="${REPLICA_PORT:-55833}"
 PG_IMAGE="${PG_IMAGE:-postgres:17-alpine}"
+
+# wal_level=logical lets the replication-slot tests run rather than skip.
+# Streaming replication only needs `replica`, so this is purely about coverage;
+# override it if a test ever needs the stricter setting.
+PG_WAL_LEVEL="${PG_WAL_LEVEL:-logical}"
 PG_USER="${PG_USER:-postgres}"
 PG_PASSWORD="${PG_PASSWORD:-postgres}"
 PG_DB="${PG_DB:-postgres}"
@@ -147,7 +152,7 @@ start_primary() {
         -e POSTGRES_INITDB_ARGS="--auth-host=scram-sha-256" \
         -p "$PRIMARY_PORT:5432" \
         $(agent_publish "$PRIMARY_AGENT_PORT") \
-        "$PG_IMAGE" >/dev/null
+        "$PG_IMAGE" -c wal_level="$PG_WAL_LEVEL" >/dev/null
       info "created $PRIMARY_NAME from $PG_IMAGE"
     fi
   fi
