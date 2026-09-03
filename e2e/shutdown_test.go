@@ -11,21 +11,14 @@ import (
 
 // Every deploy and every restart runs this path, and nothing exercised it.
 //
-// What it currently does, measured: a statement in flight is dropped, and the
-// proxy is gone about five milliseconds after the signal. Its client sees the
-// connection close.
+// A pooler that drops in-flight statements on a restart turns a routine deploy
+// into a burst of errors in the application's database layer, which is the
+// worst place for them to surface. One that waits forever turns it into a hung
+// deploy that a supervisor eventually SIGKILLs — the same dropped statements,
+// later and louder.
 //
-// That is not what the code intends. Gateway.Stop exists and its comment says
-// it "waits for all active connections to close" — but nothing reaches it from
-// a signal (PontusService.Stop cancels the context and returns), and it would
-// not drain if it did, because it cancels the gateway's own context before
-// waiting on the WaitGroup, which aborts the very sessions it means to wait
-// for. Draining is written but not wired up and not ordered correctly.
-//
-// Asserted as it behaves rather than as it should, so the day someone finishes
-// the drain the change is visible here. What is asserted unconditionally is
-// what a supervisor cares about: the process must exit, and the client must
-// learn the outcome instead of waiting on a socket nobody is serving.
+// Both halves are asserted: the statement must survive, and the process must
+// still exit promptly.
 func TestGracefulShutdownWithAQueryInFlight(t *testing.T) {
 	requireBackend(t)
 
@@ -39,21 +32,24 @@ func TestGracefulShutdownWithAQueryInFlight(t *testing.T) {
 	conn := connectSimple(t, ctx, s)
 	defer conn.Close(context.Background())
 
-	// Confirm the session works before anything is signalled.
 	var one int
 	if err := conn.QueryRow(ctx, "SELECT 1").Scan(&one); err != nil {
 		t.Fatalf("baseline query failed: %v", err)
 	}
 
 	// A statement that outlives the shutdown signal.
-	queryDone := make(chan error, 1)
+	type outcome struct {
+		err     error
+		elapsed time.Duration
+	}
+	queryDone := make(chan outcome, 1)
 	go func() {
+		start := time.Now()
 		_, err := conn.Exec(ctx, "SELECT pg_sleep(8)")
-		queryDone <- err
+		queryDone <- outcome{err, time.Since(start)}
 	}()
 	time.Sleep(2 * time.Second)
 
-	// SIGINT, as a supervisor or a Ctrl-C would.
 	if s.cmd == nil || s.cmd.Process == nil {
 		t.Fatal("no proxy process to signal")
 	}
@@ -68,12 +64,27 @@ func TestGracefulShutdownWithAQueryInFlight(t *testing.T) {
 		close(exited)
 	}()
 
+	// The statement must finish rather than be cut off. pg_sleep(8) started two
+	// seconds before the signal, so a drain means about six more seconds.
+	select {
+	case got := <-queryDone:
+		if got.err != nil {
+			t.Errorf("the statement in flight was dropped by the shutdown after %v: %v",
+				got.elapsed.Round(time.Millisecond), got.err)
+		} else {
+			t.Logf("the statement in flight completed, %v after it started",
+				got.elapsed.Round(time.Millisecond))
+		}
+	case <-time.After(60 * time.Second):
+		t.Error("the statement never returned")
+	}
+
 	select {
 	case <-exited:
 		shutdown := time.Since(start)
 		t.Logf("proxy exited %v after SIGINT", shutdown.Round(time.Millisecond))
-		// It must not hang. A supervisor that has to SIGKILL is a supervisor
-		// that drops whatever was in flight.
+		// Draining is not an excuse to hang: a supervisor that has to SIGKILL
+		// drops whatever was in flight anyway.
 		if shutdown > 60*time.Second {
 			t.Errorf("shutdown took %v; a supervisor would have killed it",
 				shutdown.Round(time.Second))
@@ -81,20 +92,6 @@ func TestGracefulShutdownWithAQueryInFlight(t *testing.T) {
 	case <-time.After(90 * time.Second):
 		_ = s.cmd.Process.Kill()
 		t.Fatal("the proxy never exited after SIGINT; a deploy would hang here")
-	}
-
-	// Whatever the shutdown policy, the client must learn the outcome rather
-	// than be left waiting on a socket nobody is serving.
-	select {
-	case err := <-queryDone:
-		if err != nil {
-			t.Logf("the in-flight statement ended with: %v", err)
-		} else {
-			t.Log("the in-flight statement completed before shutdown finished")
-		}
-	case <-time.After(60 * time.Second):
-		t.Error("the in-flight statement never returned after the proxy exited; " +
-			"its client is waiting on a connection nobody is serving")
 	}
 }
 

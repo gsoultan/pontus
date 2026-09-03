@@ -377,3 +377,57 @@ func healthTiming(cfg *config.Options) (interval, timeout time.Duration) {
 	}
 	return interval, timeout
 }
+
+// StopAll stops accepting on every proxy, then drains them together.
+//
+// Listeners first and all of them, before any draining: closing one at a time
+// leaves the rest taking new work for as long as the first takes to drain, so a
+// shutdown could admit a statement it was about to abandon.
+//
+// The drains then share the caller's deadline rather than each getting a fresh
+// one, because what an operator configures is how long the *shutdown* may take,
+// not how long each of an unknown number of proxies may take.
+func (r *Registry) StopAll(ctx context.Context) {
+	type target struct {
+		project string
+		proxy   string
+		gateway *proxy.Gateway
+	}
+
+	var targets []target
+
+	r.mu.RLock()
+	for projectID, project := range r.projects {
+		project.Mu.RLock()
+		for proxyID, p := range project.Proxies {
+			if p == nil {
+				continue
+			}
+			if p.Listener != nil {
+				_ = p.Listener.Close()
+			}
+			if p.Gateway != nil {
+				targets = append(targets, target{projectID, proxyID, p.Gateway})
+			}
+		}
+		project.Mu.RUnlock()
+	}
+	r.mu.RUnlock()
+
+	if len(targets) == 0 {
+		return
+	}
+	slog.Info("Draining proxies before shutdown", "proxies", len(targets))
+
+	var wg sync.WaitGroup
+	for _, t := range targets {
+		wg.Go(func() {
+			if err := t.gateway.Stop(ctx); err != nil {
+				slog.Warn("Proxy did not drain within the shutdown deadline",
+					"project", t.project, "proxy", t.proxy, "error", err)
+			}
+		})
+	}
+	wg.Wait()
+	slog.Info("Proxies drained")
+}

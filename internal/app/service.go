@@ -45,7 +45,18 @@ func (s *PontusService) Start(_ service.Service) error {
 }
 
 // Stop is called when the service stops.
+//
+// Drains before cancelling. This cancelled and returned, so a restart aborted
+// every statement in flight and the process was gone milliseconds later — the
+// drain that Gateway.Stop implements was never reached from a signal at all.
+//
+// The drain runs here rather than in Run's shutdown path because Run is on its
+// own goroutine and nothing waits for it: once this returns, the service
+// manager lets the process exit.
 func (s *PontusService) Stop(_ service.Service) error {
+	if drainer, ok := s.runner.(interface{ Drain() }); ok {
+		drainer.Drain()
+	}
 	if s.cancel != nil {
 		s.cancel()
 	}

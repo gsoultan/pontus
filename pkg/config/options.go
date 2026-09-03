@@ -53,6 +53,18 @@ type Options struct {
 	// client socket while it does. Unset means 5s.
 	PoolWaitTimeout time.Duration `json:"pool_wait_timeout,omitzero" yaml:"pool_wait_timeout"`
 
+	// ShutdownTimeout bounds how long a restart waits for the statements
+	// already running to finish before ending them.
+	//
+	// It is how long a deploy may take, so it belongs to whoever runs deploys.
+	// Too short drops work a second would have saved; too long turns a single
+	// stuck statement into a hung rollout that a supervisor resolves with
+	// SIGKILL — the same dropped work, later and louder. Unset means 30s.
+	//
+	// Sessions sitting idle between statements are not waited for. Their
+	// clients reconnect; a statement in flight is work someone is blocked on.
+	ShutdownTimeout time.Duration `json:"shutdown_timeout,omitzero" yaml:"shutdown_timeout"`
+
 	// MaxMessageBytes bounds a single client message, in bytes.
 	//
 	// A message larger than one TCP read is assembled before being forwarded,
@@ -179,6 +191,9 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.PoolWaitTimeout > 0 {
 		c.PoolWaitTimeout = other.PoolWaitTimeout
+	}
+	if other.ShutdownTimeout > 0 {
+		c.ShutdownTimeout = other.ShutdownTimeout
 	}
 	if other.QueryTimeout != 0 {
 		c.QueryTimeout = other.QueryTimeout

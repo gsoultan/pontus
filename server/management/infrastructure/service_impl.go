@@ -202,3 +202,12 @@ func (s *serviceImpl) TerminateStream(ctx context.Context, req *endpoints.Termin
 func (s *serviceImpl) CreateLogicalSlot(ctx context.Context, req *endpoints.CreateLogicalSlotRequest) (*endpoints.CreateLogicalSlotResponse, error) {
 	return s.ReplicationService.CreateLogicalSlot(ctx, req)
 }
+
+// StopAll drains every proxy this service owns.
+//
+// Exposed on the service so the application can reach it without holding the
+// registry: shutdown is the one thing the layer above genuinely needs from
+// down here.
+func (s *serviceImpl) StopAll(ctx context.Context) {
+	s.Registry.StopAll(ctx)
+}

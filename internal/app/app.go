@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -42,6 +43,10 @@ type App struct {
 	settingStore service.SettingProvider
 	server       *http.Server
 	backendTLS   *tls.Config
+
+	// svc is kept so shutdown can reach the running proxies. Everything else
+	// here is wiring that Run owns for its own lifetime.
+	svc atomic.Pointer[service.Service]
 }
 
 // NewApp creates a new instance of the Pontus application.
@@ -156,6 +161,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	// Initialize Management Service (Multi-project aware)
 	svc := infrastructure.NewService(ctx, a.projectStore, a.userStore, a.settingStore, a.cfg.DialTimeout, a.backendTLS, issuer, a.cfg)
+	a.svc.Store(&svc)
 	endpoints := management.MakeEndpoints(svc)
 
 	// Start Management gRPC Server
@@ -325,4 +331,36 @@ func (a *App) bootstrapFromConfig() {
 
 	a.projectStore.Upsert(pcfg)
 	log.Println("Migrated default project from configuration")
+}
+
+// defaultShutdownTimeout is how long a restart waits for running statements.
+const defaultShutdownTimeout = 30 * time.Second
+
+// Drain waits for the statements already running to finish, then returns.
+//
+// Called before the context is cancelled, which is the whole point: cancelling
+// first aborts the very work a drain exists to protect, and that is what every
+// restart used to do — a statement in flight was gone about five milliseconds
+// after the signal.
+//
+// Bounded by ShutdownTimeout, because a deploy that waits forever on one stuck
+// statement is a hung deploy.
+func (a *App) Drain() {
+	svc := a.svc.Load()
+	if svc == nil {
+		return
+	}
+	stopper, ok := (*svc).(interface{ StopAll(context.Context) })
+	if !ok {
+		return
+	}
+
+	timeout := defaultShutdownTimeout
+	if a.cfg != nil && a.cfg.ShutdownTimeout > 0 {
+		timeout = a.cfg.ShutdownTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	stopper.StopAll(ctx)
 }

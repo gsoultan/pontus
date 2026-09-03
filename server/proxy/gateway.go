@@ -72,8 +72,22 @@ type Gateway struct {
 	// cancels maps a backend process id to the server it runs on, so an
 	// out-of-band cancel request can be routed to it.
 	cancels *cancelRegistry
-	chain   middleware.Chain
-	runtime atomic.Pointer[runtimeConfig]
+
+	// inFlight counts statements currently executing, so a shutdown can wait
+	// for them.
+	//
+	// Statements rather than sessions. A pooled session sitting idle between
+	// statements has nothing to lose by being closed — its client reconnects —
+	// while a statement in flight is work a client is blocked on and a
+	// database is already doing. Waiting for sessions would mean every
+	// shutdown took the full timeout, because idle is the normal state.
+	//
+	// A counter rather than a WaitGroup: sessions keep issuing statements
+	// after the drain begins, and Add-ing to a WaitGroup that has reached zero
+	// while Wait is running is exactly the misuse the package warns about.
+	statementsInFlight atomic.Int64
+	chain              middleware.Chain
+	runtime            atomic.Pointer[runtimeConfig]
 
 	// streamCtx is cancelled to end every replication stream at once. Guarded
 	// by streamCtxMu because failover replaces it rather than reusing a
@@ -427,6 +441,9 @@ func (g *Gateway) Serve(ctx context.Context, ln net.Listener) error {
 }
 
 func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) error {
+	m.statementsInFlight.Add(1)
+	defer m.statementsInFlight.Add(-1)
+
 	start := time.Now()
 	// 1. Request Collapsing (Thundering Herd Protection)
 	// Only for simple SELECTs (idempotent reads) and not in transaction
@@ -1137,26 +1154,53 @@ func (g *Gateway) triggerFailover() {
 	}
 }
 
-// Stop waits for all active connections to close.
+// Stop drains the statements in flight, then ends the gateway.
+//
+// The order is the whole of it. This cancelled the gateway's context *first*
+// and then waited on the WaitGroup — which aborted the very sessions it was
+// about to wait for, so the wait returned at once because nothing was left
+// running. A `pg_sleep(8)` was gone five milliseconds after the signal, and
+// every deploy did that to whatever was in flight.
+//
+// The caller's context bounds the drain: a shutdown that waits forever for one
+// stuck statement is a hung deploy, which some supervisor resolves with
+// SIGKILL — the same dropped work, later.
 func (g *Gateway) Stop(ctx context.Context) error {
-	slog.Info("Gateway stopping, waiting for active connections")
+	slog.Info("Gateway stopping, draining statements in flight",
+		"in_flight", g.statementsInFlight.Load())
+
+	err := g.drain(ctx)
+
+	// Cancelled last, because this is what ends whatever did not finish.
 	if g.cancel != nil {
 		g.cancel()
 	}
 	if g.monitor != nil {
 		g.monitor.Stop()
 	}
-	done := make(chan struct{})
-	go func() {
-		g.wg.Wait()
-		close(done)
-	}()
+	return err
+}
 
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+// drainPollInterval is how often the drain re-checks. Short enough that an
+// ordinary shutdown is not noticeably slower than an instant one.
+const drainPollInterval = 25 * time.Millisecond
+
+// drain waits for the statements in flight to finish.
+func (g *Gateway) drain(ctx context.Context) error {
+	ticker := time.NewTicker(drainPollInterval)
+	defer ticker.Stop()
+
+	for {
+		if n := g.statementsInFlight.Load(); n <= 0 {
+			return nil
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			slog.Warn("Shutdown deadline reached with statements still running; "+
+				"they will be ended", "in_flight", g.statementsInFlight.Load())
+			return ctx.Err()
+		}
 	}
 }
 

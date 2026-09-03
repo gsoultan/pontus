@@ -6,31 +6,38 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
-- **A23 [OPEN, ops]. There is no graceful shutdown. Every restart drops in-flight work.**
+- **A23 [FIXED 2026-09-02]. There was no graceful shutdown; every restart dropped in-flight
+  work.**
 
-  Measured: with `SELECT pg_sleep(8)` in flight, SIGINT leaves the proxy gone in **5ms** and
-  the client holding `conn closed`. An idle proxy exits in 4ms. So a deploy, a
-  `systemctl restart`, or a container rollout aborts whatever every session was doing.
+  Measured before: with `SELECT pg_sleep(8)` in flight, SIGINT left the proxy gone in **5ms**
+  and the client holding `conn closed`. So a deploy, a `systemctl restart` or a container
+  rollout aborted whatever every session was doing — errors that surface in the
+  *application's* database layer, which is the worst place to have to attribute them.
 
-  It is unfinished wiring rather than a decision, and it is wrong in two independent places:
+  Unfinished wiring, wrong in two independent places, and both had to be fixed:
 
-  1. **Nothing reaches the drain from a signal.** There is no `signal.Notify` anywhere in
-     `cmd/`, `internal/app/` or `pkg/service/`. `kardianos/service` calls
-     `PontusService.Stop`, which calls `s.cancel()` and returns. `Gateway.Stop` — the method
-     whose comment says it *"waits for all active connections to close"* — is only reachable
-     from `GatewayManager.RemoveProject`, i.e. removing a proxy through the management API.
-  2. **`Gateway.Stop` would not drain if it were reached.** It calls `g.cancel()` *before*
-     `g.wg.Wait()`, which aborts the sessions it is about to wait for. The wait then returns
-     immediately because there is nothing left running.
+  1. **Nothing reached a drain from a signal.** `PontusService.Stop` called `cancel()` and
+     returned. `Gateway.Stop` — the method whose comment says it waits — was only reachable
+     from the management API removing a proxy. It now drains via `App.Drain` →
+     `Registry.StopAll` → `Gateway.Stop`, *before* the cancel, and inside `Stop` because
+     `Run` is on its own goroutine that nothing waits for.
+  2. **`Gateway.Stop` cancelled before waiting**, aborting the sessions it was about to wait
+     for, so the wait returned instantly. The order is now drain, then cancel.
 
-  What a fix needs: stop accepting first, wait for active sessions with a bounded drain
-  period, cancel only after that; a `GatewayManager.StopAll(ctx)`; `App` exposing a
-  `Shutdown(ctx)` that `PontusService.Stop` calls before cancelling; and a config path for
-  the drain timeout, since "how long a deploy may wait" is an operator's decision.
+  It waits for **statements**, not sessions. A pooled session idle between statements has
+  nothing to lose — its client reconnects — while a statement in flight is work someone is
+  blocked on. Waiting for sessions would make every shutdown take the full timeout, because
+  idle is the normal state. A counter rather than a WaitGroup, since sessions keep issuing
+  statements after the drain begins and Add-ing to a WaitGroup at zero during Wait is the
+  documented misuse.
 
-  `e2e/shutdown_test.go` pins today's behaviour and asserts the two things a supervisor
-  needs regardless of policy: the process must exit, and the client must learn the outcome
-  rather than wait on a socket nobody is serving.
+  Bounded by `shutdown_timeout` (default 30s): a deploy that waits forever on one stuck
+  statement is a hung deploy, which a supervisor resolves with SIGKILL — the same dropped
+  work, later and louder.
+
+  Measured after: the `pg_sleep(8)` **completes**, the proxy exits 6s after the signal
+  (exactly the sleep it was waiting out), and an **idle proxy still exits in 4ms**.
+
 
 - **A22 [FIXED 2026-09-01]. Automatic promotion could never have worked.**
 
