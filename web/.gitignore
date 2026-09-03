@@ -1,5 +1,11 @@
 # Logs
-logs
+#
+# Anchored. A bare `logs` matches a directory of that name at *any* depth, and
+# it silently swallowed web/src/logs/ — four React components the dashboard
+# imports — so a clean checkout could not typecheck or build the web app, and
+# therefore could not produce the release binary that embeds it. The files were
+# present on every machine that had ever built it, which is why nobody noticed.
+/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
