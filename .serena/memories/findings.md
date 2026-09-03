@@ -6,6 +6,26 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **D7 [OPEN, ui]. Four React `set-state-in-effect` findings and one `refs` finding, surfaced
+  by a newer oxlint.**
+
+  `oxlint` was an unpinned caret range, so CI installed 1.81.0 while development ran 1.77.0.
+  The newer rules report five errors in pre-existing code:
+
+      src/status/components/MaintenanceModal.tsx:29     set-state-in-effect
+      src/status/components/BackendForm.tsx:99,105      set-state-in-effect
+      src/common/components/ConfirmDangerModal.tsx:63   set-state-in-effect
+      src/status/hooks/useStatus.ts:35                  refs (accessed during render)
+
+  Reproduce with `bunx oxlint@latest` from `web/`.
+
+  oxlint is now pinned to 1.77.0 so CI is deterministic — pinned for determinism, not to
+  make the findings go away. **They are unreviewed.** One instance of the same rule *was*
+  investigated and was a real bug, not a style point: the proxy-edit page guarded its form
+  initialisation with a bare `initialized` boolean, which stayed true when the route params
+  changed, so navigating from one proxy's edit page to another kept the first one's values.
+  That one is fixed. The remaining five deserve the same look before the pin is raised.
+
 - **A23 [FIXED 2026-09-02]. There was no graceful shutdown; every restart dropped in-flight
   work.**
 

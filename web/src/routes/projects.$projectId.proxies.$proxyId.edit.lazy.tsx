@@ -56,7 +56,10 @@ function EditProxyPage() {
   const [initialBackends, setInitialBackends] = useState<any[]>([]);
   const [backends, setBackends] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
-  const [initialized, setInitialized] = useState(false);
+  // Which proxy the form currently holds, rather than a bare "have I loaded"
+  // flag. A boolean stayed true when the route params changed, so navigating
+  // from one proxy's edit page to another kept the first one's values.
+  const [loadedProxyId, setLoadedProxyId] = useState<string | null>(null);
   const [opened, { open, close }] = useDisclosure(false);
   const [editingBackend, setEditingBackend] = useState<any | null>(null);
 
@@ -73,22 +76,31 @@ function EditProxyPage() {
   const project = projectsData?.projects?.find(p => p.id === projectId);
   const proxy = project?.proxies?.find(p => p.id === proxyId);
 
+  // Loading the form is an adjustment to state, not a side effect, so it
+  // happens during render rather than in an effect.
+  //
+  // React re-renders immediately without committing the first pass, so there is
+  // no flash of empty fields and no second paint — which is what "calling
+  // setState synchronously within an effect can trigger cascading renders" is
+  // warning about. See "You Might Not Need an Effect" in the React docs.
+  if (proxy && loadedProxyId !== proxyId) {
+    setLoadedProxyId(proxyId);
+    setProxyForm({
+      name: proxy.name,
+      address: proxy.address,
+      balancer: proxy.balancer
+    });
+    const bks = proxy.backends || [];
+    setInitialBackends([...bks]);
+    setBackends([...bks]);
+  }
+
+  // Telling the store which proxy is on screen *is* a side effect: it reaches
+  // outside this component, so it belongs in an effect.
   useEffect(() => {
-    if (proxy && !initialized) {
-      setProxyForm({
-        name: proxy.name,
-        address: proxy.address,
-        balancer: proxy.balancer
-      });
-      const bks = proxy.backends || [];
-      setInitialBackends([...bks]);
-      setBackends([...bks]);
-      setInitialized(true);
-      
-      setSelectedProjectId(projectId);
-      setSelectedProxyId(proxyId);
-    }
-  }, [proxy, initialized, projectId, proxyId, setSelectedProjectId, setSelectedProxyId]);
+    setSelectedProjectId(projectId);
+    setSelectedProxyId(proxyId);
+  }, [projectId, proxyId, setSelectedProjectId, setSelectedProxyId]);
 
   const handleBackendSubmit = (values: any) => {
     if (editingBackend) {
