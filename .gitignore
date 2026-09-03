@@ -25,3 +25,6 @@ web/bun.lock
 
 # generated knowledge graph (regenerate with: rtk graphify update .)
 /graphify-out/
+
+# Release artifacts. goreleaser writes these; they are rebuilt from a tag.
+/dist/

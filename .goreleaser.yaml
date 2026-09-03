@@ -5,8 +5,12 @@ before:
   hooks:
     - go mod tidy
     - buf generate
-    - bun --cwd web install
-    - bun --cwd web run build
+    # `bun install --cwd web`, not `bun --cwd web install`: the latter is
+    # parsed as "run a script named install", which bun reports as
+    # `Script not found "install"`. The release had never been run, so neither
+    # this nor the missing protoc plugins above it had ever been noticed.
+    - bun install --cwd web
+    - bun run --cwd web build
 
 builds:
   - id: pontus
