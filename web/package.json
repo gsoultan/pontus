@@ -34,7 +34,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@bufbuild/protoc-gen-es": "^2.13.0",
+    "@bufbuild/protoc-gen-es": "2.13.0",
     "@tanstack/router-devtools": "^1.167.1",
     "@tanstack/router-plugin": "^1.168.26",
     "@types/node": "^26.1.2",
