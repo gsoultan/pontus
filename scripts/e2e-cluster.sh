@@ -121,10 +121,20 @@ cr_running() {
   esac
 }
 
+# wait_ready waits until a server answers a query, not until a socket exists.
+#
+# pg_isready is not enough. The postgres image runs a temporary server on a unix
+# socket to initialise the database, stops it, and only then starts the real
+# one — and pg_isready happily reports that temporary server as ready. The very
+# next command then failed with "connection to server on socket ... failed: No
+# such file or directory", which is what a first-run container looks like on a
+# machine that has not cached the image.
+#
+# It never reproduced locally because the containers already existed there.
 wait_ready() {
   local name="$1" label="$2" i=0
   while [ "$i" -lt 90 ]; do
-    if "$CR" exec "$name" pg_isready -U "$PG_USER" -q >/dev/null 2>&1; then
+    if "$CR" exec "$name" psql -U "$PG_USER" -d "$PG_DB" -tAc 'select 1' >/dev/null 2>&1; then
       ok "$label ready"
       return 0
     fi
