@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { statusClient } from "../services/statusService";
 import type { GetStatusResponse } from "../../gen/api/proto/endpoints/management_pb";
@@ -31,8 +31,6 @@ export function useStatus() {
   const [streaming, setStreaming] = useState(false);
   // Read inside the effect without making it a dependency, so a state flip
   // cannot tear down and re-open the stream it just reported on.
-  const streamingRef = useRef(streaming);
-  streamingRef.current = streaming;
 
   const query = useQuery<GetStatusResponse>({
     queryKey: ["status", selectedProjectId, selectedProxyId],
@@ -63,7 +61,11 @@ export function useStatus() {
           { signal: controller.signal },
         )) {
           if (cancelled) return;
-          if (!streamingRef.current) setStreaming(true);
+          // No guard: React bails out of a state update that sets an equal
+          // value, so calling this per message costs nothing after the first.
+          // The ref that used to guard it was written during render, which is
+          // only safe if every render commits.
+          setStreaming(true);
           queryClient.setQueryData(key, status);
         }
       } catch {

@@ -39,8 +39,14 @@ export function useLogStream({ minLevel, search, paused }: UseLogStreamOptions):
   const [error, setError] = useState<string | null>(null)
 
   const pending = useRef<Omit<LogRecord, 'seq'>[]>([])
+  // The stream loop below is long-lived and must see the current `paused`
+  // without being torn down and re-subscribed every time it toggles, so it
+  // reads a ref. Written in an effect rather than during render: only a
+  // committed render should be able to change what the loop sees.
   const pausedRef = useRef(paused)
-  pausedRef.current = paused
+  useEffect(() => {
+    pausedRef.current = paused
+  }, [paused])
 
   // Stream lifecycle: one connection per level, aborted on change/unmount.
   useEffect(() => {

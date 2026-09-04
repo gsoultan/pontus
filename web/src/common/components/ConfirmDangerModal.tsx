@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   Alert,
   Button,
@@ -59,9 +59,14 @@ export function ConfirmDangerModal({
 
   // Never carry a previous confirmation across openings — that would let a
   // second, different target inherit the first one's typed approval.
-  useEffect(() => {
+  //
+  // Adjusted on the transition during render rather than in an effect: this is
+  // state reacting to a prop, not synchronisation with anything outside React.
+  const [wasOpened, setWasOpened] = useState(opened)
+  if (opened !== wasOpened) {
+    setWasOpened(opened)
     if (!opened) setTyped('')
-  }, [opened])
+  }
 
   return (
     <Modal

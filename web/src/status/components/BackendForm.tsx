@@ -22,7 +22,7 @@ import {
   IconAdjustmentsHorizontal
 } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useBackendManagement } from "../hooks/useBackendManagement";
 import { useStatus } from "../hooks/useStatus";
 import { POSTGRES_VERSIONS, DEFAULT_POSTGRES_VERSION } from "../constants";
@@ -90,21 +90,18 @@ export function BackendForm({ initialValues, onSubmit, loading, onCancel, hasPri
     isGettingAgentInfo,
     availableVersions: globalAvailableVersions
   } = useBackendManagement();
-  const [availableVersions, setAvailableVersions] = useState<string[]>(POSTGRES_VERSIONS);
+  // Versions the agent reported for this node, kept separately so the list the
+  // form offers can be derived rather than accumulated. It used to be state fed
+  // by an effect that merged the global list in on every change, which is a
+  // render triggering a render to compute a union.
+  const [detectedVersions, setDetectedVersions] = useState<string[]>([]);
   const [postgresNotFound, setPostgresNotFound] = useState(false);
   const [tuningSuggestions, setTuningSuggestions] = useState<any[]>([]);
 
-  useEffect(() => {
-    if (globalAvailableVersions.length > 0) {
-      setAvailableVersions(prev => Array.from(new Set([...prev, ...globalAvailableVersions])).sort());
-    }
-  }, [globalAvailableVersions]);
-
-  useEffect(() => {
-    if (postgresNotFound && !managedByAgent) {
-      setManagedByAgent(true);
-    }
-  }, [postgresNotFound, managedByAgent]);
+  const availableVersions = useMemo(
+    () => Array.from(new Set([...POSTGRES_VERSIONS, ...globalAvailableVersions, ...detectedVersions])).sort(),
+    [globalAvailableVersions, detectedVersions],
+  );
 
   const handleDetectVersion = useCallback(async () => {
     if (!agentAddress) {
@@ -125,6 +122,10 @@ export function BackendForm({ initialValues, onSubmit, loading, onCancel, hasPri
         });
       } else if (!info.postgresRunning) {
         setPostgresNotFound(true);
+        // Nothing is running here, so this node can only be one Pontus
+        // installs and manages. Set from the event that discovered it rather
+        // than from an effect watching the flag it just set.
+        setManagedByAgent(true);
         setRole(hasPrimary ? "replica" : "primary");
         notifications.show({
           title: "PostgreSQL Not Found",
@@ -140,7 +141,7 @@ export function BackendForm({ initialValues, onSubmit, loading, onCancel, hasPri
         setVersion(info.detectedVersion);
       }
       if (info.availableVersions && info.availableVersions.length > 0) {
-        setAvailableVersions(prev => Array.from(new Set([...prev, ...info.availableVersions])).sort());
+        setDetectedVersions(prev => Array.from(new Set([...prev, ...info.availableVersions])));
       }
       if (info.tuningSuggestions && info.tuningSuggestions.length > 0) {
         setTuningSuggestions(info.tuningSuggestions);

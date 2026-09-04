@@ -1,6 +1,6 @@
 import { Modal, Stack, TextInput, Button, Select, Text, Box, Checkbox } from "@mantine/core";
 import { IconDownload, IconUpload, IconWand } from "@tabler/icons-react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import type { BackendStatus } from "../../gen/api/proto/domain/status_pb";
 
 interface MaintenanceModalProps {
@@ -23,7 +23,13 @@ export function MaintenanceModal({ opened, onClose, backends, onBackup, onRestor
 
   const managedBackends = useMemo(() => backends.filter(b => b.agentAddress), [backends]);
 
-  useEffect(() => {
+  // Seed the form when the modal opens and clear it when it closes, adjusted
+  // on the transition during render. An effect re-ran this whenever
+  // initialAddress or the managed-backend list changed while the modal was
+  // open, overwriting whatever the operator had selected in the meantime.
+  const [wasOpened, setWasOpened] = useState(opened);
+  if (opened !== wasOpened) {
+    setWasOpened(opened);
     if (opened) {
       if (initialAddress) {
         setAddress(initialAddress);
@@ -33,7 +39,7 @@ export function MaintenanceModal({ opened, onClose, backends, onBackup, onRestor
     } else {
       setPath("");
     }
-  }, [opened, initialAddress, managedBackends]);
+  }
 
   const handleSubmit = async () => {
     if (!address) return;

@@ -6,25 +6,25 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
-- **D7 [OPEN, ui]. Four React `set-state-in-effect` findings and one `refs` finding, surfaced
-  by a newer oxlint.**
+- **D7 [FIXED 2026-09-04]. Seven React findings, reviewed one at a time rather than pinned
+  away.**
 
-  `oxlint` was an unpinned caret range, so CI installed 1.81.0 while development ran 1.77.0.
-  The newer rules report five errors in pre-existing code:
+  `oxlint` had been pinned to 1.77.0 for determinism while 1.81.0's rules reported seven
+  errors (five, then seven once `web/src/logs/` was rescued from `.gitignore`). Each turned
+  out to be a different thing, which is why they were worth reading rather than suppressing:
 
-      src/status/components/MaintenanceModal.tsx:29     set-state-in-effect
-      src/status/components/BackendForm.tsx:99,105      set-state-in-effect
-      src/common/components/ConfirmDangerModal.tsx:63   set-state-in-effect
-      src/status/hooks/useStatus.ts:35                  refs (accessed during render)
+  | site | verdict |
+  | :--- | :--- |
+  | `useStatus.ts` | a `streamingRef` written during render that only guarded a redundant `setState` — React already bails out on an equal value, so the ref bought nothing. Deleted. |
+  | `useLogStream.ts` | a genuine latest-ref for a long-lived loop that must not re-subscribe when `paused` toggles. Moved the write into an effect so only a committed render can change what the loop sees. |
+  | `useLogWorker.ts` | the rule's own documented exception — a Worker cannot be built during render, needs teardown, and consumers must re-render once its proxy exists. Suppressed at the reported line, with the reason. |
+  | `ConfirmDangerModal.tsx` | resets a typed confirmation across openings, which is security-relevant. Same behaviour, adjusted on the open/close transition during render. |
+  | `MaintenanceModal.tsx` | **was a bug.** The effect re-ran whenever `initialAddress` or the managed-backend list changed *while the modal was open*, overwriting whatever the operator had selected. Now seeded on the transition only. |
+  | `BackendForm.tsx` ×2 | one was derived data accumulated through an effect — a render triggering a render to compute a union, now a `useMemo`. The other coupled two pieces of state; moved into the event that discovers it. |
 
-  Reproduce with `bunx oxlint@latest` from `web/`.
-
-  oxlint is now pinned to 1.77.0 so CI is deterministic — pinned for determinism, not to
-  make the findings go away. **They are unreviewed.** One instance of the same rule *was*
-  investigated and was a real bug, not a style point: the proxy-edit page guarded its form
-  initialisation with a bare `initialized` boolean, which stayed true when the route params
-  changed, so navigating from one proxy's edit page to another kept the first one's values.
-  That one is fixed. The remaining five deserve the same look before the pin is raised.
+  The pin is now **raised to 1.81.0** with zero errors, so the rule is enforced rather than
+  avoided. Pinning to hide findings would have left two real bugs in place — this one and the
+  proxy-edit navigation bug found earlier under the same rule.
 
 - **A23 [FIXED 2026-09-02]. There was no graceful shutdown; every restart dropped in-flight
   work.**
