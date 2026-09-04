@@ -57,6 +57,14 @@ func NewApp(cfg *config.Options) *App {
 // Run starts the Pontus application and blocks until the context is canceled.
 func (a *App) Run(ctx context.Context) error {
 	var err error
+
+	// Refused at startup with the reason rather than served in a state the
+	// operator did not intend. A console enabled with nobody listed reads like
+	// "everyone" and is the misconfiguration worth failing the boot over.
+	if err := a.cfg.AdminConsole.Validate(); err != nil {
+		return fmt.Errorf("admin_console is misconfigured: %w", err)
+	}
+
 	a.backendTLS, _ = proxy.CreateTLSConfig(a.cfg.BackendTLS)
 
 	// Initialize Management DB (SQLite)

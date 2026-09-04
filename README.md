@@ -174,7 +174,54 @@ cache:
 tls:
   cert_file: "server.crt"
   key_file: "server.key"
+
+# pgbouncer-compatible administration console
+#
+# A virtual database on the proxy port that answers SHOW commands about Pontus
+# itself, so the exporters, dashboards and runbooks a deployment already has
+# keep working after Pontus replaces pgbouncer.
+admin_console:
+  enabled: false              # off by default; it reports pool and backend inventory
+  database: pgbouncer         # the database name a client connects to
+  users:                      # roles allowed in — no default, and no wildcard
+    - admin
 ```
+
+### The administration console
+
+With `admin_console.enabled: true`, connect to the `pgbouncer` database on the
+**proxy** port and run pgbouncer's commands:
+
+```bash
+psql -h pontus-host -p 5432 -U admin -d pgbouncer -c "SHOW POOLS"
+```
+
+| Command | Reports |
+| :--- | :--- |
+| `SHOW POOLS` | occupancy per `(database, user)` — Pontus's pools are keyed that way |
+| `SHOW DATABASES` | one row per configured backend, with its role and ceiling |
+| `SHOW CLIENTS` | live client sessions |
+| `SHOW LISTS` | the size of each internal collection |
+| `SHOW CONFIG` | the settings governing the data path |
+| `SHOW VERSION` | the running build |
+| `SHOW HELP` | the list above |
+
+Both the simple and the extended query protocols are supported, so `psql` and a
+driver such as pgx or the JDBC driver both work without special configuration.
+
+Two constraints are deliberate:
+
+- **The console requires `auth.mode: pontus`.** In passthrough mode a *backend*
+  verifies the client's password, and the console has no backend to ask — so it
+  refuses rather than admitting a client nothing authenticated.
+- **`users` has no default and no wildcard.** An enabled console with nobody
+  listed is refused at startup, because that configuration reads like
+  "everyone".
+
+`SHOW STATS` and `SHOW SERVERS` are not implemented: they report per-database
+query and byte totals, and per-connection server detail, which Pontus does not
+yet keep. They say so rather than returning zeros that would sit on a dashboard
+looking like a working integration.
 
 ---
 

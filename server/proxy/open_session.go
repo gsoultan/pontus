@@ -76,6 +76,14 @@ func (g *Gateway) openSession(
 				return nil, nil, clientOut, err
 			}
 		}
+
+		// The administration console is a database with no backend behind it.
+		// Checked after authentication and before acquisition, because a
+		// console session must prove who it is like any other, and must not
+		// take a connection from a pool it will never use.
+		if admin := g.current().admin; admin.handles(req.Database) {
+			return nil, nil, clientOut, admin.serve(client, req.User)
+		}
 	}
 
 	// A primary if there is one, a replica rather than nothing.

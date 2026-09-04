@@ -190,6 +190,10 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 	// asked for it and a credential source actually resolved.
 	gateway.SetCredentialStore(buildCredentialStore(r.defaults, backends))
 
+	// What the administration console reports on. Supplied after construction
+	// because the backends are built here, not by the gateway.
+	gateway.SetBackends(func() []pool2.Backend { return backends })
+
 	ln, err := net.Listen("tcp", prcfg.Address)
 	if err != nil {
 		cancel()

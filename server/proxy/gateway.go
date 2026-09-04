@@ -46,6 +46,11 @@ type runtimeConfig struct {
 	// if the caller says where it is — every Hint left it empty, so local_zone
 	// was configured, merged, and never affected routing.
 	localZone string
+
+	// admin answers pgbouncer's SHOW commands on the proxy port. Carried here
+	// rather than on the Gateway so that enabling or renaming the console on a
+	// reload reaches new sessions the same way every other setting does.
+	admin *adminConsole
 }
 
 // Gateway implements the proxy.Provider interface.
@@ -72,6 +77,16 @@ type Gateway struct {
 	// cancels maps a backend process id to the server it runs on, so an
 	// out-of-band cancel request can be routed to it.
 	cancels *cancelRegistry
+
+	// sessions tracks live client sessions for the administration console.
+	// One entry per accepted connection, added and removed once per session
+	// rather than per statement, so nothing here is on the query path.
+	sessions *sessionRegistry
+
+	// backends supplies this proxy's backends for introspection. A supplier
+	// rather than a slice because the registry builds them after the gateway,
+	// which is the same reason the failover manager takes one.
+	backends func() []pool2.Backend
 
 	// inFlight counts statements currently executing, so a shutdown can wait
 	// for them.
@@ -135,6 +150,7 @@ func NewGateway(h protocol.Handler, b balancer2.Balancer, orch FailoverOrchestra
 	g.maxCaptureBytes = defaultMaxCaptureBytes
 	g.maxMessageBytes = defaultMaxMessageBytes
 	g.cancels = newCancelRegistry()
+	g.sessions = newSessionRegistry()
 	g.config = cfg
 	g.monitor = m
 	g.backendTLS = backendTLS
@@ -386,7 +402,13 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 	}
 
 	// Publish atomically for the query path.
-	g.runtime.Store(&runtimeConfig{chain: g.chain, pooling: parsePoolingMode(cfg.PoolingMode), localZone: cfg.LocalZone, slowQuery: slowQueryThreshold(cfg)})
+	g.runtime.Store(&runtimeConfig{
+		chain:     g.chain,
+		pooling:   parsePoolingMode(cfg.PoolingMode),
+		localZone: cfg.LocalZone,
+		slowQuery: slowQueryThreshold(cfg),
+		admin:     g.newAdminConsole(cfg),
+	})
 }
 
 // current returns the active runtime configuration. Never nil after
@@ -793,6 +815,16 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 		// pool, nothing to reply to.
 		return
 	}
+	if errors.Is(err, errAdminHandled) {
+		// The connection carried an administration console session, which has
+		// run to completion. It never held a backend.
+		return
+	}
+	if errors.Is(err, errAdminUnavailable) {
+		// The client has already been told why, in the form its driver prints.
+		slog.Warn("Admin console refused", "client", remoteAddr, "error", err)
+		return
+	}
 	if err != nil {
 		// A replication stream is not a failure: it needs the node holding its
 		// slot rather than the balanced one, so it is carried on its own path.
@@ -811,6 +843,12 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 	if cancelPID := g.cancels.remember(sessionState.BackendKey, backendAddr(backend)); cancelPID != 0 {
 		defer g.cancels.forget(cancelPID)
 	}
+
+	// Recorded once per session so the administration console can report who is
+	// connected. Removed when the session ends, so the map is bounded by live
+	// connections rather than by anything a client sends.
+	sessionID := g.sessions.add(sessionState.User, sessionState.Database, remoteAddr)
+	defer g.sessions.remove(sessionID)
 
 	// The startup exchange completed, so this connection can carry queries and
 	// may be recycled. Until it is marked, the pool destroys it on release
