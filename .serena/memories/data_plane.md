@@ -48,9 +48,10 @@ is declined, then the exchange is relayed **in both directions** until ReadyForQ
 and md5 work. The transaction loop is still unframed — it assumes one `client.Read` is one
 message (`mem:findings` C15).
 
-**Pontus still does not pool.** `handleClient` re-handshakes every acquired connection, and the
-client's Terminate is forwarded to the backend, so each session gets its own backend. Read
-`mem:findings` W2/W4 before touching anything here.
+**Pontus pools** under `auth.mode: pontus` — W2/W4 were fixed 2026-08-09 and eight sequential
+clients share one backend connection. This paragraph previously said the opposite and was
+stale; `mem:findings` is authoritative when the two disagree. Passthrough still cannot pool,
+because the client's startup exchange happens once on one connection.
 
 ## `server/internal/pool/` — connection pools
 
@@ -81,10 +82,10 @@ multiplied by: remote-zone penalty (2×), error-rate penalty above 5%, replicati
 (linear to `MaxAllowedReplicaLag` = 10 s, then 100×), and slow start (10×→1× over 30 s from
 `LastHealthy`).
 
-**None of that runs today.** `ReportLatency` has no caller, so `Latency()` is always 0 and the
-function returns at its first line (`if latency == 0 { return 0 }`). Every backend costs 0,
-every penalty below that line is dead, and the cost-ranking strategies degenerate. See
-`mem:findings` A2 before trusting any routing behaviour.
+That cost function **does** run: A2 — `ReportLatency` having no caller, so every backend cost
+0 and the ranking strategies degenerated — was fixed 2026-08-17. This paragraph previously
+said the penalties were dead and was stale; `mem:findings` is authoritative when the two
+disagree.
 
 `FilterNodes` reuses a `sync.Pool` of slices to stay allocation-free. Read-only hints prefer
 healthy low-lag replicas, then any healthy replica, then the primary. Writes take exactly one

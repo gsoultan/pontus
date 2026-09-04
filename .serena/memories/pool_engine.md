@@ -59,8 +59,8 @@ now uses all three (`gpool.Resizable` plus `Stat.WaitingAcquires`):
 - **`SetMaxConns`** restored adaptive sizing. `AdaptivePoolController` applies its computed
   target again, bounded to `[min_idle, max_conns]` by `MaxConnsLimit`. Unlike the old AIMD this
   cannot be driven by a client: capacity moves only on the controller's 5 s sample, and the
-  engine enforces the ceiling structurally. Note the target is still degenerate until
-  `mem:findings` A2 is fixed — `Latency()` is always 0 — so in practice it pins to `max_conns`.
+  engine enforces the ceiling structurally. A2 was fixed 2026-08-17, so the target is no longer
+  degenerate — an earlier version of this note said it was, and was stale.
 - **`EvictIdle`** replaced `clearIdleConns`' acquire-each-and-mark-broken emulation, which
   raced with real callers and was bounded by a stale idle count.
 - **`Stat.WaitingAcquires`** is a real gauge, so the dashboard's `current_max_waiters` reports
@@ -76,8 +76,7 @@ now uses all three (`gpool.Resizable` plus `Stat.WaitingAcquires`):
 ## What it did NOT fix
 
 The swap is below the wire layer. W1 (SCRAM) and W3 (prepared statements) were fixed separately
-in `protocol`/`gateway`; **W2 and W4 remain** — the startup handshake is still replayed onto
-pooled connections and Terminate is still forwarded to the backend, so Pontus does not yet reuse
-a connection across client sessions. W2's *symptom* changed — with dead
-connections now correctly evicted, a reused connection is alive, so the re-handshake hangs
-instead of returning `invalid frontend message type 0`.
+in `protocol`/`gateway`, and **W2 and W4 were fixed on 2026-08-09** under `auth.mode: pontus`:
+Pontus reuses a connection across client sessions, and eight sequential clients share one
+backend connection. An earlier version of this note said they remained open, and was stale —
+`mem:findings` is authoritative when the two disagree.

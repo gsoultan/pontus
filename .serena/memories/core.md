@@ -39,6 +39,11 @@ references this task needs. Do not re-derive from source what is already written
   cache invalidation, the load-balancer cost function and client-facing TLS all look implemented
   and are not wired to anything. Items marked `[repro]` were demonstrated, not inferred.
 
+## Compatibility surface
+- The pgbouncer-compatible admin console — what it answers, the two refusals that
+  are deliberate, why both query protocols are supported, and the ranked list of
+  gaps still open against pgbouncer/pgcat: `mem:admin_console`.
+
 ## Authoritative files in-repo
 - `CLAUDE.md` — quick reference + the Always-Optimize Loop.
 - `AGENTS.md` — the profile roster with per-surface Owns · Vetoes · Proof, and the
