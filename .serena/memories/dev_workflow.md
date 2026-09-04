@@ -56,3 +56,29 @@ a problem with the script or your setup.
   on writes and the blocked-word match is `strings.Contains`. Enable them deliberately.
   See `mem:findings` A1 and C16.
 - macOS has no `setsid` and no `timeout`; don't reach for them in scripts here.
+
+## Running the e2e suite
+
+Behind the `e2e` build tag and it needs a real PostgreSQL. `requireBackend`
+**skips** rather than fails without one, so a green run proves nothing until you
+check it actually ran.
+
+The variable is `PONTUS_E2E_BACKEND` (not `..._ADDR`; the default is
+`127.0.0.1:5433`). A backend on the default port that Pontus cannot log into
+produces confusing failures deep in SCRAM rather than a skip.
+
+```bash
+podman run -d --name pontus-e2e-pg -e POSTGRES_PASSWORD=pontus_e2e \
+  -p 55432:5432 docker.io/library/postgres:16
+
+PONTUS_E2E_BACKEND=127.0.0.1:55432 PONTUS_E2E_USER=postgres \
+PONTUS_E2E_PASSWORD=pontus_e2e PONTUS_E2E_DB=postgres \
+  go test -tags e2e ./e2e/ -run <Name> -v -timeout 15m
+```
+
+Each test builds the binary and starts a whole stack, so a single test is ~5 s
+and the suite is minutes. `auth.mode: pontus` additionally needs a backend
+`admin_dsn` or an `auth_file` — without either, `buildCredentialStore` logs the
+reason and **silently stays in passthrough**, which reads as a feature not
+working rather than as a misconfiguration. The harness template already sets
+`admin_dsn`.
