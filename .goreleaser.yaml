@@ -60,6 +60,13 @@ archives:
       - goos: windows
         formats: [zip]
 
+release:
+  # Detect a pre-release from the tag rather than declaring every build final.
+  # Without this GoReleaser publishes v0.1.0-rc.1 as a full release and GitHub
+  # marks it "Latest", so anyone landing on the repository is handed a release
+  # candidate as the thing to install.
+  prerelease: auto
+
 checksum:
   name_template: 'checksums.txt'
 
