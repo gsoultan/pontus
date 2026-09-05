@@ -92,6 +92,15 @@ type Options struct {
 	// the dashboard is served by this binary. "*" is rejected at startup.
 	AllowedOrigins []string `json:"allowed_origins,omitzero" yaml:"allowed_origins"`
 	DataDir        string   `json:"data_dir,omitzero" yaml:"data_dir"`
+
+	// AdminConsole serves pgbouncer's SHOW commands on the proxy port, so the
+	// exporters and runbooks a deployment already has keep working. Nil is off.
+	AdminConsole *AdminConsole `json:"admin_console,omitzero" yaml:"admin_console"`
+
+	// Databases routes and bounds individual client-visible database names —
+	// pgbouncer's `[databases]`. Empty means every database resolves to itself
+	// under the global max_conns.
+	Databases Databases `json:"databases,omitzero" yaml:"databases"`
 }
 
 // resolveSecrets applies the auth_key alias and the environment overrides.
@@ -212,5 +221,11 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.DataDir != "" {
 		c.DataDir = other.DataDir
+	}
+	if other.AdminConsole != nil {
+		c.AdminConsole = other.AdminConsole
+	}
+	if len(other.Databases) > 0 {
+		c.Databases = other.Databases
 	}
 }

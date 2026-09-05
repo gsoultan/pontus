@@ -53,7 +53,12 @@ type poolSet struct {
 	pools map[identity]*poolEntry
 
 	// newCore builds a pool for one identity.
-	newCore func() (*pooling.Core[*Conn], error)
+	//
+	// It takes the identity because the ceiling is not the same for every one
+	// of them: a per-database `max_conns` is applied when the pool is built,
+	// and a closure that could not see whose pool it was building would have to
+	// give them all the global value.
+	newCore func(identity) (*pooling.Core[*Conn], error)
 
 	// maxTotal caps connections to this backend across every pool — pgbouncer's
 	// max_db_connections, and what keeps Pontus inside the database's own
@@ -72,7 +77,7 @@ type poolSet struct {
 }
 
 func newPoolSet(address string, maxTotal int32, maxPools int, idleTTL time.Duration,
-	newCore func() (*pooling.Core[*Conn], error)) *poolSet {
+	newCore func(identity) (*pooling.Core[*Conn], error)) *poolSet {
 	return &poolSet{
 		pools:    make(map[identity]*poolEntry),
 		newCore:  newCore,
@@ -110,7 +115,7 @@ func (s *poolSet) get(id identity) (*pooling.Core[*Conn], error) {
 		return nil, err
 	}
 
-	core, err := s.newCore()
+	core, err := s.newCore(id)
 	if err != nil {
 		return nil, fmt.Errorf("pool for %s on %s: %w", id, s.address, err)
 	}
@@ -189,15 +194,28 @@ func (s *poolSet) reapLocked() {
 // each runs fn over every pool: resizing, eviction, statistics and shutdown all
 // used to act on one core and now have to act on all of them.
 func (s *poolSet) each(fn func(*pooling.Core[*Conn])) {
+	s.eachIdentity(func(_ identity, core *pooling.Core[*Conn]) { fn(core) })
+}
+
+// eachIdentity is each, for the callers that need to know whose pool they are
+// looking at — a resize that must respect a per-database ceiling, and the
+// statistics the admin console reports per (database, user).
+//
+// fn runs outside the set's lock. It reads the engine's own counters or calls
+// into it, and holding a lock the acquire path needs while doing that would put
+// the caller in front of every session on this backend.
+func (s *poolSet) eachIdentity(fn func(identity, *pooling.Core[*Conn])) {
 	s.mu.Lock()
+	ids := make([]identity, 0, len(s.pools))
 	cores := make([]*pooling.Core[*Conn], 0, len(s.pools))
-	for _, entry := range s.pools {
+	for id, entry := range s.pools {
+		ids = append(ids, id)
 		cores = append(cores, entry.core)
 	}
 	s.mu.Unlock()
 
-	for _, core := range cores {
-		fn(core)
+	for i, core := range cores {
+		fn(ids[i], core)
 	}
 }
 

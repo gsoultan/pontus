@@ -39,7 +39,12 @@ type Server struct {
 
 	// coreConfig is how each identity's pool is built.
 	coreConfig pooling.Config
-	driver     *connDriver
+
+	// databaseLimits caps individual databases below the global max_conns —
+	// pgbouncer's per-database pool_size. Nil means every identity takes the
+	// global ceiling.
+	databaseLimits databaseLimitStore
+	driver         *connDriver
 
 	// admin is Pontus's own authenticated channel, used for the questions the
 	// control plane asks a database. Nil when no admin_dsn is configured.
@@ -169,8 +174,20 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 	}.WithDefaults()
 
 	p.pools = newPoolSet(address, backendConnCeiling(maxConns), maxIdentityPools, identityPoolTTL,
-		func() (*pooling.Core[*Conn], error) {
-			return pooling.New[*Conn](p.driver, p.coreConfig)
+		func(id identity) (*pooling.Core[*Conn], error) {
+			p.mu.Lock()
+			cfg := p.coreConfig
+			p.mu.Unlock()
+
+			// A per-database rule caps this identity below whatever the
+			// backend is currently running at. MaxConnsLimit moves with it, so
+			// the adaptive controller cannot raise this pool back above the
+			// ceiling the operator set for its database.
+			if limit := p.limitFor(id.database); limit > 0 {
+				cfg.MaxConns = ceilingFor(cfg.MaxConns, limit)
+				cfg.MaxConnsLimit = ceilingFor(cfg.MaxConnsLimit, limit)
+			}
+			return pooling.New[*Conn](p.driver, cfg)
 		})
 
 	p.roleCheckChan = make(chan struct{}, 1)
@@ -349,9 +366,14 @@ func (p *Server) SetMaxConns(n int32) error {
 	p.coreConfig.MaxConns = n
 	p.mu.Unlock()
 
+	// Per identity, because a per-database ceiling caps this pool below the
+	// backend-wide target. Applying n to every pool would let a resize hand a
+	// bounded database more connections than its rule allows — the controller's
+	// job is to lower capacity under pressure, not to overrule the operator.
 	var firstErr error
-	p.pools.each(func(core *pooling.Core[*Conn]) {
-		if err := core.SetMaxConns(n); err != nil && firstErr == nil {
+	p.pools.eachIdentity(func(id identity, core *pooling.Core[*Conn]) {
+		target := ceilingFor(n, p.limitFor(id.database))
+		if err := core.SetMaxConns(target); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	})

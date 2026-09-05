@@ -174,7 +174,105 @@ cache:
 tls:
   cert_file: "server.crt"
   key_file: "server.key"
+
+# Per-database routing and limits (pgbouncer's [databases])
+#
+# Optional. Without it every database resolves to itself under the global
+# max_conns, which means the ceiling a busy tenant needs is the ceiling every
+# other tenant also gets.
+databases:
+  - name: app                 # what the client connects to
+    database: app_prod        # the real name on the backend (optional)
+    max_conns: 20             # per-identity ceiling for this database (optional)
+  - name: "*"                 # fallback: limits only, never a rewrite
+    max_conns: 5
+
+# pgbouncer-compatible administration console
+#
+# A virtual database on the proxy port that answers SHOW commands about Pontus
+# itself, so the exporters, dashboards and runbooks a deployment already has
+# keep working after Pontus replaces pgbouncer.
+admin_console:
+  enabled: false              # off by default; it reports pool and backend inventory
+  database: pgbouncer         # the database name a client connects to
+  users:                      # roles allowed in — no default, and no wildcard
+    - admin
 ```
+
+### Per-database routing
+
+`databases:` is Pontus's `[databases]`. Each entry may rename a database, bound
+it, or both:
+
+| Field | Meaning |
+| :--- | :--- |
+| `name` | the name the client puts in its startup packet |
+| `database` | the real name to open on the backend; empty means `name` |
+| `max_conns` | per-identity ceiling for this database; zero takes the global `max_conns` |
+
+```yaml
+databases:
+  - name: app
+    database: app_prod   # a cutover moves this without touching the application
+    max_conns: 20
+  - name: reporting
+    max_conns: 2         # bound one tenant without bounding everyone
+```
+
+- **An unlisted database resolves to itself**, under the global `max_conns`.
+  This is not an allowlist — making it one would mean enumerating every database
+  in a deployment before a limit could be set on one of them.
+- **`max_conns` is per identity**, matching pgbouncer's per-database `pool_size`.
+  A connection carries the credentials it authenticated with, so `(database, user)`
+  is the unit a pool is keyed by and therefore the unit a ceiling applies to.
+- **The rule is a cap, not a target.** The adaptive controller may lower capacity
+  for the whole backend under pressure; the effective ceiling is the lower of the
+  two, so the controller can still reclaim connections.
+- **`"*"` carries limits and never rewrites.** Pointing every unlisted name at
+  one real database would send one tenant's queries to another tenant's data, so
+  a wildcard with `database:` set is refused at startup.
+- Aliasing works in both `passthrough` and `pontus` auth modes: the client's
+  startup packet is rewritten so the pool key, the backend connection and the
+  identity recorded for reuse all name the same database.
+
+Pools appear in `SHOW POOLS` under the **real** database name, because that is
+what the connections were opened against.
+
+### The administration console
+
+With `admin_console.enabled: true`, connect to the `pgbouncer` database on the
+**proxy** port and run pgbouncer's commands:
+
+```bash
+psql -h pontus-host -p 5432 -U admin -d pgbouncer -c "SHOW POOLS"
+```
+
+| Command | Reports |
+| :--- | :--- |
+| `SHOW POOLS` | occupancy per `(database, user)` — Pontus's pools are keyed that way |
+| `SHOW DATABASES` | one row per configured backend, with its role and ceiling |
+| `SHOW CLIENTS` | live client sessions |
+| `SHOW LISTS` | the size of each internal collection |
+| `SHOW CONFIG` | the settings governing the data path |
+| `SHOW VERSION` | the running build |
+| `SHOW HELP` | the list above |
+
+Both the simple and the extended query protocols are supported, so `psql` and a
+driver such as pgx or the JDBC driver both work without special configuration.
+
+Two constraints are deliberate:
+
+- **The console requires `auth.mode: pontus`.** In passthrough mode a *backend*
+  verifies the client's password, and the console has no backend to ask — so it
+  refuses rather than admitting a client nothing authenticated.
+- **`users` has no default and no wildcard.** An enabled console with nobody
+  listed is refused at startup, because that configuration reads like
+  "everyone".
+
+`SHOW STATS` and `SHOW SERVERS` are not implemented: they report per-database
+query and byte totals, and per-connection server detail, which Pontus does not
+yet keep. They say so rather than returning zeros that would sit on a dashboard
+looking like a working integration.
 
 ---
 
