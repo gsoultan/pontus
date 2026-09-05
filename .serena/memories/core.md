@@ -40,6 +40,9 @@ references this task needs. Do not re-derive from source what is already written
   and are not wired to anything. Items marked `[repro]` were demonstrated, not inferred.
 
 ## Compatibility surface
+- Per-database routing and limits (`databases:`), why the alias rewrites the raw
+  startup packet, and why a per-database ceiling is a cap rather than a target:
+  `mem:database_routing`.
 - The pgbouncer-compatible admin console — what it answers, the two refusals that
   are deliberate, why both query protocols are supported, and the ranked list of
   gaps still open against pgbouncer/pgcat: `mem:admin_console`.

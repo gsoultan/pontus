@@ -82,8 +82,11 @@ allows, and every mock would grow a method none of them need.
 
 Gaps against pgbouncer/pgcat identified alongside this work, none started:
 
-1. **No `[databases]` equivalent** — one flat backend list and one global
-   `max_conns`, so no per-database/user pool sizing, aliasing or routing.
+1. ~~**No `[databases]` equivalent**~~ — **done 2026-09-06**, see
+   `mem:database_routing`. What remains of pgbouncer's `[databases]`: no
+   `force_user`, no per-database `pool_mode`, and no `max_db_connections`
+   (a total across users for one database, distinct from the per-identity
+   `max_conns` that shipped).
 2. **No session pooling mode** — `pooling_mode` is transaction|statement only.
 3. **Zero benchmarks in the tree**, so `AGENTS.md`'s "no per-query allocation
    without a benchmark" veto is unenforceable and the README's performance
