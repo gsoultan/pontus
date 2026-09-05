@@ -1,6 +1,10 @@
 package pool
 
-import "time"
+import (
+	"time"
+
+	"github.com/gsoultan/gpool/pkg/pooling"
+)
 
 // PoolStat is one identity's occupancy on one backend.
 //
@@ -39,24 +43,12 @@ func (p PoolStat) AverageWait() time.Duration {
 
 // stats returns one row per identity holding a pool on this backend.
 func (s *poolSet) stats() []PoolStat {
-	s.mu.Lock()
-	out := make([]PoolStat, 0, len(s.pools))
-	ids := make([]identity, 0, len(s.pools))
-	cores := make([]*poolEntry, 0, len(s.pools))
-	for id, entry := range s.pools {
-		ids = append(ids, id)
-		cores = append(cores, entry)
-	}
-	s.mu.Unlock()
-
-	// Stat() is taken outside the set's lock. It reads the engine's own
-	// counters, and holding a lock the acquire path needs while doing it would
-	// put the console in front of every session on this backend.
-	for i, entry := range cores {
-		st := entry.core.Stat()
+	var out []PoolStat
+	s.eachIdentity(func(id identity, core *pooling.Core[*Conn]) {
+		st := core.Stat()
 		out = append(out, PoolStat{
-			Database:      ids[i].database,
-			User:          ids[i].user,
+			Database:      id.database,
+			User:          id.user,
 			Active:        st.ActiveConnections(),
 			Idle:          st.IdleConnections(),
 			Total:         st.TotalConnections(),
@@ -65,7 +57,7 @@ func (s *poolSet) stats() []PoolStat {
 			EmptyAcquires: st.EmptyAcquireCount(),
 			AcquireWait:   st.AcquireDuration(),
 		})
-	}
+	})
 	return out
 }
 

@@ -135,6 +135,16 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 			slog.Error("Failed to create backend server", "address", backendAddr, "error", err)
 			continue
 		}
+		// Per-database ceilings — pgbouncer's per-database pool_size. Installed
+		// before Start so the first pool a session creates already carries the
+		// limit its database was given.
+		if r.defaults != nil && len(r.defaults.Databases) > 0 {
+			databases := r.defaults.Databases
+			p.SetDatabaseLimits(func(database string) int32 {
+				return databases.Limit(database)
+			})
+		}
+
 		p.Start(ctx)
 		backends = append(backends, p)
 	}

@@ -96,6 +96,11 @@ type Options struct {
 	// AdminConsole serves pgbouncer's SHOW commands on the proxy port, so the
 	// exporters and runbooks a deployment already has keep working. Nil is off.
 	AdminConsole *AdminConsole `json:"admin_console,omitzero" yaml:"admin_console"`
+
+	// Databases routes and bounds individual client-visible database names —
+	// pgbouncer's `[databases]`. Empty means every database resolves to itself
+	// under the global max_conns.
+	Databases Databases `json:"databases,omitzero" yaml:"databases"`
 }
 
 // resolveSecrets applies the auth_key alias and the environment overrides.
@@ -219,5 +224,8 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.AdminConsole != nil {
 		c.AdminConsole = other.AdminConsole
+	}
+	if len(other.Databases) > 0 {
+		c.Databases = other.Databases
 	}
 }

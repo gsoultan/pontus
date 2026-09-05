@@ -65,6 +65,13 @@ func (a *App) Run(ctx context.Context) error {
 		return fmt.Errorf("admin_console is misconfigured: %w", err)
 	}
 
+	// A routing table that cannot be served is refused at startup rather than
+	// half-applied. A duplicate name would resolve to whichever entry the loop
+	// reached first, which is not something an operator can reason about.
+	if err := a.cfg.Databases.Validate(); err != nil {
+		return fmt.Errorf("databases is misconfigured: %w", err)
+	}
+
 	a.backendTLS, _ = proxy.CreateTLSConfig(a.cfg.BackendTLS)
 
 	// Initialize Management DB (SQLite)

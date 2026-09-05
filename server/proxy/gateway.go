@@ -51,6 +51,11 @@ type runtimeConfig struct {
 	// rather than on the Gateway so that enabling or renaming the console on a
 	// reload reaches new sessions the same way every other setting does.
 	admin *adminConsole
+
+	// routes maps a client-visible database name to the one Pontus opens.
+	// Read once per session rather than per query, but carried here so a
+	// reload reaches new sessions without a lock on the session path.
+	routes config.Databases
 }
 
 // Gateway implements the proxy.Provider interface.
@@ -408,6 +413,7 @@ func (g *Gateway) reconfigure(cfg *config.Options) {
 		localZone: cfg.LocalZone,
 		slowQuery: slowQueryThreshold(cfg),
 		admin:     g.newAdminConsole(cfg),
+		routes:    cfg.Databases,
 	})
 }
 
