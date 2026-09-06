@@ -23,10 +23,16 @@ type mockBackend struct {
 	// Guarded, because the real *pool.Server is: verifyPromotion reads the role
 	// from its own goroutine while a test writes it, and a double that is not
 	// safe reports a race the production type does not have.
-	mu         sync.Mutex
-	role       pool.Role
-	healthy    bool
-	reevaluted int
+	mu      sync.Mutex
+	role    pool.Role
+	healthy bool
+
+	// notStreaming is inverted so the zero value is an ordinary replica with a
+	// working WAL receiver. A double that defaulted to "not replicating" would
+	// make every existing test look like a cluster in need of a rebuild.
+	notStreaming bool
+	draining     bool
+	reevaluted   int
 }
 
 func (m *mockBackend) Address() string { return m.address }
@@ -53,6 +59,24 @@ func (m *mockBackend) SetHealthy(h bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.healthy = h
+}
+
+func (m *mockBackend) IsReplicating() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return !m.notStreaming
+}
+
+func (m *mockBackend) setStreaming(streaming bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.notStreaming = !streaming
+}
+
+func (m *mockBackend) IsDraining() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.draining
 }
 
 func (m *mockBackend) ReevaluateRole() {

@@ -187,6 +187,18 @@ databases:
   - name: "*"                 # fallback: limits only, never a rewrite
     max_conns: 5
 
+# Failover and recovery
+failover:
+  enabled: false              # automatic promotion; split-brain resolution runs regardless
+  failure_threshold: 3        # consecutive checks with no healthy primary before promoting
+  follow_primary: true        # re-point surviving replicas after a promotion
+  max_replica_lag: 10s        # reads stop going to a replica past this
+  auto_reattach: true         # pull a non-streaming replica out of the read pool
+  auto_rejoin: false          # and rebuild it as a replica of the current primary
+  auto_rejoin_interval: 5m
+  auto_rejoin_timeout: 30m    # a rebuild can mean a base backup of the whole cluster
+  auto_rejoin_max_attempts: 3
+
 # pgbouncer-compatible administration console
 #
 # A virtual database on the proxy port that answers SHOW commands about Pontus
@@ -198,6 +210,40 @@ admin_console:
   users:                      # roles allowed in — no default, and no wildcard
     - admin
 ```
+
+### Automatic recovery after a failover
+
+`auto_reattach` and `auto_rejoin` are two halves of the same problem.
+
+A former primary that comes back after a failover is **up, answers queries, and
+will never stream again** — it is on an abandoned timeline. `auto_reattach`
+(on by default) stops routing reads to it, so it cannot serve stale rows. But
+nothing then *fixes* it, and the cluster runs permanently short until an
+operator notices.
+
+`auto_rejoin` closes that: a node that is reachable but no longer replicating is
+rebuilt as a replica of the current primary, retried on an interval and given a
+bounded number of attempts before it is left to a person.
+
+```yaml
+failover:
+  enabled: true
+  auto_rejoin: true
+```
+
+- **Off by default.** A rebuild can mean a `pg_basebackup` that discards the
+  node's data directory, which is not something to start underneath an operator
+  who has not asked for it — the same reason `enabled` is off.
+- **Only reachable nodes are rebuilt.** A node Pontus cannot reach might simply
+  be rebooting; rebuilding it is impossible anyway, since the rebuild runs
+  through its agent.
+- **The write role is never moved.** A rebuilt node returns as a replica.
+  Returning the write role to a preferred node causes a *second* unplanned
+  outage, so it stays a deliberate operator action — Patroni and pgpool-II make
+  the same call.
+- Watch `pontus_auto_rejoin_pending` (nodes reachable but serving nothing) and
+  `pontus_auto_rejoin_total{result="exhausted"}` (Pontus has given up and the
+  node needs a person).
 
 ### Per-database routing
 

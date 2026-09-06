@@ -44,6 +44,11 @@ type FailoverManager struct {
 	// rather than acting on a single observation.
 	missedPrimary int
 
+	// rejoins tracks rebuild attempts per node, so a node that cannot be
+	// rebuilt is not rebuilt on every tick and one that never can is
+	// eventually left to an operator.
+	rejoins *rejoinTracker
+
 	opts Options
 }
 
@@ -53,6 +58,7 @@ func NewFailoverManager(provisioner Provisioner, consensus Consensus, backends f
 		consensus:   consensus,
 		backends:    backends,
 		state:       StateIdle,
+		rejoins:     newRejoinTracker(),
 		opts:        opts.sane(),
 	}
 }
@@ -201,7 +207,22 @@ func (m *FailoverManager) monitor(ctx context.Context) {
 				p.ReevaluateRole()
 			}
 		}
+
+		// The demotions above are asynchronous on the database side and one of
+		// them may well have failed. Rejoin reconciliation runs on the next
+		// tick against whatever actually happened, rather than against what
+		// this branch intended.
+		return
 	}
+
+	// 3. Rejoin nodes that are reachable but no longer replicating.
+	//
+	// Demotion, above, is a single attempt: it is logged if it fails and never
+	// retried, so a node that could not be rebuilt stays out of the cluster
+	// until a person notices. That is the gap this closes — a former primary
+	// back on an abandoned timeline is up, answers queries, and will never
+	// stream again on its own.
+	m.reconcileRejoins(ctx, healthyPrimaries[0].Address(), backends)
 }
 
 // setState stores the failover state under the lock.
