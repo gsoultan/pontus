@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gsoultan/pontus/api/proto/endpoints"
@@ -303,13 +305,18 @@ func (p *postgresProvisioner) DemoteToReplica(ctx context.Context, backendAddr s
 	}
 	defer agent.Close()
 
-	primaryHost := p.getHost(primaryAddr)
+	// The port has to come from the address, not from a constant.
+	//
+	// This said `PrimaryPort: 5432` regardless of where the primary actually
+	// listened, so on any cluster not using the default port the replica was
+	// pointed at a port nothing served. Every caller of this is a recovery
+	// path — split-brain healing, follow_primary, auto_rejoin — so the failure
+	// only ever showed up during an incident.
+	primaryHost, primaryPort := splitHostPort(primaryAddr, defaultPostgresPort)
 
-	// Reconfigure as replica pointing to the new primary
 	req := &endpoints.SetupReplicationRequest{
 		PrimaryHost: primaryHost,
-		PrimaryPort: 5432, // Default
-		// We might need more info here, but for now this is the idea
+		PrimaryPort: int32(primaryPort),
 	}
 
 	out, err := agent.SetupReplication(ctx, req)
@@ -317,13 +324,63 @@ func (p *postgresProvisioner) DemoteToReplica(ctx context.Context, backendAddr s
 		return fmt.Errorf("failed to setup replication: %w", err)
 	}
 
+	// Completion must be stated, not assumed.
+	//
+	// This used to `return nil` after draining the stream however it ended, so
+	// an agent that reported an error, or that closed having done nothing at
+	// all, was indistinguishable from one that rebuilt the node. Split-brain
+	// resolution logged "Self-Healing" every few seconds against a node it
+	// never touched, and nothing above it could tell.
+	var completed bool
+	var last string
 	for msg := range out {
+		if msg.Message != "" {
+			last = msg.Message
+		}
+		if isFailureStage(msg.Stage) {
+			return fmt.Errorf("agent at %s could not rebuild %s as a replica of %s: %s",
+				agentAddr, backendAddr, primaryAddr, orNoOutput(last))
+		}
 		if msg.Percentage == 100 {
-			return nil
+			completed = true
 		}
 	}
-
+	if !completed {
+		return fmt.Errorf("agent at %s ended the replication setup for %s without completing it: %s",
+			agentAddr, backendAddr, orNoOutput(last))
+	}
 	return nil
+}
+
+// defaultPostgresPort is used only when an address carries no port at all.
+const defaultPostgresPort = 5432
+
+// splitHostPort separates an address, falling back to a default port for a bare
+// host rather than failing a recovery on a formatting detail.
+func splitHostPort(addr string, fallback int) (host string, port int) {
+	h, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr, fallback
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil {
+		return h, fallback
+	}
+	return h, n
+}
+
+// isFailureStage reports whether the agent named this stage as a failure.
+//
+// The progress message has no error field, so a stage name is the only channel
+// an agent has for saying it did not work. Matched loosely on purpose: the
+// alternative to recognising "failed" is treating it as progress.
+func isFailureStage(stage string) bool {
+	switch strings.ToLower(strings.TrimSpace(stage)) {
+	case "error", "failed", "failure":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *postgresProvisioner) getHost(addr string) string {

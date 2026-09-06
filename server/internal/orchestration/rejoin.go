@@ -170,15 +170,64 @@ func (m *FailoverManager) rejoin(ctx context.Context, node pool.Backend, primary
 		return
 	}
 
+	// The rebuild happened on the database host, so the pool still believes
+	// what it last measured. Without this the node waits for its own deep-check
+	// tick before anything here can see what changed — the same lag that made a
+	// promotion take half a minute to reach the proxy.
+	node.ReevaluateRole()
+
+	// Confirm the outcome rather than trusting the report.
+	//
+	// The agent tells Pontus it succeeded; that is a claim from another
+	// process about work Pontus cannot see. A stubbed or half-implemented
+	// agent that answers "Replication configured" having done nothing is
+	// indistinguishable from a working one at this point — and that is not
+	// hypothetical, it is what the shipped agent does today. Treating the
+	// claim as the result means a node is marked recovered, its attempt
+	// history cleared, and the cluster reported healthy while it serves
+	// nothing.
+	//
+	// What matters is observable from here: the node is a replica again and
+	// its WAL receiver is attached.
+	if !m.confirmRejoined(ctx, node) {
+		m.rejoins.finish(addr, false)
+		observability.RejoinResults.WithLabelValues("error").Inc()
+		slog.Error("The agent reported a successful rebuild, but the node is still not "+
+			"replicating; treating it as failed",
+			"node", addr, "primary", primary, "role", node.Role())
+		return
+	}
+
 	m.rejoins.finish(addr, true)
 	observability.RejoinResults.WithLabelValues("ok").Inc()
 
-	// The rebuild happened on the database host, so the pool still believes
-	// what it last measured. Without this the node waits for its own deep-check
-	// tick before it can serve anything — the same lag that made a promotion
-	// take half a minute to reach the proxy.
-	node.ReevaluateRole()
-
 	slog.Info("Node rebuilt and following the primary again",
 		"node", addr, "primary", primary)
+}
+
+// rejoinConfirmTimeout bounds the wait for a rebuilt node to start streaming.
+//
+// A base backup has already finished by this point; what remains is the node
+// restarting and its WAL receiver attaching, which is seconds. Waiting longer
+// would hold the attempt open and stop the next tick from retrying.
+const rejoinConfirmTimeout = 30 * time.Second
+
+// confirmRejoined reports whether the node is now a replica that is streaming.
+func (m *FailoverManager) confirmRejoined(ctx context.Context, node pool.Backend) bool {
+	deadline := time.Now().Add(rejoinConfirmTimeout)
+	for {
+		if node.Role() == pool.RoleReplica && node.IsReplicating() {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(time.Second):
+			node.ReevaluateRole()
+		}
+	}
 }

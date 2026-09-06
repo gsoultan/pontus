@@ -104,6 +104,13 @@ func TestRejoinRebuildsANonStreamingNode(t *testing.T) {
 
 	backends := []pool.Backend{primary, stranded, fine}
 	provisioner := &mockProvisioner{}
+	// The rebuild works, so the node comes back streaming. Confirmation reads
+	// that, rather than the agent's word for it.
+	provisioner.onDemote = func(addr string) {
+		if addr == "p1" {
+			stranded.setStreaming(true)
+		}
+	}
 	mgr := NewFailoverManager(provisioner, nil, func() []pool.Backend { return backends },
 		Options{Enabled: true, AutoRejoin: true, AutoRejoinMaxAttempts: 3})
 
@@ -258,11 +265,18 @@ func TestRejoinResetsAfterASuccess(t *testing.T) {
 
 	backends := []pool.Backend{primary, stranded}
 	provisioner := &mockProvisioner{}
+	provisioner.onDemote = func(addr string) {
+		if addr == "p1" {
+			stranded.setStreaming(true)
+		}
+	}
 	mgr := NewFailoverManager(provisioner, nil, func() []pool.Backend { return backends },
 		Options{Enabled: true, AutoRejoin: true, AutoRejoinMaxAttempts: 2})
 
 	mgr.reconcileRejoins(context.Background(), "r1", backends)
 	waitForDemote(t, provisioner, 1)
+	// The tracker clears only once confirmation passes.
+	time.Sleep(100 * time.Millisecond)
 
 	mgr.rejoins.mu.Lock()
 	_, tracked := mgr.rejoins.nodes["p1"]
@@ -310,4 +324,36 @@ func TestRejoinTrackerReportsExhaustion(t *testing.T) {
 	if !exhausted {
 		t.Error("running out of budget was not reported as exhaustion")
 	}
+}
+
+// The agent's success is a claim about work Pontus cannot see, and the shipped
+// agent's SetupReplication is a stub that reports "Replication configured"
+// having done nothing. Believing it marks a node recovered, clears its attempt
+// history, and reports the cluster healthy while it serves nothing.
+func TestRejoinDoesNotBelieveAnAgentThatDidNothing(t *testing.T) {
+	primary := &mockBackend{address: "r1", role: pool.RolePrimary, healthy: true}
+	// The provisioner returns success, but the node never starts streaming.
+	stranded := &mockBackend{address: "p1", role: pool.RoleReplica, healthy: true, notStreaming: true}
+
+	backends := []pool.Backend{primary, stranded}
+	provisioner := &mockProvisioner{}
+	mgr := NewFailoverManager(provisioner, nil, func() []pool.Backend { return backends },
+		Options{Enabled: true, AutoRejoin: true, AutoRejoinMaxAttempts: 3})
+
+	mgr.reconcileRejoins(context.Background(), "r1", backends)
+	waitForDemote(t, provisioner, 1)
+
+	// Confirmation has to time out before the attempt is recorded as failed.
+	deadline := time.Now().Add(rejoinConfirmTimeout + 5*time.Second)
+	for time.Now().Before(deadline) {
+		mgr.rejoins.mu.Lock()
+		state, tracked := mgr.rejoins.nodes["p1"]
+		done := tracked && !state.inFlight
+		mgr.rejoins.mu.Unlock()
+		if done {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Error("a rebuild that left the node not streaming was recorded as a success")
 }

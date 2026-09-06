@@ -98,8 +98,11 @@ type mockProvisioner struct {
 	// repointed maps a replica address to the primary it was told to follow.
 	repointed     map[string]string
 	failDemoteFor string
-	lag           time.Duration
-	mu            sync.Mutex
+	// onDemote lets a test make the world change the way a real rebuild would,
+	// so the confirmation step has something true to observe.
+	onDemote func(addr string)
+	lag      time.Duration
+	mu       sync.Mutex
 }
 
 func (m *mockProvisioner) PromoteToPrimary(ctx context.Context, addr string) error {
@@ -120,6 +123,10 @@ func (m *mockProvisioner) DemoteToReplica(ctx context.Context, addr, primary str
 		m.repointed = map[string]string{}
 	}
 	m.repointed[addr] = primary
+	hook := m.onDemote
+	if hook != nil {
+		defer hook(addr)
+	}
 	return nil
 }
 
