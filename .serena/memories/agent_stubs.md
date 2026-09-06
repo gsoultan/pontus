@@ -10,7 +10,7 @@ orchestrator, not a metrics sidecar", which is the *intent*, not the state.
 | Method | State |
 | :--- | :--- |
 | `UpdateConfig`, `ExecuteCommand`, `RestartService`, `ShutdownDatabase` | real |
-| **`SetupReplication`** | **stub** — three `time.Sleep(100ms)` and `Percentage: 100, "Replication configured"` |
+| **`SetupReplication`** | **implemented 2026-09-06** (`agent/infrastructure/replication.go`) — see below |
 | **`PromoteNode`** | **stub** — `return &PromoteNodeResponse{Success: true}` |
 | `InitializeDatabase`, `InstallDatabase`, `BackupDatabase`, `RestoreDatabase`, `VacuumDatabase`, `RemoveDatabase`, `ScheduleMaintenance` | stub — fake progress, always 100% |
 
@@ -44,15 +44,50 @@ Fixed 2026-09-06 (`cf28ce4`):
   caller-side check can catch a remote process lying about work it was asked to
   do, so the only honest test is the observable end state.
 
-**Not fixed: the stubs themselves.** Implementing `SetupReplication` for real
-(stop, `pg_rewind` or wipe + `pg_basebackup`, `standby.signal` +
-`primary_conninfo`, start, verify) is what makes automatic fallback work. It is
-root-level destructive code on a database host and was left as a deliberate,
-scoped decision rather than folded into a fix.
+**`SetupReplication` is now real** (`agent/infrastructure/replication.go`).
+The other stubs remain.
 
-`e2e/rejoin_test.go` is the acceptance test. It fails today and passing it is
-the definition of done for that work. It is gated behind four
-deliberately-set environment variables so it cannot redden an unrelated build.
+### Rules that must not regress in the rebuild
+
+- **Copy first, destroy last.** The copy is staged in `<datadir>.pontus-rebuild`
+  and swapped in with two renames; the old cluster waits in
+  `<datadir>.pontus-previous` until the replacement starts. Stop-then-empty-then-copy
+  leaves a window minutes long where only the agent knows how to refill the node,
+  and the agent dies with the database whenever they share a container.
+  Demonstrated: an interrupted rebuild left the data directory intact.
+- The destructive step is guarded by *what a data directory is* — absolute, not
+  the root or one level below, containing `PG_VERSION` — not by whether the path
+  exists.
+- Tools run as the data directory's owner, found by `stat`. The agent is root;
+  `pg_ctl` refuses to run as root and a root `pg_basebackup` writes files the
+  server cannot read.
+- A rebuild is **refused** where PostgreSQL is PID 1, because stopping it kills
+  the agent mid-rebuild. The refusal travels through the progress stream: the
+  transport does not carry an error raised while the stream is being built, so a
+  returned error reaches the caller as an empty stream and no reason.
+
+### Three things the rebuild needs that nothing supplied
+
+Each was found by running it, not by reading:
+
+1. **`peer_address`** (proto field 10; Patroni's `connect_address`). The rebuild
+   runs `pg_basebackup` *on the node being rebuilt*, so it is that node's view of
+   the primary that matters. With the proxy on 127.0.0.1 and published ports, the
+   old primary was told to stream from itself. Empty means "same as address".
+2. **Credentials.** The request carried none; the primary's `admin_dsn` is the
+   credential Pontus holds. `Server.AdminCredentials()` returns the two fields
+   rather than the DSN, which would eventually be logged.
+3. **Lookup order.** Resolve the peer address into a *local* variable — the
+   credential lookup keys off the address the proxy knows.
+
+### What still blocks end-to-end proof
+
+`e2e/rejoin_test.go` cannot pass against `scripts/e2e-cluster.sh`: PostgreSQL is
+PID 1 there, so the agent refuses by design. Everything before that point is
+exercised and works — promotion, peer address, credentials, and `pg_basebackup`
+completing into staging. Passing it needs a topology where the agent outlives
+the database (an ordinary VM or systemd deployment), which is a **harness**
+change rather than a code change.
 
 ## Running the two-backend cluster
 
