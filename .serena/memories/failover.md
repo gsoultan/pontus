@@ -130,6 +130,13 @@ Two things had to be fixed before that branch worked at all:
   to the node that just failed, after a replica had already taken writes on a diverged
   timeline. The manager now prefers `lastPromoted`. `[repro]`
 
+## The agent primitive these depend on is a stub
+
+`DemoteToReplica` — the call behind split-brain self-healing, `follow_primary`
+and `auto_rejoin` — reaches the agent's `SetupReplication`, which does nothing
+and reports 100%. Promotion works only because it bypasses the agent via
+`pg_promote()`. See `mem:agent_stubs` before assuming any rebuild path works.
+
 ## Still open
 
 - No two-backend E2E topology, so promotion, replica routing and failover are only covered
