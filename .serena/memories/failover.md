@@ -130,12 +130,20 @@ Two things had to be fixed before that branch worked at all:
   to the node that just failed, after a replica had already taken writes on a diverged
   timeline. The manager now prefers `lastPromoted`. `[repro]`
 
-## The agent primitive these depend on is a stub
+## The agent primitive these depend on
 
 `DemoteToReplica` — the call behind split-brain self-healing, `follow_primary`
-and `auto_rejoin` — reaches the agent's `SetupReplication`, which does nothing
-and reports 100%. Promotion works only because it bypasses the agent via
-`pg_promote()`. See `mem:agent_stubs` before assuming any rebuild path works.
+and `auto_rejoin` — reaches the agent's `SetupReplication`. That was a stub that
+reported 100% having done nothing; it is **implemented since 2026-09-06**, and
+automatic fallback is proven end to end by `e2e/local_failover_test.go`.
+
+Two settings a rebuild needs and nothing infers reliably: `data_dir` (a rebuild
+erases a data directory, so a scan finding the wrong cluster is unacceptable)
+and `peer_addr` (the rebuild runs on the node being rebuilt, so its view of the
+primary is what matters). The agent must also run as its own service — where
+PostgreSQL is PID 1 it refuses, because stopping the database would kill it
+mid-rebuild. See `mem:agent_stubs` for the rest, including which methods are
+still stubs.
 
 ## Still open
 

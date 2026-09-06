@@ -80,14 +80,30 @@ Each was found by running it, not by reading:
 3. **Lookup order.** Resolve the peer address into a *local* variable — the
    credential lookup keys off the address the proxy knows.
 
-### What still blocks end-to-end proof
+### Automatic fallback is proven end to end (2026-09-06)
 
-`e2e/rejoin_test.go` cannot pass against `scripts/e2e-cluster.sh`: PostgreSQL is
-PID 1 there, so the agent refuses by design. Everything before that point is
-exercised and works — promotion, peer address, credentials, and `pg_basebackup`
-completing into staging. Passing it needs a topology where the agent outlives
-the database (an ordinary VM or systemd deployment), which is a **harness**
-change rather than a code change.
+`e2e/local_failover_test.go` + `e2e/local_cluster_test.go`: two real clusters,
+real streaming replication, a real agent per node, no operator. Kill the primary
+→ promotion → the old primary returns on an abandoned timeline → the cluster
+returns to a primary and a streaming replica on its own. ~23s, stable.
+
+**No container runtime.** `initdb`/`pg_ctl`/`pg_basebackup` on the host are
+enough, and both agents are ordinary processes — which is the whole point:
+`scripts/e2e-cluster.sh` runs PostgreSQL as PID 1, so stopping it takes the
+agent down and a rebuild can never finish there. `e2e/rejoin_test.go` is kept
+against the container harness to pin that refusal.
+
+Three defects found only by running it:
+
+1. **A rebuilt node came back on the primary's port.** `pg_basebackup` copies
+   the source's `postgresql.conf`, and with configuration inside the data
+   directory (what initdb produces) the node inherits the primary's `port` and
+   `listen_addresses`. The node's own settings are captured before the copy and
+   restored into `postgresql.auto.conf`, which wins at load time.
+2. **The data directory was a guess.** Now `data_dir` on the backend, else
+   `SHOW data_directory`, else the agent's scan.
+3. **The e2e agent binary was cached in `/tmp` across runs**, so three real
+   fixes looked like failures. Never cache a built binary across test runs.
 
 ## Running the two-backend cluster
 
