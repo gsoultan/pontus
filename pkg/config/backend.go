@@ -22,4 +22,14 @@ type Backend struct {
 	// Give it the least privilege that works: CONNECT, pg_monitor for the
 	// statistics views, and REPLICATION only if slot management is wanted.
 	AdminDSN string `json:"admin_dsn,omitzero" yaml:"admin_dsn"`
+
+	// DataDir is this node's PostgreSQL data directory.
+	//
+	// Rebuilding a node erases its data directory, so the one place a guess
+	// must not decide the answer. Pontus asks the server itself
+	// (`SHOW data_directory`) and the agent falls back to scanning the usual
+	// locations, but neither works on a host running two clusters, and the
+	// scan is wrong rather than empty — it finds *a* cluster. State it here for
+	// any layout that is not the distribution default.
+	DataDir string `json:"data_dir,omitzero" yaml:"data_dir"`
 }

@@ -31,10 +31,10 @@ import (
 // Everything up to that point is exercised and does work: promotion, the peer
 // address, the credentials, and pg_basebackup completing into staging.
 //
-// Passing it needs a topology where the agent outlives the database, which is
-// the ordinary VM or systemd deployment the agent is built for. That is the
-// remaining piece of automatic fallback and it is a harness change, not a code
-// change.
+// The same scenario against a topology where the agent outlives the database
+// **passes** — see TestLocalAutomaticFallback in local_failover_test.go, which
+// needs no container runtime. This one is kept because the container harness is
+// what CI has, and because the refusal it produces is itself worth pinning.
 //
 // It runs only when four environment variables are set deliberately, so it
 // cannot redden a build that did not ask for it.

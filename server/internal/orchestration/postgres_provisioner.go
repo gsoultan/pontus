@@ -243,6 +243,22 @@ func (p *postgresProvisioner) dataDirectoryFor(ctx context.Context, b pool.Backe
 	return "/var/lib/postgresql/data"
 }
 
+// dataDirectoryOf is where a rebuild should act, in order of trust: what the
+// operator configured, then what the server reports about itself.
+//
+// The agent's own scan is deliberately the last resort and lives on the far
+// side of this call: it looks in the usual locations and finds *a* cluster,
+// which on a host running two is the wrong one and is erased just as willingly
+// as the right one.
+func dataDirectoryOf(ctx context.Context, b pool.Backend) string {
+	if configured, ok := b.(interface{ DataDirectory() string }); ok {
+		if dir := configured.DataDirectory(); dir != "" {
+			return dir
+		}
+	}
+	return askServerForDataDir(ctx, b)
+}
+
 // askServerForDataDir reads data_directory over Pontus's own admin channel.
 func askServerForDataDir(ctx context.Context, b pool.Backend) string {
 	if b == nil {
@@ -337,11 +353,19 @@ func (p *postgresProvisioner) DemoteToReplica(ctx context.Context, backendAddr s
 	// and it is the one that already works against that node.
 	user, password := replicationCredentials(p.backends(), primaryAddr)
 
+	// Tell the agent which cluster to rebuild instead of letting it guess.
+	//
+	// The agent falls back to scanning the usual locations, which finds the
+	// wrong directory on a host running two clusters and nothing at all on a
+	// non-standard layout. The server knows the answer and Pontus can already
+	// ask it — the promotion path does. Rebuilding is the one that erases a
+	// directory, so it is the last place a guess belongs.
 	req := &endpoints.SetupReplicationRequest{
 		PrimaryHost:         primaryHost,
 		PrimaryPort:         int32(primaryPort),
 		ReplicationUser:     user,
 		ReplicationPassword: password,
+		DataDirectory:       dataDirectoryOf(ctx, target),
 	}
 
 	out, err := agent.SetupReplication(ctx, req)

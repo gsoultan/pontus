@@ -267,3 +267,71 @@ func TestIsPostgresProcessRecognisesTheDatabase(t *testing.T) {
 		}
 	}
 }
+
+// A base backup brings the primary's postgresql.conf with it. Without
+// restoring the node's own address settings, a rebuilt node comes back trying
+// to bind the primary's port — which is either taken, or worse, free.
+func TestIdentitySettingsSurviveARebuild(t *testing.T) {
+	dir := makeDataDir(t)
+	if err := os.WriteFile(filepath.Join(dir, "postgresql.conf"),
+		[]byte("port = 6543  # this node\nlisten_addresses = '127.0.0.1'\nwork_mem = '4MB'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// auto.conf wins at load time, so it is what is in force.
+	if err := os.WriteFile(filepath.Join(dir, "postgresql.auto.conf"),
+		[]byte("port = 6544\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &replicationSetup{dataDir: dir, primary: "10.0.0.1", port: 5432}
+	s.captureIdentity()
+
+	if got := s.identity["port"]; got != "6544" {
+		t.Errorf("captured port %q, want auto.conf's 6544", got)
+	}
+	if got := s.identity["listen_addresses"]; got != "'127.0.0.1'" {
+		t.Errorf("captured listen_addresses %q, want '127.0.0.1'", got)
+	}
+
+	// Simulate the copy having replaced the configuration with the primary's.
+	if err := os.WriteFile(filepath.Join(dir, "postgresql.auto.conf"),
+		[]byte("port = 5432\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.writeStandbyConfig(); err != nil {
+		t.Fatalf("writeStandbyConfig: %v", err)
+	}
+
+	conf, err := os.ReadFile(filepath.Join(dir, "postgresql.auto.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(conf), "port = 6544") {
+		t.Errorf("the node's own port was not restored:\n%s", conf)
+	}
+	if strings.Count(string(conf), "port =") != 1 {
+		t.Errorf("more than one port setting, so which one applies is an accident:\n%s", conf)
+	}
+	if !strings.Contains(string(conf), "listen_addresses = '127.0.0.1'") {
+		t.Errorf("listen_addresses was not restored:\n%s", conf)
+	}
+}
+
+// Only the settings that say which server this is are carried over. Everything
+// else is the primary's to dictate, which is the point of copying it.
+func TestSettingsInReadsOnlyIdentitySettings(t *testing.T) {
+	got := settingsIn("port = 5433 # comment\n# port = 9999\nshared_buffers = '1GB'\nlisten_addresses = '*'\n")
+
+	if got["port"] != "5433" {
+		t.Errorf("port = %q, want 5433", got["port"])
+	}
+	if got["listen_addresses"] != "'*'" {
+		t.Errorf("listen_addresses = %q, want '*'", got["listen_addresses"])
+	}
+	if _, ok := got["shared_buffers"]; ok {
+		t.Error("shared_buffers was captured; only identity settings should be")
+	}
+	if len(got) != 2 {
+		t.Errorf("captured %d settings, want 2: %v", len(got), got)
+	}
+}

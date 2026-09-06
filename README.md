@@ -245,6 +245,29 @@ failover:
   `pontus_auto_rejoin_total{result="exhausted"}` (Pontus has given up and the
   node needs a person).
 
+**The agent must outlive the database.** A rebuild stops PostgreSQL, so where
+the database is PID 1 — a database-in-a-container deployment — stopping it
+takes the agent down mid-rebuild. Pontus refuses that up front rather than
+starting what it cannot finish. Run the agent as its own service, which is the
+ordinary VM or systemd shape.
+
+Two settings matter for a rebuild and are worth stating explicitly:
+
+```yaml
+backends:
+  - addr: "10.0.0.5:5432"
+    # Where this node's cluster lives. A rebuild erases a data directory, so
+    # this is the last place a guess belongs — without it Pontus asks the
+    # server, and the agent falls back to scanning the usual locations, which
+    # finds the wrong cluster on a host running two.
+    data_dir: /var/lib/postgresql/17/main
+    # How *other database nodes* reach this one, when that differs from how the
+    # proxy does. The rebuild runs pg_basebackup on the node being rebuilt, so
+    # it is that node's view that matters. Empty means "same as addr", which is
+    # correct on a flat network. Patroni calls this connect_address.
+    peer_addr: "10.0.0.5:5432"
+```
+
 ### Per-database routing
 
 `databases:` is Pontus's `[databases]`. Each entry may rename a database, bound

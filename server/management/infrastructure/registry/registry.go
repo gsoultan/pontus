@@ -138,6 +138,13 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 		// How peers reach this node, when that differs from how the proxy does.
 		p.SetPeerAddress(bcfg.PeerAddress)
 
+		// Where this node's cluster lives, when it is not where a scan would
+		// look. Rebuilding erases a data directory, so a configured answer
+		// takes precedence over any discovery.
+		if bcfg.AgentConfig != nil {
+			p.SetDataDirectory(bcfg.AgentConfig.DataDirectory)
+		}
+
 		// Per-database ceilings — pgbouncer's per-database pool_size. Installed
 		// before Start so the first pool a session creates already carries the
 		// limit its database was given.

@@ -342,6 +342,7 @@ func (a *App) bootstrapFromConfig() {
 			AgentAddress: b.AgentAddr,
 			AgentToken:   b.AgentToken,
 			AdminDsn:     b.AdminDSN,
+			AgentConfig:  new(domain.AgentDatabaseConfig{DataDirectory: b.DataDir}),
 		}))
 	}
 

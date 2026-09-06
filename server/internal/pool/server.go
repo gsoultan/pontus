@@ -54,6 +54,10 @@ type Server struct {
 	// from the address the proxy uses. Empty means they are the same.
 	peerAddr string
 
+	// dataDir is this node's configured PostgreSQL data directory, or empty to
+	// let a rebuild discover it.
+	dataDir string
+
 	// adminDSN is kept because rebuilding this node as a replica needs
 	// credentials that can open a replication connection to its primary, and
 	// this is the only credential Pontus holds for a backend. Never logged —

@@ -3,9 +3,11 @@ package infrastructure
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -43,7 +45,18 @@ type replicationSetup struct {
 	// runAs is the uid/gid the PostgreSQL tools must run as. Zero means "run as
 	// this process", which is correct when the agent is not root.
 	runAs *syscall.Credential
+
+	// identity is the node's own address settings, captured before the rebuild
+	// and restored after it. A base backup copies the *primary's*
+	// configuration, so without this the rebuilt node comes back trying to bind
+	// the primary's port.
+	identity map[string]string
 }
+
+// identitySettings are the settings that say which server this is rather than
+// how it behaves. They must survive a rebuild; everything else is the
+// primary's to dictate, which is the point of copying it.
+var identitySettings = []string{"port", "listen_addresses"}
 
 // SetupReplication rebuilds this host's PostgreSQL as a streaming replica of
 // the primary named in the request.
@@ -69,9 +82,20 @@ func (m *management) SetupReplication(ctx context.Context, req *endpoints.SetupR
 		defer close(out)
 
 		emit := func(stage string, pct int32, format string, args ...any) {
+			message := fmt.Sprintf(format, args...)
+
+			// Logged as well as streamed. A rebuild can run for half an hour on
+			// a host an operator is watching directly, and the caller's view of
+			// it is a single line at the end saying whether it worked.
+			if stage == stageError {
+				slog.Error("Rebuild failed", "data_dir", setup.dataDir, "reason", message)
+			} else {
+				slog.Info("Rebuild", "stage", stage, "data_dir", setup.dataDir, "detail", message)
+			}
+
 			select {
 			case out <- &endpoints.ReplicationProgress{
-				Stage: stage, Percentage: pct, Message: fmt.Sprintf(format, args...),
+				Stage: stage, Percentage: pct, Message: message,
 			}:
 			case <-ctx.Done():
 			}
@@ -96,6 +120,12 @@ func (m *management) SetupReplication(ctx context.Context, req *endpoints.SetupR
 			fail("could not clear the staging directory %s: %v", setup.stagingDir(), err)
 			return
 		}
+
+		// Captured before anything is destroyed. A base backup brings the
+		// primary's postgresql.conf with it, so a node rebuilt without this
+		// comes back trying to bind the primary's port — which is either taken,
+		// or worse, free.
+		setup.captureIdentity()
 
 		rewound := false
 		if setup.rewind {
@@ -456,7 +486,64 @@ func (s *replicationSetup) writeStandbyConfig() error {
 		content = stripSetting(content, "primary_slot_name") +
 			fmt.Sprintf("primary_slot_name = '%s'\n", s.slot)
 	}
+
+	// Restore who this server is. postgresql.auto.conf wins over
+	// postgresql.conf, so writing them here overrides whatever the base backup
+	// brought from the primary.
+	for _, setting := range identitySettings {
+		value, ok := s.identity[setting]
+		if !ok {
+			continue
+		}
+		content = stripSetting(content, setting) +
+			fmt.Sprintf("%s = %s\n", setting, value)
+	}
 	return writeAsOwner(autoConf, []byte(content), s.dataDir)
+}
+
+// captureIdentity reads the settings that say which server this is, so they can
+// be restored over the primary's after the copy.
+//
+// postgresql.auto.conf is read last because it wins at load time, so the value
+// it holds is the one in force.
+func (s *replicationSetup) captureIdentity() {
+	s.identity = map[string]string{}
+	for _, name := range []string{"postgresql.conf", "postgresql.auto.conf"} {
+		content, err := os.ReadFile(filepath.Join(s.dataDir, name))
+		if err != nil {
+			continue
+		}
+		for setting, value := range settingsIn(string(content)) {
+			s.identity[setting] = value
+		}
+	}
+}
+
+// settingsIn extracts the identity settings from a configuration file.
+func settingsIn(content string) map[string]string {
+	found := map[string]string{}
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		name, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		if !slices.Contains(identitySettings, name) {
+			continue
+		}
+		// Trailing comments are ordinary in a generated postgresql.conf.
+		if idx := strings.Index(value, "#"); idx >= 0 {
+			value = value[:idx]
+		}
+		if value = strings.TrimSpace(value); value != "" {
+			found[name] = value
+		}
+	}
+	return found
 }
 
 // stripSetting removes any existing assignment of a setting, so appending does

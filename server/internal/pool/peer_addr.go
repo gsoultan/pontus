@@ -28,3 +28,21 @@ func (p *Server) PeerAddress() string {
 	}
 	return p.Address()
 }
+
+// SetDataDirectory records where this node's PostgreSQL cluster lives.
+//
+// Rebuilding a node erases its data directory, which makes this the one place a
+// guess must not decide the answer. A scan of the usual locations fails badly
+// rather than obviously on a host running two clusters: it finds *a* cluster.
+func (p *Server) SetDataDirectory(dir string) {
+	p.mu.Lock()
+	p.dataDir = dir
+	p.mu.Unlock()
+}
+
+// DataDirectory is the configured data directory, or empty when none was given.
+func (p *Server) DataDirectory() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.dataDir
+}
