@@ -4,6 +4,8 @@ package e2e
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"os"
 	"strings"
 	"testing"
@@ -20,15 +22,19 @@ import (
 // short until an operator noticed. This measures whether it comes back on its
 // own.
 //
-// **This test fails today, and that is the point.** It is the acceptance test
-// for automatic fallback, and the dependency it needs does not exist: the
-// agent's SetupReplication (`agent/infrastructure/management.go`) is a stub
-// that sleeps three times and reports "Replication configured" at 100% without
-// running pg_basebackup, pg_rewind, or writing standby.signal. Every recovery
-// path that rebuilds a node — split-brain self-healing, follow_primary and
-// auto_rejoin — calls into it. Pontus now detects the lie and reports the
-// rebuild as failed rather than believing it, so what this measures is the gap
-// rather than a regression.
+// **This test cannot pass against the container harness, by construction.**
+//
+// `scripts/e2e-cluster.sh` runs PostgreSQL as PID 1 with the agent beside it,
+// so stopping the database tears the container down and takes the agent with
+// it mid-rebuild. The agent detects that and refuses up front — "PostgreSQL is
+// this host's init process" — rather than starting a rebuild it cannot finish.
+// Everything up to that point is exercised and does work: promotion, the peer
+// address, the credentials, and pg_basebackup completing into staging.
+//
+// Passing it needs a topology where the agent outlives the database, which is
+// the ordinary VM or systemd deployment the agent is built for. That is the
+// remaining piece of automatic fallback and it is a harness change, not a code
+// change.
 //
 // It runs only when four environment variables are set deliberately, so it
 // cannot redden a build that did not ask for it.
@@ -68,8 +74,20 @@ func TestAutomaticRejoinReturnsTheOldPrimary(t *testing.T) {
 		t.Fatal("the replica is not in recovery; there is nothing to promote")
 	}
 
+	// How the nodes reach each other, which is not how the proxy reaches them.
+	//
+	// The proxy is on the host and uses 127.0.0.1 with published ports; inside a
+	// container that address is the container itself. Without this the rebuild
+	// tells the old primary to stream from itself and pg_basebackup reports
+	// "connection refused" — the failure that made peer_address necessary.
+	peerHost := os.Getenv("PONTUS_E2E_PEER_HOST")
+	if peerHost == "" {
+		peerHost = "host.containers.internal"
+	}
+
 	s := startStackWith(t, func(cfg string) string {
-		return rejoinConfig(promotionConfig(cfg, primary, replica, token))
+		cfg = rejoinConfig(promotionConfig(cfg, primary, replica, token))
+		return withPeerAddresses(cfg, primary, replica, peerHost)
 	})
 
 	rt := containerRuntime(t)
@@ -169,6 +187,20 @@ func waitFor(within time.Duration, cond func() bool) bool {
 		time.Sleep(time.Second)
 	}
 	return false
+}
+
+// withPeerAddresses declares how the database nodes reach one another.
+func withPeerAddresses(cfg, primary, replica, peerHost string) string {
+	for _, addr := range []string{primary, replica} {
+		_, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			continue
+		}
+		cfg = strings.Replace(cfg,
+			fmt.Sprintf("  - addr: %q\n", addr),
+			fmt.Sprintf("  - addr: %q\n    peer_addr: \"%s:%s\"\n", addr, peerHost, port), 1)
+	}
+	return cfg
 }
 
 // rejoinConfig turns automatic rejoin on and makes it quick enough to observe.

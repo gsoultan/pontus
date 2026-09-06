@@ -49,6 +49,16 @@ type Server struct {
 	// admin is Pontus's own authenticated channel, used for the questions the
 	// control plane asks a database. Nil when no admin_dsn is configured.
 	admin *AdminSession
+
+	// peerAddr is how other database nodes reach this one, when that differs
+	// from the address the proxy uses. Empty means they are the same.
+	peerAddr string
+
+	// adminDSN is kept because rebuilding this node as a replica needs
+	// credentials that can open a replication connection to its primary, and
+	// this is the only credential Pontus holds for a backend. Never logged —
+	// AdminDSNCredentials returns the parts a caller needs, not the string.
+	adminDSN string
 	// checkedOut counts connections currently held by a caller. The engine's
 	// Stat samples its total and its shard counters independently, so an active
 	// count derived from them can read high while the background warm-up is in
@@ -135,6 +145,7 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 	// Pontus's own channel to this backend. Optional: without it the health
 	// probe and role detection fall back to running on a pooled connection,
 	// which only works when a client has already authenticated one.
+	p.adminDSN = adminDSN
 	admin, err := NewAdminSession(adminDSN, dialTimeout)
 	if err != nil {
 		slog.Warn("Admin session unavailable; health checks and role detection "+

@@ -135,6 +135,9 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 			slog.Error("Failed to create backend server", "address", backendAddr, "error", err)
 			continue
 		}
+		// How peers reach this node, when that differs from how the proxy does.
+		p.SetPeerAddress(bcfg.PeerAddress)
+
 		// Per-database ceilings — pgbouncer's per-database pool_size. Installed
 		// before Start so the first pool a session creates already carries the
 		// limit its database was given.

@@ -173,24 +173,6 @@ func (m *management) ScheduleMaintenance(ctx context.Context, req *endpoints.Sch
 	return &endpoints.ScheduleMaintenanceResponse{Success: true, TaskId: "task-123"}, nil
 }
 
-func (m *management) SetupReplication(ctx context.Context, req *endpoints.SetupReplicationRequest) (<-chan *endpoints.ReplicationProgress, error) {
-	out := make(chan *endpoints.ReplicationProgress)
-	dataDir := req.DataDirectory
-	if dataDir == "" {
-		dataDir = system.DetectPostgresDataDir()
-	}
-
-	go func() {
-		defer close(out)
-		out <- &endpoints.ReplicationProgress{Stage: "Starting", Percentage: 10, Message: fmt.Sprintf("Preparing replica at %s", dataDir)}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.ReplicationProgress{Stage: "Syncing", Percentage: 50, Message: "Syncing base backup"}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.ReplicationProgress{Stage: "Done", Percentage: 100, Message: "Replication configured"}
-	}()
-	return out, nil
-}
-
 func (m *management) PromoteNode(ctx context.Context, req *endpoints.PromoteNodeRequest) (*endpoints.PromoteNodeResponse, error) {
 	return &endpoints.PromoteNodeResponse{Success: true}, nil
 }

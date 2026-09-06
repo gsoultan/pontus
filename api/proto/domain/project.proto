@@ -37,6 +37,18 @@ message BackendConfig {
   // management. Least privilege: CONNECT and pg_monitor, plus REPLICATION only
   // if slot management is wanted.
   string admin_dsn = 9;
+
+  // peer_address is how *other database nodes* reach this one, when that
+  // differs from the address the proxy uses.
+  //
+  // Rebuilding a node runs pg_basebackup on that node against its new primary,
+  // and it is the node's view of the address that matters there, not the
+  // proxy's. They are the same on a flat network and different behind NAT or
+  // in containers, where a proxy reaching 127.0.0.1:55843 tells a peer to
+  // connect to itself. Patroni calls this connect_address. Empty means use
+  // address.
+  string peer_address = 10;
+
   AgentDatabaseConfig agent_config = 7;
 }
 

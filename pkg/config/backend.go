@@ -5,9 +5,12 @@ type Backend struct {
 	Addr       string `json:"addr,omitzero" yaml:"addr"`
 	AgentAddr  string `json:"agent_addr,omitzero" yaml:"agent_addr"`
 	AgentToken string `json:"agent_token,omitzero" yaml:"agent_token"`
-	Zone       string `json:"zone,omitzero" yaml:"zone"`
-	Role       string `json:"role,omitzero" yaml:"role"`
-	Weight     int    `json:"weight,omitzero" yaml:"weight"`
+	// PeerAddr is how other database nodes reach this one, when that differs
+	// from Addr. Empty means they are the same, which is the flat-network case.
+	PeerAddr string `json:"peer_addr,omitzero" yaml:"peer_addr"`
+	Zone     string `json:"zone,omitzero" yaml:"zone"`
+	Role     string `json:"role,omitzero" yaml:"role"`
+	Weight   int    `json:"weight,omitzero" yaml:"weight"`
 	// AdminDSN is Pontus's own connection string for this backend.
 	//
 	// Client sessions forward the client's credentials, so the proxy has no

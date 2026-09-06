@@ -335,6 +335,7 @@ func (a *App) bootstrapFromConfig() {
 		// migrated into the store — silently, because the proxy still started.
 		pcfg.Proxies[0].Backends = append(pcfg.Proxies[0].Backends, new(domain.BackendConfig{
 			Address:      b.Addr,
+			PeerAddress:  b.PeerAddr,
 			Role:         b.Role,
 			Weight:       int32(b.Weight),
 			Zone:         b.Zone,
