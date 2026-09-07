@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gsoultan/pontus/agent/services"
 	"github.com/gsoultan/pontus/api/proto/endpoints"
@@ -193,28 +192,6 @@ func (m *management) RestartService(ctx context.Context, req *endpoints.RestartS
 	return &endpoints.RestartServiceResponse{Success: true}, nil
 }
 
-func (m *management) ScheduleMaintenance(ctx context.Context, req *endpoints.ScheduleMaintenanceRequest) (*endpoints.ScheduleMaintenanceResponse, error) {
-	return &endpoints.ScheduleMaintenanceResponse{Success: true, TaskId: "task-123"}, nil
-}
-
-func (m *management) InitializeDatabase(ctx context.Context, req *endpoints.InitializeDatabaseRequest) (<-chan *endpoints.InitializeProgress, error) {
-	out := make(chan *endpoints.InitializeProgress)
-	dataDir := req.DataDirectory
-	if dataDir == "" {
-		dataDir = system.DetectPostgresDataDir()
-	}
-
-	go func() {
-		defer close(out)
-		out <- &endpoints.InitializeProgress{Stage: "Init", Percentage: 10, Message: fmt.Sprintf("Initializing data directory at %s", dataDir)}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.InitializeProgress{Stage: "Configuring", Percentage: 50, Message: "Setting up config files"}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.InitializeProgress{Stage: "Done", Percentage: 100, Message: "Database initialized"}
-	}()
-	return out, nil
-}
-
 func (m *management) InstallDatabase(ctx context.Context, req *endpoints.InstallDatabaseRequest) (<-chan *endpoints.InstallProgress, error) {
 	out := make(chan *endpoints.InstallProgress)
 	go func() {
@@ -305,14 +282,4 @@ func (m *management) ShutdownDatabase(ctx context.Context, req *endpoints.Shutdo
 	}
 
 	return &endpoints.ShutdownDatabaseResponse{Success: true}, nil
-}
-
-func (m *management) RemoveDatabase(ctx context.Context, req *endpoints.RemoveDatabaseRequest) (*endpoints.RemoveDatabaseResponse, error) {
-	dataDir := req.DataDirectory
-	if dataDir == "" {
-		dataDir = system.DetectPostgresDataDir()
-	}
-	// Implementation would stop the database and optionally delete data
-	fmt.Printf("Removing database at %s (delete data: %v)\n", dataDir, req.DeleteData)
-	return &endpoints.RemoveDatabaseResponse{Success: true}, nil
 }

@@ -5,7 +5,9 @@ package e2e
 import (
 	"context"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -194,4 +196,94 @@ func agentClientFor(t *testing.T, addr string) (service.AgentServiceClient, func
 		t.Fatalf("dialling the agent at %s: %v", addr, err)
 	}
 	return service.NewAgentServiceClient(conn), func() { conn.Close() }
+}
+
+// Creating a cluster and destroying it, through a real agent.
+//
+// Both replaced stubs. RemoveDatabase is the one that matters most: it reported
+// that it had deleted a database's storage without touching anything, which is
+// the failure direction that makes an operator believe data is gone when it is
+// not.
+func TestInitializeAndRemoveACluster(t *testing.T) {
+	c := startLocalCluster(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	agent, closeAgent := agentClientFor(t, c.primary.agentAddr())
+	defer closeAgent()
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", localAgentToken)
+
+	// A directory alongside the running pair, so nothing under test is at risk.
+	fresh := filepath.Join(filepath.Dir(c.primary.dataDir), "initialized")
+
+	init, err := agent.InitializeDatabase(ctx, &endpoints.InitializeDatabaseRequest{
+		DataDirectory: fresh,
+		InitialUser:   currentUser(t),
+	})
+	if err != nil {
+		t.Fatalf("InitializeDatabase: %v", err)
+	}
+	stage, message := lastOf(init.Recv, func(p *endpoints.InitializeProgress) (string, string) {
+		return p.Stage, p.Message
+	})
+	if stage != "Done" {
+		t.Fatalf("initialize ended at stage %q: %s", stage, message)
+	}
+
+	// A cluster is a directory with a PG_VERSION in it. Anything less is a
+	// progress bar.
+	if _, err := os.Stat(filepath.Join(fresh, "PG_VERSION")); err != nil {
+		t.Fatalf("initialize reported success and created no cluster: %v", err)
+	}
+
+	// Initialising again over the same directory has to be refused.
+	again, err := agent.InitializeDatabase(ctx, &endpoints.InitializeDatabaseRequest{
+		DataDirectory: fresh,
+		InitialUser:   currentUser(t),
+	})
+	if err != nil {
+		t.Fatalf("InitializeDatabase: %v", err)
+	}
+	stage, message = lastOf(again.Recv, func(p *endpoints.InitializeProgress) (string, string) {
+		return p.Stage, p.Message
+	})
+	if stage == "Done" {
+		t.Error("initialising over an existing cluster was allowed")
+	}
+	if !strings.Contains(message, "already holds") {
+		t.Errorf("the refusal does not name the cause: %q", message)
+	}
+
+	// And removal really removes.
+	resp, err := agent.RemoveDatabase(ctx, &endpoints.RemoveDatabaseRequest{
+		DataDirectory: fresh,
+		DeleteData:    true,
+	})
+	if err != nil {
+		t.Fatalf("RemoveDatabase: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("removal failed: %s", resp.ErrorMessage)
+	}
+	if _, err := os.Stat(filepath.Join(fresh, "PG_VERSION")); err == nil {
+		t.Error("removal reported success and the cluster is still there")
+	}
+
+	// The pair under test is untouched.
+	if _, err := queryInt(c.primary.dsn(), "SELECT 1"); err != nil {
+		t.Errorf("the primary stopped answering: %v", err)
+	}
+}
+
+// currentUser is the account these tests run as, which is the only one that can
+// own a cluster here — the agent is not root, so it cannot become another.
+func currentUser(t *testing.T) string {
+	t.Helper()
+
+	u, err := user.Current()
+	if err != nil {
+		t.Fatalf("looking up the current user: %v", err)
+	}
+	return u.Username
 }
