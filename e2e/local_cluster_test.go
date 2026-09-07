@@ -101,8 +101,13 @@ func startLocalCluster(t *testing.T) *localCluster {
 
 	// --locale=C keeps initdb off this machine's locale, which is the usual
 	// reason this step behaves differently elsewhere.
+	// Local socket connections are trusted, host connections are not. That is
+	// the shape of a database host: the co-located agent authenticates over the
+	// socket as the cluster's superuser without a password, while everything
+	// arriving over TCP — the proxy, the tests — proves who it is.
 	pgRun(t, "initdb", "-D", c.primary.dataDir, "-U", "postgres",
-		"-A", "scram-sha-256", "--pwfile="+pwFile, "--locale=C", "--encoding=UTF8")
+		"--auth-local=trust", "--auth-host=scram-sha-256",
+		"--pwfile="+pwFile, "--locale=C", "--encoding=UTF8")
 
 	appendTo(t, filepath.Join(c.primary.dataDir, "postgresql.conf"), fmt.Sprintf(`
 port = %d
@@ -161,7 +166,10 @@ func (c *localCluster) startAgent(n *localNode) {
 		c.t.Fatalf("creating the agent log: %v", err)
 	}
 
-	cmd := exec.Command(binary, "-addr", n.agentAddr(), "-token", localAgentToken)
+	// -data-dir rather than letting the agent scan: this machine's scan finds
+	// whatever cluster a package manager installed, not the one under test.
+	cmd := exec.Command(binary, "-addr", n.agentAddr(), "-token", localAgentToken,
+		"-data-dir", n.dataDir)
 	cmd.Stdout = log
 	cmd.Stderr = log
 	if err := cmd.Start(); err != nil {
@@ -436,6 +444,17 @@ func proxySession(t *testing.T, ctx context.Context, s *stack) *pgx.Conn {
 		localPassword, s.proxyAddr))
 	if err != nil {
 		t.Fatalf("connecting through the proxy: %v", err)
+	}
+	return conn
+}
+
+// directConn opens a session straight to a node, bypassing the proxy.
+func directConn(t *testing.T, ctx context.Context, dsn string) *pgx.Conn {
+	t.Helper()
+
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connecting to %s: %v", dsn, err)
 	}
 	return conn
 }

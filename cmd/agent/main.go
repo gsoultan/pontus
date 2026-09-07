@@ -30,6 +30,10 @@ func main() {
 	tlsCert := flag.String("tls-cert", "", "PEM certificate for serving TLS (with -tls-key)")
 	tlsKey := flag.String("tls-key", "", "PEM private key for serving TLS (with -tls-cert)")
 	svcCmd := flag.String("service", "", "Service command: install, uninstall, start, stop, status")
+	dataDir := flag.String("data-dir", "",
+		"PostgreSQL data directory this agent manages (default: detect)")
+	dbUser := flag.String("db-user", "",
+		"PostgreSQL superuser the agent's tools connect as (default: postgres)")
 	showVersion := flag.Bool("version", false, "Show version information")
 	flag.Parse()
 
@@ -78,7 +82,7 @@ func main() {
 	}
 
 	mgr, err := pkgservice.NewManager(cfg, func() error {
-		return runAgent(ctx, *addr, *token, *insecure, *tlsCert, *tlsKey)
+		return runAgent(ctx, *addr, *token, *insecure, *tlsCert, *tlsKey, *dataDir, *dbUser)
 	}, func() error {
 		cancel()
 		return nil
@@ -139,7 +143,7 @@ func handleServiceCommand(mgr pkgservice.Manager, cmd string) error {
 	return err
 }
 
-func runAgent(ctx context.Context, addr string, token string, insecure bool, tlsCert, tlsKey string) error {
+func runAgent(ctx context.Context, addr string, token string, insecure bool, tlsCert, tlsKey, dataDir, dbUser string) error {
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
@@ -186,7 +190,7 @@ func runAgent(ctx context.Context, addr string, token string, insecure bool, tls
 	}
 
 	s := grpc.NewServer(opts...)
-	svc := infrastructure.NewService()
+	svc := infrastructure.NewService(dataDir, dbUser)
 	if err := svc.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start service: %w", err)
 	}

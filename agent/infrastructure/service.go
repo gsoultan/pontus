@@ -39,7 +39,7 @@ const DefaultLocalDSN = "postgres:///postgres?host=/var/run/postgresql&sslmode=d
 // optional: if the collector cannot be built the agent still serves every
 // other RPC rather than refusing to start, because provisioning and service
 // control matter more than pg_stat_* sampling.
-func NewService() services.Service {
+func NewService(dataDir, dbUser string) services.Service {
 	dsn := os.Getenv("PONTUS_AGENT_DSN")
 	if dsn == "" {
 		dsn = DefaultLocalDSN
@@ -59,6 +59,8 @@ func NewService() services.Service {
 			"pg_hba.conf": &validator.Postgres{},
 		},
 		repoManager,
+		dataDir,
+		dbUser,
 	)
 
 	return &agentService{

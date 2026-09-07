@@ -211,7 +211,7 @@ func (m *management) planReplication(req *endpoints.SetupReplicationRequest) (*r
 		return nil, fmt.Errorf("primary port %d is not a port", req.PrimaryPort)
 	}
 
-	dataDir := req.DataDirectory
+	dataDir := m.clusterDir(req.DataDirectory)
 	if dataDir == "" {
 		dataDir = system.DetectPostgresDataDir()
 	}
@@ -597,4 +597,10 @@ func initProcessName() (string, bool) {
 func isPostgresProcess(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
 	return name == "postgres" || name == "postmaster"
+}
+
+// readFileString reads a file as a string.
+func readFileString(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	return string(b), err
 }

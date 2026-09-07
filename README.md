@@ -245,6 +245,26 @@ failover:
   `pontus_auto_rejoin_total{result="exhausted"}` (Pontus has given up and the
   node needs a person).
 
+#### Agent configuration
+
+The agent manages one cluster on its host. Tell it which, and which role its
+tools connect as:
+
+```bash
+pontus-agent -token "$PONTUS_AGENT_TOKEN" \
+  -data-dir /var/lib/postgresql/17/main \
+  -db-user postgres
+```
+
+Both have defaults — a scan of the usual locations, and `postgres` — and both
+are worth stating. A scan finds *a* cluster, which on a host running two is the
+wrong one, and a rebuild erases whatever it is pointed at.
+
+The agent connects over the cluster's own unix socket with no password. That is
+not a shortcut: it runs on the database host as root, so it can become the
+cluster's owner, and that account authenticates locally by peer or trust.
+Shipping it a password would add a secret to the wire and buy nothing.
+
 **The agent must outlive the database.** A rebuild stops PostgreSQL, so where
 the database is PID 1 — a database-in-a-container deployment — stopping it
 takes the agent down mid-rebuild. Pontus refuses that up front rather than
