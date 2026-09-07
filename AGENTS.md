@@ -75,6 +75,19 @@ or `go test` that touches package `web`.
 
 ```bash
 # 1. Generate — protobuf (Go + TS) and the dashboard bundle
+#
+# The plugin versions matter. CI installs exact ones and fails if `buf generate`
+# produces any diff, so generating with whatever happens to be on your PATH
+# rewrites the generator header in every .pb.go and reddens the build on nine
+# files you did not touch. Install the pinned set first — into a temporary GOBIN,
+# so a newer toolchain elsewhere is left alone:
+export GOBIN=$(mktemp -d)
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.19.2
+# protoc-gen-es comes from web/package.json, so bun install must have run.
+export PATH="$GOBIN:$PWD/web/node_modules/.bin:$PATH"
+
 buf generate
 bun install --cwd web && bun run --cwd web build      # creates web/dist (gitignored)
 # equivalently: go generate ./cmd/pontus
