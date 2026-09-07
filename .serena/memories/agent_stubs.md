@@ -11,11 +11,47 @@ orchestrator, not a metrics sidecar", which is the *intent*, not the state.
 | :--- | :--- |
 | `UpdateConfig`, `ExecuteCommand`, `RestartService`, `ShutdownDatabase` | real |
 | **`SetupReplication`** | **implemented 2026-09-06** (`agent/infrastructure/replication.go`) — see below |
-| **`PromoteNode`** | **stub** — `return &PromoteNodeResponse{Success: true}` |
-| `InitializeDatabase`, `InstallDatabase`, `BackupDatabase`, `RestoreDatabase`, `VacuumDatabase`, `RemoveDatabase`, `ScheduleMaintenance` | stub — fake progress, always 100% |
+| **`PromoteNode`**, **`BackupDatabase`**, **`RestoreDatabase`**, **`VacuumDatabase`** | **implemented 2026-09-07** (`agent/infrastructure/maintenance.go`) |
+| `InitializeDatabase`, `InstallDatabase`, `RemoveDatabase`, `ScheduleMaintenance` | **still stubs** — fake progress, always 100% |
 
-Every one reports success. The dashboard, `pontusctl` and the ConnectRPC API all
-expose these as working features.
+Every remaining stub reports success. The dashboard, `pontusctl` and the
+ConnectRPC API all expose these as working features.
+
+## Implemented, and how they are proven
+
+`SetupReplication` (2026-09-06) and `PromoteNode` / `BackupDatabase` /
+`RestoreDatabase` / `VacuumDatabase` (2026-09-07). Each is proven by observing
+the *world*, never the agent's own report — a stub passes every weaker test:
+
+- `e2e/local_failover_test.go` — kill the primary, it rejoins as a streaming
+  replica with no operator.
+- `e2e/backup_restore_test.go` — a table is created, backed up, **dropped**,
+  restored and read back; a vacuum's ANALYZE is confirmed through
+  `pg_stat_user_tables`.
+
+### Agent configuration these need
+
+Two things the agent must not guess, both defaulted and both worth setting:
+
+- **`-data-dir`** — the cluster it manages. A scan finds *a* cluster, which on a
+  host running two is the wrong one, and a rebuild erases whatever it points at.
+- **`-db-user`** — the role its tools connect as (default `postgres`). Without
+  it the tools connect as the *OS* account the command runs under, which on a
+  database host is rarely a role that exists.
+
+The connection is over the cluster's unix socket with **no password**: the agent
+is root on the database host, so it becomes the cluster's owner, and that
+account authenticates locally by peer or trust. Do not add a password path —
+it would put a secret on the wire and buy nothing. The e2e harness models this
+with `initdb --auth-local=trust --auth-host=scram-sha-256`.
+
+### Rules
+- A failed backup deletes its partial file: a partial backup restores, and
+  restores wrong.
+- Success is reported only after `stat` confirms bytes on disk.
+- The restore tool comes from the file's magic (`PGDMP`), not from the caller.
+- Progress percentages mark real transitions. pg_dump reports no progress, so
+  intermediate numbers would be the same lie in a smaller form.
 
 ## Why this matters most for recovery
 
