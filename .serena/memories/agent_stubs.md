@@ -12,7 +12,11 @@ orchestrator, not a metrics sidecar", which is the *intent*, not the state.
 | `UpdateConfig`, `ExecuteCommand`, `RestartService`, `ShutdownDatabase` | real |
 | **`SetupReplication`** | **implemented 2026-09-06** (`agent/infrastructure/replication.go`) — see below |
 | **`PromoteNode`**, **`BackupDatabase`**, **`RestoreDatabase`**, **`VacuumDatabase`** | **implemented 2026-09-07** (`agent/infrastructure/maintenance.go`) |
-| `InitializeDatabase`, `InstallDatabase`, `RemoveDatabase`, `ScheduleMaintenance` | **still stubs** — fake progress, always 100% |
+| **`InitializeDatabase`**, **`RemoveDatabase`** | **implemented 2026-09-07** (`agent/infrastructure/lifecycle.go`) |
+| `InstallDatabase` | **was never a stub** — it delegates to the apt repository manager and reports real Failed stages. An earlier note here said otherwise, from grepping its body for `exec.Command`. |
+| `ScheduleMaintenance` | **refuses** — it returned `task-123` and reported success. Recurring work needs a scheduler and somewhere to persist a schedule across restarts; neither exists. The reply points at cron or a systemd timer. |
+
+**No stub remains.** Every method either does the work or says it does not.
 
 Every remaining stub reports success. The dashboard, `pontusctl` and the
 ConnectRPC API all expose these as working features.
@@ -44,6 +48,26 @@ is root on the database host, so it becomes the cluster's owner, and that
 account authenticates locally by peer or trust. Do not add a password path —
 it would put a secret on the wire and buy nothing. The e2e harness models this
 with `initdb --auth-local=trust --auth-host=scram-sha-256`.
+
+### Rules for the destructive paths
+
+`RemoveDatabase` is the most destructive call the agent exposes, and every
+directory-erasing path shares one guard: an absolute path, clear of the
+filesystem root, containing `PG_VERSION`. `InitializeDatabase` refuses to
+initialise over an existing cluster *by name* rather than letting initdb fail
+after the directory is created and chowned. Neither should be relaxed to "the
+path exists".
+
+`RemoveDatabase` without `delete_data` stops the cluster and **says the data was
+kept** — "success" on a request whose subject is deletion must not leave that to
+inference.
+
+initdb cannot run as root and the agent is root, so the tools run as the account
+that will own the cluster, looked up by name (`-db-user`). The initial password
+goes through a file: a command line is readable by every process on the host. A
+requested version selects binaries under `/usr/lib/postgresql/<major>/bin` — a
+host can carry several majors, and taking whatever is first on PATH creates a
+cluster the server then refuses to start.
 
 ### Rules
 - A failed backup deletes its partial file: a partial backup restores, and
