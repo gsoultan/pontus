@@ -82,3 +82,45 @@ and the suite is minutes. `auth.mode: pontus` additionally needs a backend
 reason and **silently stays in passthrough**, which reads as a feature not
 working rather than as a misconfiguration. The harness template already sets
 `admin_dsn`.
+
+
+## Regenerating protobuf without reddening CI
+
+CI installs **exact** protoc plugin versions and fails on any `buf generate`
+diff. Generating with whatever is on your PATH rewrites the generator header in
+every `.pb.go` and fails the build on nine files you did not touch — the error
+reads "buf generate produced changes that were not committed" and names them
+all, which looks like a much bigger problem than it is.
+
+Install the pinned set into a temporary GOBIN so a newer toolchain elsewhere is
+left alone (the recipe is also in `AGENTS.md`):
+
+```bash
+export GOBIN=$(mktemp -d)
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.19.2
+export PATH="$GOBIN:$PWD/web/node_modules/.bin:$PATH"   # protoc-gen-es lives in web/
+buf generate
+```
+
+The pinned versions are in `.github/workflows/ci.yml`; check there rather than
+trusting the list above.
+
+## Reproducing the lint gate
+
+CI runs golangci-lint with `only-new-issues: true`, so the tree's few hundred
+pre-existing findings do not count and yours do. Reproduce it exactly with:
+
+```bash
+golangci-lint run --new-from-merge-base=main ./...
+```
+
+Plain `golangci-lint run` reports everything and tells you nothing about whether
+CI will pass.
+
+## The e2e cluster step flakes
+
+`./scripts/e2e-cluster.sh up` sometimes fails in CI with `psql: ... .s.PGSQL.5432
+failed: No such file or directory` — a startup race, not a branch problem. Re-run
+the job before hunting for a cause.
