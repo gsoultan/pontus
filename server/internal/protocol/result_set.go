@@ -336,14 +336,14 @@ type ParseMessage struct {
 func DecodeParse(body []byte) (ParseMessage, error) {
 	end := indexByte(body, 0)
 	if end < 0 {
-		return ParseMessage{}, fmt.Errorf("Parse message has no statement name")
+		return ParseMessage{}, fmt.Errorf("the Parse message has no statement name")
 	}
 	name := string(body[:end])
 
 	rest := body[end+1:]
 	end = indexByte(rest, 0)
 	if end < 0 {
-		return ParseMessage{}, fmt.Errorf("Parse message has no query")
+		return ParseMessage{}, fmt.Errorf("the Parse message has no query")
 	}
 	return ParseMessage{Name: name, Query: string(rest[:end])}, nil
 }
@@ -369,7 +369,7 @@ func DecodeBindResultFormats(body []byte) ([]int16, error) {
 	for range 2 { // the portal name, then the statement name
 		end := indexByte(rest, 0)
 		if end < 0 {
-			return nil, fmt.Errorf("Bind message is truncated in its names")
+			return nil, fmt.Errorf("the Bind message is truncated in its names")
 		}
 		rest = rest[end+1:]
 	}
@@ -380,7 +380,7 @@ func DecodeBindResultFormats(body []byte) ([]int16, error) {
 		return nil, err
 	}
 	if len(rest) < count*2 {
-		return nil, fmt.Errorf("Bind message declares %d parameter formats it does not carry", count)
+		return nil, fmt.Errorf("the Bind message declares %d parameter formats it does not carry", count)
 	}
 	rest = rest[count*2:]
 
@@ -391,7 +391,7 @@ func DecodeBindResultFormats(body []byte) ([]int16, error) {
 	}
 	for range count {
 		if len(rest) < 4 {
-			return nil, fmt.Errorf("Bind message is truncated in its parameters")
+			return nil, fmt.Errorf("the Bind message is truncated in its parameters")
 		}
 		size := int32(binary.BigEndian.Uint32(rest[:4]))
 		rest = rest[4:]
@@ -399,7 +399,7 @@ func DecodeBindResultFormats(body []byte) ([]int16, error) {
 			continue
 		}
 		if len(rest) < int(size) {
-			return nil, fmt.Errorf("Bind message declares a %d byte parameter it does not carry", size)
+			return nil, fmt.Errorf("the Bind message declares a %d byte parameter it does not carry", size)
 		}
 		rest = rest[size:]
 	}
@@ -410,7 +410,7 @@ func DecodeBindResultFormats(body []byte) ([]int16, error) {
 		return nil, err
 	}
 	if len(rest) < count*2 {
-		return nil, fmt.Errorf("Bind message declares %d result formats it does not carry", count)
+		return nil, fmt.Errorf("the Bind message declares %d result formats it does not carry", count)
 	}
 
 	formats := make([]int16, count)

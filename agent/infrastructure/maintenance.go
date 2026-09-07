@@ -14,6 +14,14 @@ import (
 
 // Backup, restore, vacuum and promotion.
 //
+// Each streaming operation here returns `(stream, nil)` after a validation
+// failure and reports the reason as a stageError message. That reads like a
+// swallowed error and is flagged as one, so: the transport does not carry an
+// error raised while the stream is being constructed. Returning it reaches the
+// caller as an empty stream with no reason at all, which is how a refusal
+// arrived as "ended without completing it". The stream is the only channel that
+// works, hence the nolint at each site.
+//
 // Each of these replaces a stub that emitted a progress bar and reported
 // success without running anything. An operator who clicked "Backup" got a
 // green tick and no backup, which is worse than an error: it is a disaster
@@ -53,6 +61,7 @@ func (m *management) BackupDatabase(ctx context.Context, req *endpoints.BackupDa
 			defer close(out)
 			send(stageError, 0, "%v", err)
 		}()
+		//nolint:nilerr // the reason has to travel on the stream; see the file comment
 		return out, nil
 	}
 
@@ -127,6 +136,7 @@ func (m *management) RestoreDatabase(ctx context.Context, req *endpoints.Restore
 			defer close(out)
 			send(stageError, 0, "%v", err)
 		}()
+		//nolint:nilerr // the reason has to travel on the stream; see the file comment
 		return out, nil
 	}
 
@@ -174,7 +184,8 @@ func isCustomFormatDump(path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer f.Close()
+	// Read-only, so a failed close has nothing to report and nothing to lose.
+	defer func() { _ = f.Close() }()
 
 	magic := make([]byte, 5)
 	n, err := f.Read(magic)
@@ -212,6 +223,7 @@ func (m *management) VacuumDatabase(ctx context.Context, req *endpoints.VacuumDa
 			defer close(out)
 			send(stageError, 0, "%v", err)
 		}()
+		//nolint:nilerr // the reason has to travel on the stream; see the file comment
 		return out, nil
 	}
 
@@ -252,11 +264,16 @@ func (m *management) VacuumDatabase(ctx context.Context, req *endpoints.VacuumDa
 // failover that had already failed once reported success and left the cluster
 // with no primary at all.
 func (m *management) PromoteNode(ctx context.Context, req *endpoints.PromoteNodeRequest) (*endpoints.PromoteNodeResponse, error) {
+	// The response carries the outcome, so a failure is a populated reply
+	// rather than a transport error — the caller reads Success, and an RPC
+	// error would reach it as "the call failed" with the reason discarded.
 	host, err := resolveHost(m.clusterDir(""), m.dbUser)
 	if err != nil {
+		//nolint:nilerr // the outcome is the response's job; see above
 		return &endpoints.PromoteNodeResponse{Success: false, ErrorMessage: err.Error()}, nil
 	}
 	if err := requireTool("pg_ctl"); err != nil {
+		//nolint:nilerr // the outcome is the response's job; see above
 		return &endpoints.PromoteNodeResponse{Success: false, ErrorMessage: err.Error()}, nil
 	}
 

@@ -93,7 +93,7 @@ func drive(t *testing.T, a *adminConsole, user string, commands ...string) [][]c
 	t.Helper()
 
 	client, server := net.Pipe()
-	t.Cleanup(func() { client.Close() })
+	t.Cleanup(func() { _ = client.Close() })
 
 	done := make(chan error, 1)
 	go func() { done <- a.serve(server, user) }()
@@ -137,7 +137,7 @@ func TestAdminConsoleRefusesWhenPontusDoesNotAuthenticate(t *testing.T) {
 	console := testConsole([]string{"admin"}, false)
 
 	client, server := net.Pipe()
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	done := make(chan error, 1)
 	go func() { done <- console.serve(server, "admin") }()
@@ -167,7 +167,7 @@ func TestAdminConsoleRefusesARoleThatIsNotListed(t *testing.T) {
 	console := testConsole([]string{"admin"}, true)
 
 	client, server := net.Pipe()
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	done := make(chan error, 1)
 	go func() { done <- console.serve(server, "app_user") }()
@@ -425,7 +425,7 @@ func TestAdminConsoleAnswersTheExtendedProtocol(t *testing.T) {
 	console := testConsole([]string{"admin"}, true, backend)
 
 	client, server := net.Pipe()
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	done := make(chan error, 1)
 	go func() { done <- console.serve(server, "admin") }()
@@ -449,7 +449,7 @@ func TestAdminConsoleAnswersTheExtendedProtocol(t *testing.T) {
 	batch = append(batch, tagged('E', execute)...)
 	batch = append(batch, tagged('S', nil)...)
 
-	go func() { client.Write(batch) }()
+	go func() { _, _ = client.Write(batch) }()
 
 	var tags []byte
 	var rows int
@@ -472,7 +472,7 @@ func TestAdminConsoleAnswersTheExtendedProtocol(t *testing.T) {
 		t.Errorf("got %d rows, want 1", rows)
 	}
 
-	client.Close()
+	_ = client.Close()
 	<-done
 }
 
@@ -483,7 +483,7 @@ func TestAdminConsoleSkipsABatchAfterAnError(t *testing.T) {
 	console := testConsole([]string{"admin"}, true)
 
 	client, server := net.Pipe()
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	done := make(chan error, 1)
 	go func() { done <- console.serve(server, "admin") }()
@@ -498,7 +498,7 @@ func TestAdminConsoleSkipsABatchAfterAnError(t *testing.T) {
 	batch = append(batch, tagged('E', append(cstring(""), 0, 0, 0, 0))...)
 	batch = append(batch, tagged('S', nil)...)
 
-	go func() { client.Write(batch) }()
+	go func() { _, _ = client.Write(batch) }()
 
 	var tags []byte
 	for _, f := range readUntilReady(t, client) {
@@ -511,7 +511,7 @@ func TestAdminConsoleSkipsABatchAfterAnError(t *testing.T) {
 		t.Errorf("message sequence = %q, want %q", got, want)
 	}
 
-	client.Close()
+	_ = client.Close()
 	<-done
 }
 

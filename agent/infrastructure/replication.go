@@ -75,129 +75,135 @@ func (m *management) SetupReplication(ctx context.Context, req *endpoints.SetupR
 			defer close(out)
 			out <- &endpoints.ReplicationProgress{Stage: stageError, Message: err.Error()}
 		}()
+		//nolint:nilerr // the transport drops a construction error, so the reason
+		// has to travel on the stream — see the comment above.
 		return out, nil
 	}
 
 	go func() {
 		defer close(out)
-
-		emit := func(stage string, pct int32, format string, args ...any) {
-			message := fmt.Sprintf(format, args...)
-
-			// Logged as well as streamed. A rebuild can run for half an hour on
-			// a host an operator is watching directly, and the caller's view of
-			// it is a single line at the end saying whether it worked.
-			if stage == stageError {
-				slog.Error("Rebuild failed", "data_dir", setup.dataDir, "reason", message)
-			} else {
-				slog.Info("Rebuild", "stage", stage, "data_dir", setup.dataDir, "detail", message)
-			}
-
-			select {
-			case out <- &endpoints.ReplicationProgress{
-				Stage: stage, Percentage: pct, Message: message,
-			}:
-			case <-ctx.Done():
-			}
-		}
-		fail := func(format string, args ...any) {
-			emit(stageError, 0, format, args...)
-		}
-
-		// Copy first, destroy last.
-		//
-		// The obvious order — stop, empty the directory, copy into it — leaves a
-		// window minutes long where the node holds nothing and only this process
-		// knows how to refill it. If the agent dies in that window the node is
-		// gone. It is not a hypothetical: the agent and the database share a
-		// lifecycle whenever the database runs in a container, where PostgreSQL
-		// is PID 1 and stopping it takes the agent down mid-rebuild.
-		//
-		// Staging the copy alongside the cluster and swapping it in reduces that
-		// window to two renames. Anything that fails before the swap leaves the
-		// original data directory exactly as it was.
-		if err := setup.clearStaging(); err != nil {
-			fail("could not clear the staging directory %s: %v", setup.stagingDir(), err)
-			return
-		}
-
-		// Captured before anything is destroyed. A base backup brings the
-		// primary's postgresql.conf with it, so a node rebuilt without this
-		// comes back trying to bind the primary's port — which is either taken,
-		// or worse, free.
-		setup.captureIdentity()
-
-		rewound := false
-		if setup.rewind {
-			// pg_rewind is the cheap path — it copies only the blocks that
-			// diverged — but it works in place, so it needs the server stopped
-			// and it has no staging step to fall back on. It is also fragile:
-			// it needs a clean shutdown and either data checksums or
-			// wal_log_hints. A failure falls through to the full copy.
-			emit("Stopping", 15, "Stopping PostgreSQL at %s", setup.dataDir)
-			if err := setup.stopPostgres(ctx); err != nil {
-				fail("could not stop PostgreSQL at %s: %v", setup.dataDir, err)
-				return
-			}
-			emit("Rewinding", 30, "Trying pg_rewind against %s", setup.primaryAddr())
-			if err := setup.pgRewind(ctx); err != nil {
-				emit("Rewinding", 35, "pg_rewind did not apply (%v); taking a base backup instead", err)
-			} else {
-				rewound = true
-			}
-		}
-
-		if !rewound {
-			emit("Syncing", 40, "Taking a base backup from %s into %s",
-				setup.primaryAddr(), setup.stagingDir())
-			if err := setup.baseBackup(ctx); err != nil {
-				_ = setup.clearStaging()
-				fail("base backup from %s failed: %v", setup.primaryAddr(), err)
-				return
-			}
-
-			emit("Stopping", 70, "Stopping PostgreSQL at %s", setup.dataDir)
-			if err := setup.stopPostgres(ctx); err != nil {
-				_ = setup.clearStaging()
-				fail("could not stop PostgreSQL at %s: %v", setup.dataDir, err)
-				return
-			}
-
-			emit("Swapping", 75, "Replacing the cluster with the new copy")
-			if err := setup.swapInStaging(); err != nil {
-				fail("could not put the new copy in place at %s: %v", setup.dataDir, err)
-				return
-			}
-		}
-
-		emit("Configuring", 80, "Writing standby configuration")
-		if err := setup.writeStandbyConfig(); err != nil {
-			fail("could not write the standby configuration: %v", err)
-			return
-		}
-
-		emit("Starting", 90, "Starting PostgreSQL")
-		if err := setup.startPostgres(ctx); err != nil {
-			fail("PostgreSQL did not start after the rebuild: %v", err)
-			return
-		}
-
-		// The caller verifies that the node actually streams. What is checked
-		// here is only what this process can see without credentials: the
-		// server came back up, and it came back as a standby.
-		if _, err := os.Stat(filepath.Join(setup.dataDir, "standby.signal")); err != nil {
-			fail("PostgreSQL started but standby.signal is missing, so it came back as a primary")
-			return
-		}
-
-		// The superseded cluster is kept until the replacement is proven, so a
-		// failed start leaves something to go back to.
-		setup.discardPrevious()
-
-		emit("Done", 100, "Now following %s", setup.primaryAddr())
+		setup.run(ctx, out)
 	}()
 
 	return out, nil
+}
+
+// run performs the rebuild, reporting each step on out.
+func (setup *replicationSetup) run(ctx context.Context, out chan<- *endpoints.ReplicationProgress) {
+	emit := func(stage string, pct int32, format string, args ...any) {
+		message := fmt.Sprintf(format, args...)
+
+		// Logged as well as streamed. A rebuild can run for half an hour on
+		// a host an operator is watching directly, and the caller's view of
+		// it is a single line at the end saying whether it worked.
+		if stage == stageError {
+			slog.Error("Rebuild failed", "data_dir", setup.dataDir, "reason", message)
+		} else {
+			slog.Info("Rebuild", "stage", stage, "data_dir", setup.dataDir, "detail", message)
+		}
+
+		select {
+		case out <- &endpoints.ReplicationProgress{
+			Stage: stage, Percentage: pct, Message: message,
+		}:
+		case <-ctx.Done():
+		}
+	}
+	fail := func(format string, args ...any) {
+		emit(stageError, 0, format, args...)
+	}
+
+	// Copy first, destroy last.
+	//
+	// The obvious order — stop, empty the directory, copy into it — leaves a
+	// window minutes long where the node holds nothing and only this process
+	// knows how to refill it. If the agent dies in that window the node is
+	// gone. It is not a hypothetical: the agent and the database share a
+	// lifecycle whenever the database runs in a container, where PostgreSQL
+	// is PID 1 and stopping it takes the agent down mid-rebuild.
+	//
+	// Staging the copy alongside the cluster and swapping it in reduces that
+	// window to two renames. Anything that fails before the swap leaves the
+	// original data directory exactly as it was.
+	if err := setup.clearStaging(); err != nil {
+		fail("could not clear the staging directory %s: %v", setup.stagingDir(), err)
+		return
+	}
+
+	// Captured before anything is destroyed. A base backup brings the
+	// primary's postgresql.conf with it, so a node rebuilt without this
+	// comes back trying to bind the primary's port — which is either taken,
+	// or worse, free.
+	setup.captureIdentity()
+
+	rewound := false
+	if setup.rewind {
+		// pg_rewind is the cheap path — it copies only the blocks that
+		// diverged — but it works in place, so it needs the server stopped
+		// and it has no staging step to fall back on. It is also fragile:
+		// it needs a clean shutdown and either data checksums or
+		// wal_log_hints. A failure falls through to the full copy.
+		emit("Stopping", 15, "Stopping PostgreSQL at %s", setup.dataDir)
+		if err := setup.stopPostgres(ctx); err != nil {
+			fail("could not stop PostgreSQL at %s: %v", setup.dataDir, err)
+			return
+		}
+		emit("Rewinding", 30, "Trying pg_rewind against %s", setup.primaryAddr())
+		if err := setup.pgRewind(ctx); err != nil {
+			emit("Rewinding", 35, "pg_rewind did not apply (%v); taking a base backup instead", err)
+		} else {
+			rewound = true
+		}
+	}
+
+	if !rewound {
+		emit("Syncing", 40, "Taking a base backup from %s into %s",
+			setup.primaryAddr(), setup.stagingDir())
+		if err := setup.baseBackup(ctx); err != nil {
+			_ = setup.clearStaging()
+			fail("base backup from %s failed: %v", setup.primaryAddr(), err)
+			return
+		}
+
+		emit("Stopping", 70, "Stopping PostgreSQL at %s", setup.dataDir)
+		if err := setup.stopPostgres(ctx); err != nil {
+			_ = setup.clearStaging()
+			fail("could not stop PostgreSQL at %s: %v", setup.dataDir, err)
+			return
+		}
+
+		emit("Swapping", 75, "Replacing the cluster with the new copy")
+		if err := setup.swapInStaging(); err != nil {
+			fail("could not put the new copy in place at %s: %v", setup.dataDir, err)
+			return
+		}
+	}
+
+	emit("Configuring", 80, "Writing standby configuration")
+	if err := setup.writeStandbyConfig(); err != nil {
+		fail("could not write the standby configuration: %v", err)
+		return
+	}
+
+	emit("Starting", 90, "Starting PostgreSQL")
+	if err := setup.startPostgres(ctx); err != nil {
+		fail("PostgreSQL did not start after the rebuild: %v", err)
+		return
+	}
+
+	// The caller verifies that the node actually streams. What is checked
+	// here is only what this process can see without credentials: the
+	// server came back up, and it came back as a standby.
+	if _, err := os.Stat(filepath.Join(setup.dataDir, "standby.signal")); err != nil {
+		fail("PostgreSQL started but standby.signal is missing, so it came back as a primary")
+		return
+	}
+
+	// The superseded cluster is kept until the replacement is proven, so a
+	// failed start leaves something to go back to.
+	setup.discardPrevious()
+
+	emit("Done", 100, "Now following %s", setup.primaryAddr())
 }
 
 // planReplication validates the request and resolves everything the rebuild
@@ -570,12 +576,20 @@ func writeAsOwner(path string, content []byte, dataDir string) error {
 		return err
 	}
 
-	info, err := os.Stat(dataDir)
-	if err != nil {
+	// Ownership only needs adjusting when the agent is root. Otherwise the file
+	// already belongs to the account that wrote it, which is the account the
+	// server runs as.
+	if os.Geteuid() != 0 {
 		return nil
 	}
+
+	info, err := os.Stat(dataDir)
+	if err != nil {
+		return fmt.Errorf("cannot read the ownership of %s: %w", dataDir, err)
+	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || os.Geteuid() != 0 {
+	if !ok {
+		// Not a POSIX filesystem, so there is no uid to copy.
 		return nil
 	}
 	return os.Chown(path, int(stat.Uid), int(stat.Gid))

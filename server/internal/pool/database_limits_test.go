@@ -113,7 +113,7 @@ func TestSetMaxConnsRespectsPerDatabaseCeilings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 
 	p.SetDatabaseLimits(func(database string) int32 {
 		if database == "bounded" {
