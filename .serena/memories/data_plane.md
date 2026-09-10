@@ -35,7 +35,8 @@ buffer, normalized query, `QueryInfo`, raw data, replay flag, response capture.
 `PeekTransactionState`, `Identify`, `Execute`, `RewriteQuery`.
 
 Implementations: `postgres_handler.go`, `mysql_handler.go`. Supporting: `tokenizer.go`
-(iterator-based `Tokenize`), `classifier.go`, `session_state.go`, `transaction_state.go`
+(iterator-based `Tokenize`, **allocation-free** — see below), `classifier.go`,
+`session_state.go`, `transaction_state.go`
 (`StateIdle` / `StatePartial` / in-transaction), `consistency.go` (LSN capture after a
 write, `WaitLSN` before a replica read), `discovery.go`, `metadata.go`.
 
@@ -52,6 +53,40 @@ message (`mem:findings` C15).
 clients share one backend connection. This paragraph previously said the opposite and was
 stale; `mem:findings` is authoritative when the two disagree. Passthrough still cannot pool,
 because the client's startup exchange happens once on one connection.
+
+### The tokenizer allocates nothing (2026-09-10)
+
+`Tokenize` cost 15 allocations for a trivial SELECT and 40 for a JOIN — it
+widened the query to `[]rune`, built each token through a `strings.Builder`, and
+uppercased every word to test it against the keyword table. It now yields
+**substrings of the query** (a Go string slice shares its backing array),
+resolves keywords to **interned constants** via a fold into a stack buffer, and
+walks UTF-8 in place. Classification is about twice as fast as a result.
+
+Rules that must not regress:
+
+- A token's `Value` is a slice of the input. Do not build one unless the value is
+  not contiguous in the input — the only such case is a literal with an escaped
+  quote, and it is documented at the function.
+- `keywordOf` returns the constant from `keywordList`, never an uppercased copy,
+  so a lowercase `select` costs nothing either. It relies on the compiler's
+  `m[string(bytes)]` optimisation not copying.
+- `TestTokenizeDoesNotAllocate` fails the build on a regression;
+  `BenchmarkTokenize` records the number. Both matter — a benchmark nobody runs
+  catches nothing.
+
+## Benchmarks exist now
+
+They did not before, which made AGENTS.md's veto on "a per-query allocation with
+no benchmark" unenforceable. `BenchmarkTokenize` / `BenchmarkClassifyQuery`
+(`server/internal/protocol`) and `BenchmarkCalculateCost` / `BenchmarkFilterNodes`
+(`server/internal/balancer`). The balancer was already allocation-free; that was
+a comment and is now a number.
+
+```bash
+go test ./server/internal/protocol/ -run '^$' -bench . -benchmem -count=10 > new.txt
+benchstat old.txt new.txt
+```
 
 ## `server/internal/pool/` — connection pools
 

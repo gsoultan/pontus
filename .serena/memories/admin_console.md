@@ -87,10 +87,14 @@ Gaps against pgbouncer/pgcat identified alongside this work, none started:
    `force_user`, no per-database `pool_mode`, and no `max_db_connections`
    (a total across users for one database, distinct from the per-identity
    `max_conns` that shipped).
-2. **No session pooling mode** — `pooling_mode` is transaction|statement only.
-3. **Zero benchmarks in the tree**, so `AGENTS.md`'s "no per-query allocation
-   without a benchmark" veto is unenforceable and the README's performance
-   claims are unbacked.
+2. ~~**No session pooling mode**~~ — **wrong, it exists.** `poolSession` is
+   implemented in `server/proxy/pooling_mode.go` with seven unit tests and e2e
+   coverage in `outage_test.go` and `limits_test.go`. The claim came from a
+   stale comment on `config.Options.PoolingMode` saying "transaction or
+   statement", now corrected. Check the code, not the comment.
+3. ~~**Zero benchmarks in the tree**~~ — **done 2026-09-10.** See
+   `mem:data_plane`. Writing the first one immediately found the tokenizer
+   allocating 15-40 times per query against a README claiming zero.
 4. **No container or Kubernetes story** — no Dockerfile, Helm chart or manifests.
 5. **No zero-downtime binary upgrade** (pgbouncer's `-R` takeover).
 6. **The README still advertises the removed WAF** ("WAF 2.0", "Exfiltration
