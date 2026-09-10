@@ -97,8 +97,23 @@ Gaps against pgbouncer/pgcat identified alongside this work, none started:
    allocating 15-40 times per query against a README claiming zero.
 4. **No container or Kubernetes story** — no Dockerfile, Helm chart or manifests.
 5. **No zero-downtime binary upgrade** (pgbouncer's `-R` takeover).
-6. **The README still advertises the removed WAF** ("WAF 2.0", "Exfiltration
-   Guard", and a `# Security (WAF)` config block that no longer parses).
+6. ~~**The README still advertises the removed WAF**~~ — **done 2026-09-10.**
+   The claim and the dead config block are gone, and the performance line now
+   names the command that produces its numbers.
+
+Found or sharpened since:
+
+7. **`SHOW STATS` / `SHOW SERVERS`** still refuse — they need per-database
+   query, byte and time counters, and per-connection server detail. This is the
+   monitoring surface exporters ask for after `SHOW POOLS`.
+8. **`VacuumDatabase` is not on the `AgentClient` interface**, so the agent
+   implements it and the proxy cannot call it.
+9. **The agent token crosses the network in cleartext by default** (finding
+   B12 — `insecure.NewCredentials()` with no `agent_tls`). This got materially
+   worse in September: that token now authorises rebuilding a node, deleting a
+   data directory and taking backups, where it previously authorised stubs.
+10. **`internal/app`, `server/management/service` and `server/internal/consensus`
+    have no test files at all.** Untested Raft is the worst of those.
 
 Sharding was considered and rejected as a direction: it fights the cache and the
 LSN-consistency logic, and the cache is the better differentiator.
