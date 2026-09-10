@@ -7,7 +7,7 @@ Pontus is a high-performance, cloud-native database connection pooler and load b
 - **Transaction Mode Pooling**: Minimizes server connections by releasing them when idle.
 - **Load Balancing**: Round Robin, Least Connections, and Consistent Hashing (Sticky).
 - **Failover & Health Checks**: Passive and active health monitoring with Raft-driven consensus.
-- **Security**: WAF 2.0 with regex patterns, global Rate Limiting, and Exfiltration Guard.
+- **Security**: client authentication (scram-sha-256 / md5), TLS on both sides, and per-tenant rate limiting.
 - **Intelligent Caching**: Semantic result-set cache with automatic table-level invalidation.
 - **AI-Driven Insights**: Proactive query plan analysis (EXPLAIN) and optimization suggestions.
 - **Advanced Observability**: Real-time Top Queries dashboard and OpenTelemetry tracing.
@@ -15,7 +15,11 @@ Pontus is a high-performance, cloud-native database connection pooler and load b
 - **Web Dashboard**: Modern, built-in dashboard for monitoring (embedded in binary).
 - **Adaptive Pooling**: BBR-style congestion control for DB connections with resource-aware throttling.
 - **Performance Advisor**: Real-time suggestions for system tuning based on CPU, memory, and concurrency.
-- **Low Footprint**: Zero-allocation buffer management and optimized connection handling (100k+ clients).
+- **Low Footprint**: the query path allocates nothing to tokenize or route a
+  statement. Measured, not asserted — `go test ./server/internal/... -bench .
+  -benchmem` reports 0 allocs/op for `Tokenize`, `CalculateCost` and
+  `FilterNodes`. There is no published throughput figure yet; when there is one
+  it will come with the command that produced it.
 
 ---
 
@@ -151,12 +155,6 @@ backends:
     role: "replica"
     weight: 10
     zone: "us-east-1b"
-
-# Security (WAF)
-firewall:
-  enabled: true
-  blocked_words: ["DROP", "TRUNCATE"]
-  patterns: ["(?i)UNION\\s+SELECT"] # Custom regex patterns
 
 # Rate Limiting
 rate_limit:

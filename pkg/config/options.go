@@ -79,9 +79,14 @@ type Options struct {
 	// the dominant log volume on a busy proxy and drowns the events worth
 	// reading. Zero takes the default.
 	SlowQueryThreshold time.Duration `json:"slow_query_threshold,omitzero" yaml:"slow_query_threshold"`
-	PoolingMode        string        `json:"pooling_mode,omitzero" yaml:"pooling_mode"` // "transaction" or "statement"
-	ShadowBackends     []Backend     `json:"shadow_backends,omitzero" yaml:"shadow_backends"`
-	AdminToken         string        `json:"admin_token,omitzero" yaml:"admin_token"`
+	// PoolingMode is when a backend connection goes back to the pool:
+	// "transaction" (the default), "session" or "statement". This comment said
+	// transaction-or-statement while session had been implemented and tested
+	// for months, which is the kind of thing that gets a working feature
+	// reported as missing.
+	PoolingMode    string    `json:"pooling_mode,omitzero" yaml:"pooling_mode"`
+	ShadowBackends []Backend `json:"shadow_backends,omitzero" yaml:"shadow_backends"`
+	AdminToken     string    `json:"admin_token,omitzero" yaml:"admin_token"`
 	// JWTSecret keys the management session tokens. The name is kept for
 	// config compatibility; tokens are PASETO v4.local, not JWT. Prefer the
 	// auth_key alias below. There is no default — startup fails without one.
