@@ -131,10 +131,21 @@ cr_running() {
 # machine that has not cached the image.
 #
 # It never reproduced locally because the containers already existed there.
+# Asked over TCP, which is the whole point.
+#
+# A socket query answers `select 1` perfectly happily against the temporary
+# server, so waiting on one returns during init and the next command lands in
+# the gap while PostgreSQL restarts for real. The temporary server is started
+# with listen_addresses empty — it exists only to run the init scripts — so TCP
+# is answered by the real server and by nothing else.
+#
+# This failed roughly one CI run in three and looked like a different problem
+# each time, because whichever command came next reported it.
 wait_ready() {
   local name="$1" label="$2" i=0
   while [ "$i" -lt 90 ]; do
-    if "$CR" exec "$name" psql -U "$PG_USER" -d "$PG_DB" -tAc 'select 1' >/dev/null 2>&1; then
+    if "$CR" exec -e PGPASSWORD="$PG_PASSWORD" "$name" \
+        psql -h 127.0.0.1 -p 5432 -U "$PG_USER" -d "$PG_DB" -tAc 'select 1' >/dev/null 2>&1; then
       ok "$label ready"
       return 0
     fi
