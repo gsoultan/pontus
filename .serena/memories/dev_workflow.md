@@ -119,8 +119,19 @@ golangci-lint run --new-from-merge-base=main ./...
 Plain `golangci-lint run` reports everything and tells you nothing about whether
 CI will pass.
 
-## The e2e cluster step flakes
+## The e2e cluster step flake — fixed 2026-09-10
 
-`./scripts/e2e-cluster.sh up` sometimes fails in CI with `psql: ... .s.PGSQL.5432
-failed: No such file or directory` — a startup race, not a branch problem. Re-run
-the job before hunting for a cause.
+`./scripts/e2e-cluster.sh up` failed about one CI run in three with `psql: ...
+.s.PGSQL.5432 failed: No such file or directory`, and looked like a different
+problem each time because whichever command came next reported it.
+
+Root cause worth remembering for any container-Postgres harness: **the postgres
+image runs a temporary server while it executes the init scripts**, then shuts it
+down and starts the real one. A readiness check over the **unix socket** is
+answered by that temporary server, so it returns during init and the next command
+lands in the gap between the two.
+
+The temporary server is started with `listen_addresses` empty, so **TCP is
+answered by the real server and by nothing else**. `wait_ready` now asks over TCP.
+Do not "simplify" it back to a socket query, and do not paper over it with a
+sleep.
