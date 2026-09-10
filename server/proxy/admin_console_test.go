@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"fmt"
+
 	"github.com/gsoultan/pontus/pkg/config"
+	"github.com/gsoultan/pontus/pkg/observability"
 	"github.com/gsoultan/pontus/server/internal/pool"
 	"github.com/gsoultan/pontus/server/internal/protocol"
 )
@@ -65,6 +68,7 @@ func testConsole(users []string, authenticated bool, backends ...pool.Backend) *
 		options:       &config.Options{PoolingMode: "transaction", Balancer: "p2c"},
 		backends:      func() []pool.Backend { return backends },
 		sessions:      newSessionRegistry(),
+		stats:         observability.NewDatabaseRegistry(),
 		started:       time.Now(),
 		authenticated: func() bool { return authenticated },
 	}
@@ -360,13 +364,13 @@ func TestAdminConsoleKeepsTheSessionAfterAnError(t *testing.T) {
 	}
 }
 
-// SHOW STATS and SHOW SERVERS need counters Pontus does not keep. Reporting
-// zeros would put "0 queries/sec" on a dashboard forever, which looks like a
-// working integration; saying so does not.
+// SHOW SERVERS needs per-connection detail the pool does not enumerate.
+// Reporting zeros would put an empty server list on a dashboard forever, which
+// looks like a working integration; saying so does not.
 func TestAdminConsoleSaysWhatItDoesNotImplement(t *testing.T) {
 	console := testConsole([]string{"admin"}, true)
 
-	for _, command := range []string{"SHOW STATS", "SHOW SERVERS"} {
+	for _, command := range []string{"SHOW SERVERS"} {
 		replies := drive(t, console, "admin", command)
 
 		var message string
@@ -556,5 +560,91 @@ func TestSessionRegistryIsBoundedByLiveConnections(t *testing.T) {
 	r.remove(second)
 	if got := r.count(); got != 0 {
 		t.Fatalf("count = %d after every session closed, want 0", got)
+	}
+}
+
+// SHOW STATS reports what a database has actually done, so a stub that returned
+// zeros would pass any test that only checks the columns. This one records
+// through the same counters the query path uses and reads them back.
+func TestAdminConsoleShowStatsReportsRecordedWork(t *testing.T) {
+	console := testConsole([]string{"admin"}, true)
+
+	orders := console.stats.For("orders")
+	orders.RecordQuery(20*time.Millisecond, 100, 900, true)
+	orders.RecordQuery(10*time.Millisecond, 50, 450, false)
+	console.stats.For("billing").RecordQuery(5*time.Millisecond, 10, 20, true)
+
+	replies := drive(t, console, "admin", "SHOW STATS")
+
+	rows := map[string][]string{}
+	for _, f := range replies[0] {
+		if f.tag == 'D' {
+			values := f.values()
+			rows[values[0]] = values
+		}
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2: %v", len(rows), rows)
+	}
+
+	// database, total_xact_count, total_query_count, total_received, total_sent,
+	// total_query_time, total_wait_time, then the averages.
+	row := rows["orders"]
+	if row[1] != "1" {
+		t.Errorf("total_xact_count = %q, want 1 — only one statement ended a transaction", row[1])
+	}
+	if row[2] != "2" {
+		t.Errorf("total_query_count = %q, want 2", row[2])
+	}
+	if row[3] != "150" || row[4] != "1350" {
+		t.Errorf("received/sent = %q/%q, want 150/1350", row[3], row[4])
+	}
+	// Microseconds, as pgbouncer reports them.
+	if row[5] != "30000" {
+		t.Errorf("total_query_time = %q, want 30000 microseconds", row[5])
+	}
+	// avg_query_time is the mean over the statements, not over the window.
+	if row[11] != "15000" {
+		t.Errorf("avg_query_time = %q, want 15000 microseconds", row[11])
+	}
+
+	if rows["billing"][2] != "1" {
+		t.Errorf("billing total_query_count = %q, want 1", rows["billing"][2])
+	}
+}
+
+// The database name comes from a startup packet, so the registry is a map keyed
+// by client-supplied input. Past its bound everything has to land in one bucket
+// rather than growing without limit.
+func TestDatabaseStatsAreBounded(t *testing.T) {
+	registry := observability.NewDatabaseRegistry()
+
+	for i := range observability.MaxTrackedDatabases + 50 {
+		registry.For(fmt.Sprintf("db%d", i)).RecordQuery(time.Millisecond, 1, 1, true)
+	}
+
+	snapshot := registry.Snapshot()
+	if len(snapshot) > observability.MaxTrackedDatabases+1 {
+		t.Errorf("registry grew to %d entries; the bound is %d plus the overflow bucket",
+			len(snapshot), observability.MaxTrackedDatabases)
+	}
+
+	var overflow *observability.DatabaseStat
+	var total int64
+	for i := range snapshot {
+		total += snapshot[i].Queries
+		if snapshot[i].Database == observability.OverflowDatabase {
+			overflow = &snapshot[i]
+		}
+	}
+	if overflow == nil {
+		t.Fatal("nothing past the bound was accounted for")
+	}
+	if overflow.Queries != 50 {
+		t.Errorf("overflow holds %d queries, want the 50 past the bound", overflow.Queries)
+	}
+	// The totals stay right even though the attribution stops.
+	if want := int64(observability.MaxTrackedDatabases + 50); total != want {
+		t.Errorf("total queries = %d, want %d", total, want)
 	}
 }

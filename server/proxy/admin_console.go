@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gsoultan/pontus/pkg/config"
+	"github.com/gsoultan/pontus/pkg/observability"
 	"github.com/gsoultan/pontus/pkg/version"
 	pool2 "github.com/gsoultan/pontus/server/internal/pool"
 	"github.com/gsoultan/pontus/server/internal/protocol"
@@ -41,6 +43,7 @@ type adminConsole struct {
 	options  *config.Options
 	backends func() []pool2.Backend
 	sessions *sessionRegistry
+	stats    *observability.DatabaseRegistry
 	started  time.Time
 
 	// authenticated reports whether Pontus verifies client passwords itself.
@@ -385,10 +388,19 @@ func (a *adminConsole) show(what string) (consoleReply, error) {
 	// implemented yet. Both need counters Pontus does not keep: per-database
 	// query and byte totals for STATS, and per-connection server detail for
 	// SERVERS.
-	case "STATS", "STATS_TOTALS", "STATS_AVERAGES", "TOTALS", "SERVERS":
-		return consoleReply{}, refuse("0A000", "SHOW "+what+" is not implemented yet: "+
-			"Pontus does not keep the counters it reports; SHOW POOLS carries the "+
-			"occupancy and wait figures that are available")
+	case "STATS", "STATS_TOTALS", "TOTALS":
+		return rowsOf(a.showStats()), nil
+
+	// Named rather than folded into the default, because "unrecognised" would
+	// send an operator looking for a typo in a command that is simply not
+	// implemented. It needs per-connection server detail — which server
+	// connection is in which state, for how long — and the pool engine reports
+	// occupancy rather than an enumeration of its connections.
+	case "SERVERS":
+		return consoleReply{}, refuse("0A000", "SHOW SERVERS is not implemented: "+
+			"the pool reports occupancy rather than an enumeration of its "+
+			"connections. SHOW POOLS carries the per-identity counts, and SHOW "+
+			"CLIENTS the sessions holding them")
 
 	default:
 		return consoleReply{}, refuse("42601", "unrecognised: SHOW "+what+
@@ -568,6 +580,91 @@ func (a *adminConsole) showConfig() *protocol.ResultSet {
 	return rs
 }
 
+// showStats reports per-database totals and the rates they imply.
+//
+// The columns are pgbouncer's, so its exporters read them. total_wait_time
+// comes from the pools rather than from a counter of its own: gpool already
+// measures how long acquisitions spent waiting, and a second measurement of the
+// same thing would be one more thing to disagree.
+func (a *adminConsole) showStats() *protocol.ResultSet {
+	rs := protocol.NewResultSet(
+		protocol.TextColumn("database"),
+		protocol.NumericColumn("total_xact_count"),
+		protocol.NumericColumn("total_query_count"),
+		protocol.NumericColumn("total_received"),
+		protocol.NumericColumn("total_sent"),
+		protocol.NumericColumn("total_query_time"),
+		protocol.NumericColumn("total_wait_time"),
+		protocol.NumericColumn("avg_xact_count"),
+		protocol.NumericColumn("avg_query_count"),
+		protocol.NumericColumn("avg_recv"),
+		protocol.NumericColumn("avg_sent"),
+		protocol.NumericColumn("avg_query_time"),
+		protocol.NumericColumn("avg_wait_time"),
+	)
+
+	// Averages are per second over the window these totals cover, which is what
+	// pgbouncer's avg_ columns mean. A window of zero would divide by it.
+	window := time.Since(a.stats.Since()).Seconds()
+	if window <= 0 {
+		window = 1
+	}
+
+	waits := a.waitTimeByDatabase()
+
+	stats := a.stats.Snapshot()
+	slices.SortFunc(stats, func(x, y observability.DatabaseStat) int {
+		return strings.Compare(x.Database, y.Database)
+	})
+
+	for _, st := range stats {
+		wait := waits[st.Database]
+		rs.Row(
+			orSystem(st.Database),
+			itoa(st.Transactions),
+			itoa(st.Queries),
+			itoa(st.Received),
+			itoa(st.Sent),
+			itoa(int64(st.QueryTime/time.Microsecond)),
+			itoa(int64(wait/time.Microsecond)),
+			itoa(perSecond(st.Transactions, window)),
+			itoa(perSecond(st.Queries, window)),
+			itoa(perSecond(st.Received, window)),
+			itoa(perSecond(st.Sent, window)),
+			itoa(mean(int64(st.QueryTime/time.Microsecond), st.Queries)),
+			itoa(mean(int64(wait/time.Microsecond), st.Queries)),
+		)
+	}
+	return rs
+}
+
+// waitTimeByDatabase sums each database's acquisition wait across the pools
+// holding it, which are keyed by (database, user).
+func (a *adminConsole) waitTimeByDatabase() map[string]time.Duration {
+	waits := map[string]time.Duration{}
+	for _, backend := range a.backends() {
+		stats, ok := backend.(interface{ PoolStats() []pool2.PoolStat })
+		if !ok {
+			continue
+		}
+		for _, p := range stats.PoolStats() {
+			waits[p.Database] += p.AcquireWait
+		}
+	}
+	return waits
+}
+
+func perSecond(total int64, window float64) int64 {
+	return int64(float64(total) / window)
+}
+
+func mean(total, count int64) int64 {
+	if count <= 0 {
+		return 0
+	}
+	return total / count
+}
+
 func (a *adminConsole) showVersion() *protocol.ResultSet {
 	rs := protocol.NewResultSet(protocol.TextColumn("version"))
 	rs.Row("Pontus " + version.Version + " (commit " + version.Commit + ")")
@@ -580,6 +677,7 @@ func (a *adminConsole) showHelp() *protocol.ResultSet {
 		protocol.TextColumn("description"),
 	)
 	rs.Row("SHOW POOLS", "connection pool occupancy per database and user")
+	rs.Row("SHOW STATS", "per-database query, byte and time totals, and their rates")
 	rs.Row("SHOW DATABASES", "configured backends, their role and their ceiling")
 	rs.Row("SHOW CLIENTS", "live client sessions")
 	rs.Row("SHOW LISTS", "size of each internal collection")
@@ -635,6 +733,7 @@ func (g *Gateway) newAdminConsole(cfg *config.Options) *adminConsole {
 		options:  cfg,
 		backends: g.backendList,
 		sessions: g.sessions,
+		stats:    g.dbStats,
 		started:  time.Now(),
 
 		authenticated: func() bool { return g.credentials != nil },

@@ -83,6 +83,10 @@ type Gateway struct {
 	// out-of-band cancel request can be routed to it.
 	cancels *cancelRegistry
 
+	// dbStats accumulates the per-database totals SHOW STATS reports. Bounded,
+	// because the key is a client-supplied database name.
+	dbStats *observability2.DatabaseRegistry
+
 	// sessions tracks live client sessions for the administration console.
 	// One entry per accepted connection, added and removed once per session
 	// rather than per statement, so nothing here is on the query path.
@@ -156,6 +160,7 @@ func NewGateway(h protocol.Handler, b balancer2.Balancer, orch FailoverOrchestra
 	g.maxMessageBytes = defaultMaxMessageBytes
 	g.cancels = newCancelRegistry()
 	g.sessions = newSessionRegistry()
+	g.dbStats = observability2.NewDatabaseRegistry()
 	g.config = cfg
 	g.monitor = m
 	g.backendTLS = backendTLS
@@ -628,8 +633,9 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	}
 
 	requestStart := time.Now()
+	var sent int64
 	state, isReadOnlyErr, rtt, err := m.proxyResponse(ctx, s.Client, s.Server, s.Buffer, capture,
-		s.QueryInfo.ReadOnly, m.handler.ResponseEndFor(s.Data), &s.ReplyFailed)
+		s.QueryInfo.ReadOnly, m.handler.ResponseEndFor(s.Data), &s.ReplyFailed, &sent)
 	if call != nil {
 		call.data = capture.Bytes()
 		call.err = cmp.Or(err, capture.Err())
@@ -645,9 +651,16 @@ func (m *Gateway) executeRequest(ctx context.Context, s *middleware.Session) err
 	// scored identically and least_conn, p2c and peak_ewma all ranked by a
 	// constant. A load balancer that cannot tell an idle node from a saturated
 	// one is not balancing.
-	if elapsed := time.Since(requestStart); elapsed > 0 {
+	elapsed := time.Since(requestStart)
+	if elapsed > 0 {
 		s.Backend.ReportLatency(elapsed)
 	}
+
+	// The timing is already measured for the balancer, so accounting costs a
+	// few atomic adds on a pointer the session already holds. A statement that
+	// leaves the session idle closed a transaction — explicit or the implicit
+	// one every standalone statement runs in — which is what pgbouncer counts.
+	s.Stats.RecordQuery(elapsed, int64(len(s.Data)), sent, state == protocol.StateIdle)
 	s.Backend.ReportResult(err)
 
 	if isReadOnlyErr {
@@ -864,6 +877,7 @@ func (g *Gateway) handleClient(ctx context.Context, client net.Conn) {
 	}
 
 	session := &middleware.Session{
+		Stats:      g.dbStats.For(sessionState.Database),
 		Client:     client,
 		RemoteAddr: remoteAddr,
 		State:      sessionState,
@@ -1262,7 +1276,11 @@ func (g *Gateway) CacheManager() *cache.Manager {
 	return g.cacheManager
 }
 
-func (g *Gateway) proxyResponse(ctx context.Context, client, server net.Conn, buf []byte, capture *responseCapture, readOnly bool, end protocol.ResponseEnd, failed *bool) (protocol.TransactionState, bool, time.Duration, error) {
+// sent accumulates the bytes written to the client, for SHOW STATS. A pointer
+// out-parameter rather than a fifth return value, matching failed: the two
+// response paths below both write, and a caller that forgot one would under-count
+// silently.
+func (g *Gateway) proxyResponse(ctx context.Context, client, server net.Conn, buf []byte, capture *responseCapture, readOnly bool, end protocol.ResponseEnd, failed *bool, sent *int64) (protocol.TransactionState, bool, time.Duration, error) {
 	// query_timeout, made real.
 	//
 	// The deadline was carried on the context and the read loop never consulted
@@ -1279,13 +1297,13 @@ func (g *Gateway) proxyResponse(ctx context.Context, client, server net.Conn, bu
 
 	// Fast Path: a read-only query with nothing to capture can be steered straight through.
 	if readOnly && capture == nil {
-		return g.proxyResponseFastPath(client, server, buf, end, failed)
+		return g.proxyResponseFastPath(client, server, buf, end, failed, sent)
 	}
 
-	return g.proxyResponseWithCapture(client, server, buf, capture, end, failed)
+	return g.proxyResponseWithCapture(client, server, buf, capture, end, failed, sent)
 }
 
-func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte, end protocol.ResponseEnd, failed *bool) (protocol.TransactionState, bool, time.Duration, error) {
+func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte, end protocol.ResponseEnd, failed *bool, sent *int64) (protocol.TransactionState, bool, time.Duration, error) {
 	start := time.Now()
 	firstByte := true
 	var rtt time.Duration
@@ -1300,6 +1318,7 @@ func (g *Gateway) proxyResponseFastPath(client, server net.Conn, buf []byte, end
 				firstByte = false
 			}
 
+			*sent += int64(n)
 			if _, werr := client.Write(buf[:n]); werr != nil {
 				return protocol.StateError, false, rtt, werr
 			}
@@ -1349,7 +1368,7 @@ func midSequenceState(state protocol.TransactionState, end protocol.ResponseEnd)
 	return state
 }
 
-func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, capture *responseCapture, end protocol.ResponseEnd, failed *bool) (protocol.TransactionState, bool, time.Duration, error) {
+func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, capture *responseCapture, end protocol.ResponseEnd, failed *bool, sent *int64) (protocol.TransactionState, bool, time.Duration, error) {
 	isReadOnlyErr := false
 	var rtt time.Duration
 	start := time.Now()
@@ -1364,6 +1383,7 @@ func (g *Gateway) proxyResponseWithCapture(client, server net.Conn, buf []byte, 
 				firstByte = false
 			}
 			capture.Write(buf[:n])
+			*sent += int64(n)
 			if _, werr := client.Write(buf[:n]); werr != nil {
 				return protocol.StateError, false, rtt, werr
 			}

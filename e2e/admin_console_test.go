@@ -213,3 +213,80 @@ func contains(haystack []string, needle string) bool {
 	}
 	return false
 }
+
+// SHOW STATS has to count real traffic, not report a shape.
+//
+// It was refused until now precisely because zeros would look like a working
+// integration on a dashboard forever. So the assertion is that the numbers
+// move: run known statements, then read them back through the console.
+func TestAdminConsoleStatsCountRealTraffic(t *testing.T) {
+	s := consoleStack(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	app, err := connectAs(t, ctx, s, backendUser(), backendPass())
+	if err != nil {
+		t.Fatalf("opening a session: %v", err)
+	}
+	defer app.Close(context.Background())
+
+	const statements = 5
+	for range statements {
+		var n int
+		if err := app.QueryRow(ctx, "SELECT 1").Scan(&n); err != nil {
+			t.Fatalf("running a statement: %v", err)
+		}
+	}
+
+	console, err := connectConsole(t, ctx, s, backendUser())
+	if err != nil {
+		t.Fatalf("connecting to the admin console: %v", err)
+	}
+	defer console.Close(context.Background())
+
+	rows, err := console.Query(ctx, "SHOW STATS")
+	if err != nil {
+		t.Fatalf("SHOW STATS: %v", err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for _, f := range rows.FieldDescriptions() {
+		names = append(names, f.Name)
+	}
+	for _, want := range []string{"database", "total_query_count", "total_received", "avg_query_time"} {
+		if !contains(names, want) {
+			t.Errorf("SHOW STATS has no %q column; got %v", want, names)
+		}
+	}
+
+	var queries, received, sent, queryTime int64
+	for rows.Next() {
+		var database string
+		var xact, query, recv, snt, qtime, wtime int64
+		var avgXact, avgQuery, avgRecv, avgSent, avgQtime, avgWtime int64
+		if err := rows.Scan(&database, &xact, &query, &recv, &snt, &qtime, &wtime,
+			&avgXact, &avgQuery, &avgRecv, &avgSent, &avgQtime, &avgWtime); err != nil {
+			t.Fatalf("scanning SHOW STATS: %v", err)
+		}
+		if database != backendDB() {
+			continue
+		}
+		queries, received, sent, queryTime = query, recv, snt, qtime
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("reading SHOW STATS: %v", err)
+	}
+
+	// At least the statements above; the driver and the pool run others.
+	if queries < statements {
+		t.Errorf("total_query_count = %d, want at least the %d statements run", queries, statements)
+	}
+	if received == 0 || sent == 0 {
+		t.Errorf("received/sent = %d/%d, want both above zero", received, sent)
+	}
+	if queryTime == 0 {
+		t.Error("total_query_time is zero after running statements")
+	}
+}

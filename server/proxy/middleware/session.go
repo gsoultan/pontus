@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net"
 
+	"github.com/gsoultan/pontus/pkg/observability"
 	"github.com/gsoultan/pontus/server/internal/pool"
 	"github.com/gsoultan/pontus/server/internal/protocol"
 )
@@ -29,6 +30,11 @@ type Session struct {
 	Data            []byte
 	ShouldReplay    bool
 	ResponseCapture *bytes.Buffer
+
+	// Stats is this session's database counters, resolved once when the
+	// session opens. Held as a pointer so recording a query is a few atomic
+	// adds — a map lookup per statement would be a lock on the query path.
+	Stats *observability.DatabaseStats
 
 	// ReplyFailed records that the backend answered with an ErrorResponse.
 	//
