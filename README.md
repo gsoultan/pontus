@@ -243,6 +243,31 @@ failover:
   `pontus_auto_rejoin_total{result="exhausted"}` (Pontus has given up and the
   node needs a person).
 
+#### Agent transport security
+
+**Pontus refuses an unencrypted agent that is not on this host**, on both ends.
+
+The agent token is a bearer credential for an interface that rebuilds nodes,
+takes backups and deletes data directories, as root. Without TLS it is on the
+wire on every call. This used to be a warning; a warning in a log nobody reads
+is not a control.
+
+| Situation | Result |
+| :--- | :--- |
+| `agent_tls` configured, agent started with `-tls-cert`/`-tls-key` | works |
+| Agent on loopback (`127.0.0.1`, `localhost`, `::1`) | works — the token never leaves the machine |
+| Agent on another host, no TLS | **refused**, on both ends |
+
+To accept the risk deliberately — a trusted private network, say — set
+`agent_allow_cleartext: true` in the config and start the agent with
+`-insecure`. Both are needed: the proxy refuses to dial and the agent refuses to
+serve, independently.
+
+> **Upgrading:** a multi-host deployment that has never configured `agent_tls`
+> will now fail to reach its agents. That is the point — the credential has been
+> crossing the network in cleartext — but it is a behaviour change, and the
+> error names both ways forward.
+
 #### Agent configuration
 
 The agent manages one cluster on its host. Tell it which, and which role its

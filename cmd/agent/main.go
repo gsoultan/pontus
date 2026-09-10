@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strings"
 
 	"github.com/gsoultan/pontus/agent/endpoint"
 	"github.com/gsoultan/pontus/agent/infrastructure"
@@ -25,8 +26,10 @@ func main() {
 	addr := flag.String("addr", ":9091", "Agent gRPC address")
 	token := flag.String("token", "", "Agent authentication token (or PONTUS_AGENT_TOKEN)")
 	insecure := flag.Bool("insecure", false,
-		"Serve without authentication. Every RPC becomes reachable by anyone who can reach the port, "+
-			"including InstallDatabase, PromoteNode and RemoveDatabase. Localhost-bound testing only.")
+		"Accept an unprotected agent: serve without authentication when no -token is given, "+
+			"and without TLS on a non-loopback address. Either way every RPC — including "+
+			"SetupReplication, RemoveDatabase and ExecuteCommand — is reachable or readable "+
+			"by anyone on the path. Localhost-bound testing only.")
 	tlsCert := flag.String("tls-cert", "", "PEM certificate for serving TLS (with -tls-key)")
 	tlsKey := flag.String("tls-key", "", "PEM private key for serving TLS (with -tls-cert)")
 	svcCmd := flag.String("service", "", "Service command: install, uninstall, start, stop, status")
@@ -184,9 +187,23 @@ func runAgent(ctx context.Context, addr string, token string, insecure bool, tls
 		opts = append(opts, grpc.Creds(creds))
 	case tlsCert != "" || tlsKey != "":
 		return fmt.Errorf("-tls-cert and -tls-key must be given together")
-	default:
+	case bindsLoopbackOnly(addr):
+		// Nothing crosses a network, so the token cannot be read off one.
+		slog.Info("Agent is serving without TLS on loopback only", "addr", addr)
+	case insecure:
 		slog.Warn("Agent is serving without TLS; its token crosses the network in cleartext",
-			"addr", addr, "hint", "pass -tls-cert and -tls-key")
+			"addr", addr,
+			"exposed", "SetupReplication, RemoveDatabase, BackupDatabase, ExecuteCommand",
+			"hint", "pass -tls-cert and -tls-key")
+	default:
+		// Refused rather than warned about. The token this protects authorises
+		// rebuilding a node and deleting a data directory as root, and a
+		// warning in a log nobody reads is not a control. Loopback is exempt
+		// above; -insecure is the deliberate way to accept the risk.
+		return fmt.Errorf("refusing to serve on %s without TLS: the agent token "+
+			"authorises rebuilding nodes and deleting data directories as root, "+
+			"and would cross the network in cleartext. Pass -tls-cert and "+
+			"-tls-key, bind to loopback, or pass -insecure to accept the risk", addr)
 	}
 
 	s := grpc.NewServer(opts...)
@@ -219,4 +236,27 @@ func runAgent(ctx context.Context, addr string, token string, insecure bool, tls
 	case err := <-errCh:
 		return err
 	}
+}
+
+// bindsLoopbackOnly reports whether this listen address is reachable only from
+// this host.
+//
+// An empty or wildcard host binds every interface, which is the case that
+// matters: an agent started with -addr ":9091" is on the network whether or not
+// anyone meant it to be.
+func bindsLoopbackOnly(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		return false
+	case "localhost":
+		return true
+	}
+	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }

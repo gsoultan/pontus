@@ -87,8 +87,12 @@ install_agent() {
   "$CR" exec "$name" chmod 0755 /usr/local/bin/pontus-agent >/dev/null 2>&1 || true
 
   # Detached, and told to bind every interface so the published port reaches it.
+  # -insecure because the agent binds every interface inside the container and
+  # Pontus now refuses to serve, or to dial, an unencrypted agent that is not on
+  # loopback. A throwaway container on a published loopback port is exactly the
+  # case the flag exists for; a deployment configures agent_tls instead.
   "$CR" exec -d "$name" /usr/local/bin/pontus-agent \
-    -addr ":9091" -token "$AGENT_TOKEN" >/dev/null 2>&1 \
+    -addr ":9091" -token "$AGENT_TOKEN" -insecure >/dev/null 2>&1 \
     || die "could not start the agent in $name"
 
   ok "agent listening on :$port for $name"

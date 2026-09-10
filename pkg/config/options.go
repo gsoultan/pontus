@@ -25,11 +25,21 @@ type Options struct {
 	// BackendTLS: the agent and the database are different peers with different
 	// names and usually different CAs, and sharing one config is what made this
 	// look configured when it was not.
-	AgentTLS  *TLS       `json:"agent_tls,omitzero" yaml:"agent_tls"`
-	RateLimit *RateLimit `json:"rate_limit,omitzero" yaml:"rate_limit"`
-	Cache     *Cache     `json:"cache,omitzero" yaml:"cache"`
-	Failover  *Failover  `json:"failover,omitzero" yaml:"failover"`
-	Auth      *Auth      `json:"auth,omitzero" yaml:"auth"`
+	AgentTLS *TLS `json:"agent_tls,omitzero" yaml:"agent_tls"`
+
+	// AgentAllowCleartext permits reaching an agent on another host without
+	// encryption.
+	//
+	// The agent token authorises rebuilding nodes, taking backups and deleting
+	// data directories, as root. Without agent_tls it is a bearer credential on
+	// the wire, so Pontus refuses a remote agent by default and this is the
+	// explicit way to accept that. An agent on loopback needs neither, because
+	// the token never leaves the machine.
+	AgentAllowCleartext bool       `json:"agent_allow_cleartext,omitzero" yaml:"agent_allow_cleartext"`
+	RateLimit           *RateLimit `json:"rate_limit,omitzero" yaml:"rate_limit"`
+	Cache               *Cache     `json:"cache,omitzero" yaml:"cache"`
+	Failover            *Failover  `json:"failover,omitzero" yaml:"failover"`
+	Auth                *Auth      `json:"auth,omitzero" yaml:"auth"`
 	// QueryTimeout bounds how long a single statement may occupy a pooled
 	// backend connection. Unset means the 30s default; a **negative** value
 	// disables the bound entirely, for deployments that run legitimately long
@@ -226,6 +236,9 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.DataDir != "" {
 		c.DataDir = other.DataDir
+	}
+	if other.AgentAllowCleartext {
+		c.AgentAllowCleartext = true
 	}
 	if other.AdminConsole != nil {
 		c.AdminConsole = other.AdminConsole

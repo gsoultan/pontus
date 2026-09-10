@@ -174,6 +174,7 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 		provisioner = orchestration2.NewPostgresProvisioner(func() []pool2.Backend { return backends }, handler)
 	}
 	applyAgentTLS(r.defaults)
+	orchestration2.SetAllowCleartextAgents(r.defaults != nil && r.defaults.AgentAllowCleartext)
 	failoverMgr := orchestration2.NewFailoverManager(provisioner, nil,
 		func() []pool2.Backend { return backends }, failoverOptions(r.defaults))
 	go failoverMgr.Start(ctx)

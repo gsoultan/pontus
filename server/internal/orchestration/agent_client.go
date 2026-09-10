@@ -41,7 +41,10 @@ func NewAgentClient(addr string, token string) (AgentClient, error) {
 	if cfg := AgentTLS(); cfg != nil {
 		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(cfg)))
 	} else {
-		warnIfCleartext(addr)
+		// Refused rather than warned about: see checkTransport.
+		if err := checkTransport(addr); err != nil {
+			return nil, err
+		}
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 

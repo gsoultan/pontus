@@ -171,11 +171,25 @@ agent_tls:                    # separate from backend_tls on purpose — differe
   ca_file: ...                # different name, usually a different CA
   cert_file: ...
   key_file: ...
+
+agent_allow_cleartext: false  # reach a remote agent without encryption. Off, and
+                              # refused rather than warned about — see below.
 ```
 
-The agent refuses to start without `-token` / `PONTUS_AGENT_TOKEN` (`-insecure` is a
-warned, localhost-only opt-out) and serves TLS with `-tls-cert` / `-tls-key`. Without TLS
-the mandatory token crosses the network in cleartext, which the proxy warns about once.
+The agent refuses to start without `-token` / `PONTUS_AGENT_TOKEN` and serves TLS with
+`-tls-cert` / `-tls-key`.
+
+**Since 2026-09-10 an unencrypted agent that is not on loopback is refused rather than
+warned about**, on both ends: the agent will not serve and the proxy will not dial. The
+token authorises rebuilding a node and deleting a data directory as root, so it is a
+bearer credential that must not cross a network in cleartext. Loopback is exempt because
+nothing crosses one. `-insecure` on the agent and `agent_allow_cleartext: true` on the
+proxy are the deliberate opt-outs, and both are needed — the two ends decide
+independently.
+
+This was finding B12, open since August. It was defensible while every operation the
+token guarded was a stub; it stopped being defensible when they started doing what they
+claim.
 
 Two things here are deliberately unlike pgpool-II, and both are documented at their
 definitions rather than only here:
