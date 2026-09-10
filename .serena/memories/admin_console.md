@@ -108,10 +108,9 @@ Found or sharpened since:
    monitoring surface exporters ask for after `SHOW POOLS`.
 8. **`VacuumDatabase` is not on the `AgentClient` interface**, so the agent
    implements it and the proxy cannot call it.
-9. **The agent token crosses the network in cleartext by default** (finding
-   B12 — `insecure.NewCredentials()` with no `agent_tls`). This got materially
-   worse in September: that token now authorises rebuilding a node, deleting a
-   data directory and taking backups, where it previously authorised stubs.
+9. ~~**The agent token crosses the network in cleartext by default**~~ —
+   **fixed 2026-09-10**, see `mem:security`. Both ends now refuse a
+   non-loopback agent without TLS.
 10. **`internal/app`, `server/management/service` and `server/internal/consensus`
     have no test files at all.** Untested Raft is the worst of those.
 
