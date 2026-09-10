@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"github.com/gsoultan/pontus/api/proto/service/serviceconnect"
 	"github.com/gsoultan/pontus/pkg/auth"
 	"github.com/gsoultan/pontus/pkg/config"
+	"github.com/gsoultan/pontus/pkg/listen"
 	"github.com/gsoultan/pontus/pkg/observability"
 	obsStore "github.com/gsoultan/pontus/pkg/observability/store"
 	"github.com/gsoultan/pontus/pkg/system"
@@ -180,7 +180,7 @@ func (a *App) Run(ctx context.Context) error {
 	endpoints := management.MakeEndpoints(svc)
 
 	// Start Management gRPC Server
-	mgmtLn, err := net.Listen("tcp", a.cfg.MgmtAddr)
+	mgmtLn, err := listen.Config{ReusePort: a.cfg.ReusePort}.TCP(ctx, a.cfg.MgmtAddr)
 	if err != nil {
 		return err
 	}

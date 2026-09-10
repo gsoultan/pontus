@@ -70,6 +70,9 @@ func (m *FailoverManager) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
+			if !m.owned() {
+				continue
+			}
 			m.monitor(ctx)
 		case <-ctx.Done():
 			return

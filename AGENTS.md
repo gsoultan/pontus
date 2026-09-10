@@ -174,6 +174,10 @@ agent_tls:                    # separate from backend_tls on purpose — differe
 
 agent_allow_cleartext: false  # reach a remote agent without encryption. Off, and
                               # refused rather than warned about — see below.
+
+reuse_port: false             # let a second Pontus bind the same addresses, so a
+                              # binary upgrade does not drop connections. Unix only.
+                              # Costs the "address already in use" guard.
 ```
 
 The agent refuses to start without `-token` / `PONTUS_AGENT_TOKEN` and serves TLS with

@@ -27,6 +27,15 @@ type Options struct {
 	// look configured when it was not.
 	AgentTLS *TLS `json:"agent_tls,omitzero" yaml:"agent_tls"`
 
+	// ReusePort lets another Pontus bind the same listening addresses, so a new
+	// process can be serving before the old one stops.
+	//
+	// Off by default. "Address already in use" is a useful error: with this on,
+	// a second Pontus started by mistake does not fail, it silently takes a
+	// share of the traffic. Turn it on when you want zero-downtime upgrades and
+	// accept that the guard goes with it. Unix only.
+	ReusePort bool `json:"reuse_port,omitzero" yaml:"reuse_port"`
+
 	// AgentAllowCleartext permits reaching an agent on another host without
 	// encryption.
 	//
@@ -236,6 +245,9 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.DataDir != "" {
 		c.DataDir = other.DataDir
+	}
+	if other.ReusePort {
+		c.ReusePort = true
 	}
 	if other.AgentAllowCleartext {
 		c.AgentAllowCleartext = true

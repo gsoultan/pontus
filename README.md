@@ -243,6 +243,48 @@ failover:
   `pontus_auto_rejoin_total{result="exhausted"}` (Pontus has given up and the
   node needs a person).
 
+### Zero-downtime upgrades
+
+Without help, replacing the binary is an outage: the old process holds the
+listening port until it exits, so the new one cannot bind, and the gap between
+them is on the only port that matters.
+
+`reuse_port: true` lets both bind the same address, so the new process is
+serving before the old one stops.
+
+```yaml
+reuse_port: true    # off by default — unix only
+```
+
+```bash
+# 1. Start the new binary against the same config and data directory.
+#    It binds alongside the running one and begins serving immediately.
+pontus -config /etc/pontus/config.yaml &
+
+# 2. Confirm it is healthy, then stop the old process. It finishes the
+#    statements already in flight before exiting (shutdown_timeout).
+kill -TERM "$OLD_PID"
+```
+
+Two things make this safe:
+
+- **Queries.** Both processes serve while they overlap. On Linux the kernel
+  distributes new connections between them; on macOS and the BSDs the most
+  recent binder takes them. Either way nothing is refused, which is the property
+  the e2e suite measures.
+- **Orchestration is not shared.** Failover, follow-primary and rejoin are a
+  singleton: two managers on a five-second tick, each seeing no healthy primary,
+  could both promote. The new process takes an advisory lock in the data
+  directory and stands down if another holds it — logging *Not running
+  orchestration* — then takes over when the old one exits. Queries are served
+  either way. The lock is per data directory, so two Pontus instances managing
+  different clusters on one host both orchestrate normally.
+
+> `reuse_port` costs you the "address already in use" error. A second Pontus
+> started by mistake — a stale unit file, a duplicated deploy — no longer fails;
+> it silently takes a share of the traffic. That is a worse thing to debug than
+> a refused start, which is why this is off by default.
+
 #### Agent transport security
 
 **Pontus refuses an unencrypted agent that is not on this host**, on both ends.
