@@ -362,6 +362,7 @@ psql -h pontus-host -p 5432 -U admin -d pgbouncer -c "SHOW POOLS"
 | Command | Reports |
 | :--- | :--- |
 | `SHOW POOLS` | occupancy per `(database, user)` — Pontus's pools are keyed that way |
+| `SHOW STATS` | per-database query, transaction, byte and time totals, and their rates |
 | `SHOW DATABASES` | one row per configured backend, with its role and ceiling |
 | `SHOW CLIENTS` | live client sessions |
 | `SHOW LISTS` | the size of each internal collection |
@@ -381,10 +382,15 @@ Two constraints are deliberate:
   listed is refused at startup, because that configuration reads like
   "everyone".
 
-`SHOW STATS` and `SHOW SERVERS` are not implemented: they report per-database
-query and byte totals, and per-connection server detail, which Pontus does not
-yet keep. They say so rather than returning zeros that would sit on a dashboard
-looking like a working integration.
+`SHOW SERVERS` is not implemented: it reports per-connection server detail —
+which connection is in which state, and for how long — and the pool reports
+occupancy rather than an enumeration of its connections. It says so rather than
+returning an empty list, which would sit on a dashboard looking like a working
+integration.
+
+`SHOW STATS` counts per database, and that map is bounded: the database name
+comes from a startup packet, so past 256 of them everything accumulates into an
+`(other)` bucket. The totals stay right; the attribution stops.
 
 ---
 
