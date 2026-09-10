@@ -45,6 +45,10 @@ references this task needs. Do not re-derive from source what is already written
   `PromoteNode`, backup, restore, vacuum and install all do nothing. What was
   fixed, what was not, and how to run the two-backend cluster: `mem:agent_stubs`.
 
+## Operations
+- Serving through a binary upgrade (`reuse_port`), and why the port may be shared
+  while the orchestrator may not: `mem:zero_downtime_upgrade`.
+
 ## Compatibility surface
 - Per-database routing and limits (`databases:`), why the alias rewrites the raw
   startup packet, and why a per-database ceiling is a cap rather than a target:

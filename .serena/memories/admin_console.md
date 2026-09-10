@@ -96,7 +96,8 @@ Gaps against pgbouncer/pgcat identified alongside this work, none started:
    `mem:data_plane`. Writing the first one immediately found the tokenizer
    allocating 15-40 times per query against a README claiming zero.
 4. **No container or Kubernetes story** — no Dockerfile, Helm chart or manifests.
-5. **No zero-downtime binary upgrade** (pgbouncer's `-R` takeover).
+5. ~~**No zero-downtime binary upgrade**~~ — **done 2026-09-11**, see
+   `mem:zero_downtime_upgrade`. `reuse_port` plus an orchestration lock.
 6. ~~**The README still advertises the removed WAF**~~ — **done 2026-09-10.**
    The claim and the dead config block are gone, and the performance line now
    names the command that produces its numbers.
