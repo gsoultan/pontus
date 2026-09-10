@@ -103,9 +103,17 @@ Gaps against pgbouncer/pgcat identified alongside this work, none started:
 
 Found or sharpened since:
 
-7. **`SHOW STATS` / `SHOW SERVERS`** still refuse — they need per-database
-   query, byte and time counters, and per-connection server detail. This is the
-   monitoring surface exporters ask for after `SHOW POOLS`.
+7. ~~**`SHOW STATS`**~~ — **done 2026-09-10.** Answered from
+   `observability.DatabaseRegistry`: a readable copy of the counters, because a
+   Prometheus CounterVec is write-only from the process's point of view.
+   A session resolves its bucket **once** and holds the pointer, so recording is
+   a few atomic adds with no map lookup and no lock on the query path. Bounded
+   at 256 databases — the key is a client-supplied name — with an `(other)`
+   bucket past it so totals stay right while attribution stops.
+   `total_wait_time` comes from the pools, since gpool already measures it and a
+   second measurement would be one more thing to disagree.
+   **`SHOW SERVERS` still refuses**: it needs an enumeration of individual
+   server connections and the engine reports occupancy.
 8. **`VacuumDatabase` is not on the `AgentClient` interface**, so the agent
    implements it and the proxy cannot call it.
 9. ~~**The agent token crosses the network in cleartext by default**~~ —
