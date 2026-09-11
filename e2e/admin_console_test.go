@@ -290,3 +290,93 @@ func TestAdminConsoleStatsCountRealTraffic(t *testing.T) {
 		t.Error("total_query_time is zero after running statements")
 	}
 }
+
+// SHOW SERVERS has to enumerate connections Pontus really holds open.
+//
+// The assertion that matters is the correspondence: a session running a
+// statement must show up as a connection in the `active` state, against the
+// database it asked for. A stub returning an empty list would pass anything
+// weaker, which is why this command refused for so long rather than reporting
+// nothing.
+func TestAdminConsoleServersEnumerateRealConnections(t *testing.T) {
+	s := consoleStack(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	app, err := connectAs(t, ctx, s, backendUser(), backendPass())
+	if err != nil {
+		t.Fatalf("opening a session: %v", err)
+	}
+	defer app.Close(context.Background())
+
+	// Hold a transaction open, so a connection is checked out while the console
+	// is read rather than released the instant the statement finishes.
+	tx, err := app.Begin(ctx)
+	if err != nil {
+		t.Fatalf("beginning a transaction: %v", err)
+	}
+	defer tx.Rollback(context.Background())
+
+	var one int
+	if err := tx.QueryRow(ctx, "SELECT 1").Scan(&one); err != nil {
+		t.Fatalf("running a statement: %v", err)
+	}
+
+	console, err := connectConsole(t, ctx, s, backendUser())
+	if err != nil {
+		t.Fatalf("connecting to the admin console: %v", err)
+	}
+	defer console.Close(context.Background())
+
+	rows, err := console.Query(ctx, "SHOW SERVERS")
+	if err != nil {
+		t.Fatalf("SHOW SERVERS: %v", err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for _, f := range rows.FieldDescriptions() {
+		names = append(names, f.Name)
+	}
+	for _, want := range []string{"type", "user", "database", "state", "addr", "use_count"} {
+		if !contains(names, want) {
+			t.Errorf("SHOW SERVERS has no %q column; got %v", want, names)
+		}
+	}
+
+	var total, active int
+	states := map[string]int{}
+	for rows.Next() {
+		var kind, user, database, state, addr, localAddr, connectTime, requestTime, backend string
+		var port, localPort, useCount int64
+		if err := rows.Scan(&kind, &user, &database, &state, &addr, &port,
+			&localAddr, &localPort, &connectTime, &requestTime, &useCount, &backend); err != nil {
+			t.Fatalf("scanning SHOW SERVERS: %v", err)
+		}
+		total++
+		states[state]++
+
+		if kind != "S" {
+			t.Errorf("type = %q, want S", kind)
+		}
+		if addr == "" || port == 0 {
+			t.Errorf("a connection reported no remote address: %q:%d", addr, port)
+		}
+		if state == "active" && database == backendDB() {
+			active++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("reading SHOW SERVERS: %v", err)
+	}
+
+	if total == 0 {
+		t.Fatal("SHOW SERVERS reported nothing while a session held a transaction open")
+	}
+	if active == 0 {
+		t.Errorf("no connection was active against %s while a transaction was open; states: %v",
+			backendDB(), states)
+	}
+	t.Logf("%d open connections: %v", total, states)
+}

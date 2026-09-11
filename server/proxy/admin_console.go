@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -391,16 +392,8 @@ func (a *adminConsole) show(what string) (consoleReply, error) {
 	case "STATS", "STATS_TOTALS", "TOTALS":
 		return rowsOf(a.showStats()), nil
 
-	// Named rather than folded into the default, because "unrecognised" would
-	// send an operator looking for a typo in a command that is simply not
-	// implemented. It needs per-connection server detail — which server
-	// connection is in which state, for how long — and the pool engine reports
-	// occupancy rather than an enumeration of its connections.
 	case "SERVERS":
-		return consoleReply{}, refuse("0A000", "SHOW SERVERS is not implemented: "+
-			"the pool reports occupancy rather than an enumeration of its "+
-			"connections. SHOW POOLS carries the per-identity counts, and SHOW "+
-			"CLIENTS the sessions holding them")
+		return rowsOf(a.showServers()), nil
 
 	default:
 		return consoleReply{}, refuse("42601", "unrecognised: SHOW "+what+
@@ -665,6 +658,82 @@ func mean(total, count int64) int64 {
 	return total / count
 }
 
+// showServers reports every open backend connection.
+//
+// The counterpart to SHOW CLIENTS: that answers "who is connected to Pontus",
+// this answers "what is Pontus holding open against the database". When a pool
+// is full, the second is the question an operator actually has.
+//
+// The column names are pgbouncer's. Its `ptr`, `link` and `remote_pid` are
+// omitted rather than faked: they identify a connection inside pgbouncer's own
+// structures, and inventing values for them would be inventing a correspondence
+// that does not exist. `use_count` and `backend` are additions, for the same
+// reason SHOW POOLS carries a backend column — a Pontus deployment has several.
+func (a *adminConsole) showServers() *protocol.ResultSet {
+	rs := protocol.NewResultSet(
+		protocol.TextColumn("type"),
+		protocol.TextColumn("user"),
+		protocol.TextColumn("database"),
+		protocol.TextColumn("state"),
+		protocol.TextColumn("addr"),
+		protocol.NumericColumn("port"),
+		protocol.TextColumn("local_addr"),
+		protocol.NumericColumn("local_port"),
+		protocol.TextColumn("connect_time"),
+		protocol.TextColumn("request_time"),
+		protocol.NumericColumn("use_count"),
+		protocol.TextColumn("backend"),
+	)
+
+	for _, backend := range a.backends() {
+		conns, ok := backend.(interface{ ServerConns() []pool2.ServerConn })
+		if !ok {
+			continue
+		}
+
+		open := conns.ServerConns()
+		// Ordered, because a map has none and an operator refreshing the view
+		// should not watch the rows shuffle.
+		slices.SortFunc(open, func(x, y pool2.ServerConn) int {
+			return cmp.Or(
+				strings.Compare(x.Database, y.Database),
+				strings.Compare(x.User, y.User),
+				x.ConnectedAt.Compare(y.ConnectedAt),
+			)
+		})
+
+		for _, c := range open {
+			host, port := splitHostPort(c.RemoteAddr)
+			localHost, localPort := splitHostPort(c.LocalAddr)
+			rs.Row(
+				"S",
+				orSystem(c.User),
+				orSystem(c.Database),
+				c.State,
+				host,
+				port,
+				localHost,
+				localPort,
+				c.ConnectedAt.UTC().Format(time.RFC3339),
+				requestTime(c.LastUsed),
+				itoa(c.UseCount),
+				backend.Address(),
+			)
+		}
+	}
+	return rs
+}
+
+// requestTime formats when a connection was last used, or empty for one that
+// never has been. The zero time would render as year 1, which reads as data
+// rather than as absence.
+func requestTime(last time.Time) string {
+	if last.IsZero() || last.Unix() <= 0 {
+		return ""
+	}
+	return last.UTC().Format(time.RFC3339)
+}
+
 func (a *adminConsole) showVersion() *protocol.ResultSet {
 	rs := protocol.NewResultSet(protocol.TextColumn("version"))
 	rs.Row("Pontus " + version.Version + " (commit " + version.Commit + ")")
@@ -680,6 +749,7 @@ func (a *adminConsole) showHelp() *protocol.ResultSet {
 	rs.Row("SHOW STATS", "per-database query, byte and time totals, and their rates")
 	rs.Row("SHOW DATABASES", "configured backends, their role and their ceiling")
 	rs.Row("SHOW CLIENTS", "live client sessions")
+	rs.Row("SHOW SERVERS", "open backend connections and what each is doing")
 	rs.Row("SHOW LISTS", "size of each internal collection")
 	rs.Row("SHOW CONFIG", "settings governing the data path")
 	rs.Row("SHOW VERSION", "the running Pontus build")

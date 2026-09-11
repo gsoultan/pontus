@@ -22,16 +22,18 @@ type consoleBackend struct {
 	*mockBackend
 	addr     string
 	pools    []pool.PoolStat
+	servers  []pool.ServerConn
 	backend  pool.BackendStats
 	draining bool
 	healthy  bool
 }
 
-func (c *consoleBackend) Address() string            { return c.addr }
-func (c *consoleBackend) Stats() pool.BackendStats   { return c.backend }
-func (c *consoleBackend) PoolStats() []pool.PoolStat { return c.pools }
-func (c *consoleBackend) IsDraining() bool           { return c.draining }
-func (c *consoleBackend) IsHealthy() bool            { return c.healthy }
+func (c *consoleBackend) Address() string                { return c.addr }
+func (c *consoleBackend) Stats() pool.BackendStats       { return c.backend }
+func (c *consoleBackend) PoolStats() []pool.PoolStat     { return c.pools }
+func (c *consoleBackend) ServerConns() []pool.ServerConn { return c.servers }
+func (c *consoleBackend) IsDraining() bool               { return c.draining }
+func (c *consoleBackend) IsHealthy() bool                { return c.healthy }
 
 // consoleFrame is one message the console sent.
 type consoleFrame struct {
@@ -364,26 +366,94 @@ func TestAdminConsoleKeepsTheSessionAfterAnError(t *testing.T) {
 	}
 }
 
-// SHOW SERVERS needs per-connection detail the pool does not enumerate.
-// Reporting zeros would put an empty server list on a dashboard forever, which
-// looks like a working integration; saying so does not.
-func TestAdminConsoleSaysWhatItDoesNotImplement(t *testing.T) {
-	console := testConsole([]string{"admin"}, true)
+// SHOW SERVERS is the counterpart to SHOW CLIENTS: that answers who is connected
+// to Pontus, this answers what Pontus is holding open against the database. When
+// a pool is full, the second is the question an operator actually has.
+func TestAdminConsoleShowServersEnumeratesConnections(t *testing.T) {
+	connected := time.Now().Add(-5 * time.Minute)
+	backend := &consoleBackend{
+		mockBackend: &mockBackend{}, addr: "db1:5432", healthy: true,
+		servers: []pool.ServerConn{
+			{
+				Database: "orders", User: "app", State: "active",
+				RemoteAddr: "10.0.0.5:5432", LocalAddr: "10.0.0.9:54321",
+				ConnectedAt: connected, LastUsed: connected.Add(time.Minute), UseCount: 42,
+			},
+			{
+				Database: "orders", User: "app", State: "idle",
+				RemoteAddr: "10.0.0.5:5432", LocalAddr: "10.0.0.9:54322",
+				ConnectedAt: connected.Add(time.Second), UseCount: 1,
+			},
+			// Pontus's own probe connection, which has no identity of its own.
+			{State: "login", RemoteAddr: "10.0.0.5:5432", LocalAddr: "10.0.0.9:54323"},
+		},
+	}
 
-	for _, command := range []string{"SHOW SERVERS"} {
-		replies := drive(t, console, "admin", command)
+	replies := drive(t, testConsole([]string{"admin"}, true, backend), "admin", "SHOW SERVERS")
 
-		var message string
-		for _, f := range replies[0] {
-			if f.tag == 'E' {
-				message = string(f.body)
-			}
-			if f.tag == 'D' {
-				t.Errorf("%s returned a row rather than saying it is unimplemented", command)
-			}
+	var rows [][]string
+	for _, f := range replies[0] {
+		if f.tag == 'D' {
+			rows = append(rows, f.values())
 		}
-		if !strings.Contains(message, "not implemented") {
-			t.Errorf("%s did not say it is unimplemented: %q", command, message)
+	}
+	if got, want := len(rows), 3; got != want {
+		t.Fatalf("got %d rows, want %d", got, want)
+	}
+
+	// type, user, database, state, addr, port, local_addr, local_port,
+	// connect_time, request_time, use_count, backend
+	//
+	// Sorted by database then user then connect time, so the system identity —
+	// which has neither — comes first.
+	system := rows[0]
+	if system[3] != "login" {
+		t.Errorf("first row state = %q, want login", system[3])
+	}
+	if system[1] != "pontus_system" || system[2] != "pontus_system" {
+		t.Errorf("system identity = %q/%q, want pontus_system", system[1], system[2])
+	}
+	// Never used, so there is no request time. The zero time would render as
+	// year 1, which reads as data rather than absence.
+	if system[9] != "" {
+		t.Errorf("request_time for an unused connection = %q, want empty", system[9])
+	}
+
+	active := rows[1]
+	if active[0] != "S" {
+		t.Errorf("type = %q, want S", active[0])
+	}
+	if active[3] != "active" {
+		t.Errorf("state = %q, want active", active[3])
+	}
+	if active[4] != "10.0.0.5" || active[5] != "5432" {
+		t.Errorf("addr/port = %q/%q, want 10.0.0.5/5432", active[4], active[5])
+	}
+	if active[6] != "10.0.0.9" || active[7] != "54321" {
+		t.Errorf("local_addr/port = %q/%q, want 10.0.0.9/54321", active[6], active[7])
+	}
+	if active[10] != "42" {
+		t.Errorf("use_count = %q, want 42", active[10])
+	}
+	if active[11] != "db1:5432" {
+		t.Errorf("backend = %q, want db1:5432", active[11])
+	}
+
+	if rows[2][3] != "idle" {
+		t.Errorf("third row state = %q, want idle", rows[2][3])
+	}
+}
+
+// A backend with nothing open reports nothing, rather than a row of zeros that
+// would read as a connection.
+func TestAdminConsoleShowServersIsEmptyWithNoConnections(t *testing.T) {
+	backend := &consoleBackend{mockBackend: &mockBackend{}, addr: "db1:5432", healthy: true}
+
+	replies := drive(t, testConsole([]string{"admin"}, true, backend), "admin", "SHOW SERVERS")
+
+	for _, f := range replies[0] {
+		if f.tag == 'D' {
+			t.Errorf("a backend with no open connections reported a row: %q", f.values())
 		}
 	}
 }

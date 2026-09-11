@@ -405,6 +405,7 @@ psql -h pontus-host -p 5432 -U admin -d pgbouncer -c "SHOW POOLS"
 | :--- | :--- |
 | `SHOW POOLS` | occupancy per `(database, user)` — Pontus's pools are keyed that way |
 | `SHOW STATS` | per-database query, transaction, byte and time totals, and their rates |
+| `SHOW SERVERS` | open backend connections, and what each one is doing |
 | `SHOW DATABASES` | one row per configured backend, with its role and ceiling |
 | `SHOW CLIENTS` | live client sessions |
 | `SHOW LISTS` | the size of each internal collection |
@@ -424,11 +425,17 @@ Two constraints are deliberate:
   listed is refused at startup, because that configuration reads like
   "everyone".
 
-`SHOW SERVERS` is not implemented: it reports per-connection server detail —
-which connection is in which state, and for how long — and the pool reports
-occupancy rather than an enumeration of its connections. It says so rather than
-returning an empty list, which would sit on a dashboard looking like a working
-integration.
+`SHOW SERVERS` is the counterpart to `SHOW CLIENTS`: that answers who is
+connected to Pontus, this answers what Pontus is holding open against the
+database. When a pool is full, the second is usually the question you have.
+States are `active` (a client holds it), `idle`, `login` (its startup exchange
+has not finished) and `close_needed` (its socket has failed).
+
+pgbouncer's `ptr`, `link` and `remote_pid` columns are omitted rather than
+faked — they identify a connection inside pgbouncer's own structures, and
+inventing values would invent a correspondence that does not exist. `use_count`
+and `backend` are additions, for the same reason `SHOW POOLS` carries a backend
+column: a Pontus deployment has several.
 
 `SHOW STATS` counts per database, and that map is bounded: the database name
 comes from a startup packet, so past 256 of them everything accumulates into an

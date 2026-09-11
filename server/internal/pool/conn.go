@@ -24,6 +24,14 @@ type Conn struct {
 	broken    atomic.Bool
 	dirty     atomic.Bool
 
+	// busy marks a connection a client currently holds.
+	//
+	// Separate from the engine's own accounting because `handle` may only be
+	// touched by the goroutine that owns the checkout, so it cannot answer this
+	// for an observer. One atomic store per acquisition and release, which is
+	// not per query.
+	busy atomic.Bool
+
 	// identityMu guards the user and database this connection authenticated as.
 	// Written once at handshake, read on every acquisition.
 	identityMu sync.RWMutex

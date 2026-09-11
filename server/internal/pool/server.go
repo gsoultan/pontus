@@ -40,6 +40,10 @@ type Server struct {
 	// coreConfig is how each identity's pool is built.
 	coreConfig pooling.Config
 
+	// conns is every connection currently open to this backend, so the
+	// administration console can enumerate them. Maintained by the driver.
+	conns *connRegistry
+
 	// databaseLimits caps individual databases below the global max_conns —
 	// pgbouncer's per-database pool_size. Nil means every identity takes the
 	// global ceiling.
@@ -170,11 +174,13 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 	// multiply by the number of identities, so a min_idle of five across forty
 	// users is two hundred idle connections against a database that probably
 	// allows a hundred. The set's own ceiling is what bounds the total.
+	p.conns = newConnRegistry()
 	p.driver = &connDriver{
 		address:     address,
 		dialTimeout: dialTimeout,
 		tlsConfig:   tlsConfig,
 		handler:     handler,
+		registry:    p.conns,
 	}
 	p.coreConfig = pooling.Config{
 		MaxConns: maxConns,
@@ -280,6 +286,7 @@ func (p *Server) AcquireFor(ctx context.Context, user, database string) (net.Con
 	// Store the one copy of the handle; Release goes back through it.
 	conn.handle = handle
 	conn.IncUseCount()
+	conn.busy.Store(true)
 	p.checkedOut.Add(1)
 	return conn, nil
 }
@@ -321,6 +328,7 @@ func (p *Server) Release(conn net.Conn) error {
 		return conn.Close()
 	}
 	p.checkedOut.Add(-1)
+	c.busy.Store(false)
 
 	if p.IsDraining() {
 		// Do not put it back; a draining backend should shed connections.
