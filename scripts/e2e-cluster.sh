@@ -6,6 +6,9 @@
 #   ./scripts/e2e-cluster.sh down     # remove both
 #   ./scripts/e2e-cluster.sh status   # roles, receiver, lag
 #
+# RUNTIME=docker|podman|container picks a container runtime explicitly; without
+# it the first working one wins.
+#
 # A dedicated pair, deliberately: the tests need to stop the primary and promote
 # the replica, and doing that to whatever database happens to be on 5432 would
 # take a dev box down with it. Nothing here touches an existing container.
@@ -43,6 +46,8 @@ PG_DB="${PG_DB:-postgres}"
 # port published. Unset by default: the ordinary cluster has no agent and does
 # not need one, and adding it unasked would change what every other test runs
 # against.
+#
+#   RUNTIME=container ./scripts/e2e-cluster.sh up   # pick a runtime explicitly
 #
 #   AGENT_BINARY=/path/to/linux-pontus-agent \
 #   AGENT_TOKEN=secret PRIMARY_AGENT_PORT=19191 REPLICA_AGENT_PORT=19193 \
@@ -100,7 +105,21 @@ install_agent() {
 
 CR=""; CR_KIND=""
 
+# RUNTIME picks one explicitly. Without it the first working runtime wins, which
+# is fine until a machine has two and the containers end up somewhere other than
+# where you are looking for them.
 detect_runtime() {
+  case "${RUNTIME:-}" in
+    docker)    have docker    && docker info            >/dev/null 2>&1 && { CR="docker";    CR_KIND="docker"; return; }
+               die "RUNTIME=docker, but docker is not available" ;;
+    podman)    have podman    && podman info            >/dev/null 2>&1 && { CR="podman";    CR_KIND="docker"; return; }
+               die "RUNTIME=podman, but podman is not available" ;;
+    container) have container && container system status >/dev/null 2>&1 && { CR="container"; CR_KIND="apple";  return; }
+               die "RUNTIME=container, but Apple container is not available" ;;
+    "")        ;;
+    *)         die "RUNTIME must be docker, podman or container (got ${RUNTIME})" ;;
+  esac
+
   if have docker && docker info >/dev/null 2>&1; then
     CR="docker"; CR_KIND="docker"
   elif have podman && podman info >/dev/null 2>&1; then
