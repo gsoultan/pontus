@@ -57,6 +57,19 @@ a problem with the script or your setup.
   See `mem:findings` A1 and C16.
 - macOS has no `setsid` and no `timeout`; don't reach for them in scripts here.
 
+## Picking a container runtime
+
+`scripts/e2e-cluster.sh` supports docker, podman **and Apple `container`** (it has
+`cr_exists`/`cr_running` variants for the last). Without `RUNTIME` the first
+working one wins, which on a machine with two puts the cluster somewhere other
+than where you are looking:
+
+```bash
+RUNTIME=container ./scripts/e2e-cluster.sh up
+```
+
+The full e2e suite passes on Apple container as well as podman.
+
 ## Running the e2e suite
 
 Behind the `e2e` build tag and it needs a real PostgreSQL. `requireBackend`

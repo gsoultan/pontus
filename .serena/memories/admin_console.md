@@ -113,8 +113,20 @@ Found or sharpened since:
    bucket past it so totals stay right while attribution stops.
    `total_wait_time` comes from the pools, since gpool already measures it and a
    second measurement would be one more thing to disagree.
-   **`SHOW SERVERS` still refuses**: it needs an enumeration of individual
-   server connections and the engine reports occupancy.
+   **`SHOW SERVERS` is done too, 2026-09-11** — and the reason it stayed open was
+   a wrong claim of mine. gpool reports occupancy, which is the right contract
+   for it; but Pontus owns `pool.Conn` precisely so it can keep per-connection
+   state, and it already carried connect time, use count, identity, readiness
+   and socket failure. Only a registry of the live ones was missing
+   (`server/internal/pool/conn_registry.go`), maintained in the driver's
+   `Connect`/`Close` so it cannot drift from what is really open. `Conn.busy` is
+   the one addition — the engine's `handle` may only be touched by the goroutine
+   owning the checkout, so it cannot answer "active" for an observer.
+
+   **Every command the console advertises is now implemented.**
+
+   pgbouncer's `ptr`, `link` and `remote_pid` are omitted rather than faked:
+   they identify a connection inside pgbouncer's own structures.
 8. **`VacuumDatabase` is not on the `AgentClient` interface**, so the agent
    implements it and the proxy cannot call it.
 9. ~~**The agent token crosses the network in cleartext by default**~~ —
