@@ -45,6 +45,10 @@ references this task needs. Do not re-derive from source what is already written
   `PromoteNode`, backup, restore, vacuum and install all do nothing. What was
   fixed, what was not, and how to run the two-backend cluster: `mem:agent_stubs`.
 
+## Consensus
+- Raft is **correct and tested but not wired** — `NewNode` has no caller, and the
+  four defects the first tests found: `mem:consensus`.
+
 ## Operations
 - Serving through a binary upgrade (`reuse_port`), and why the port may be shared
   while the orchestrator may not: `mem:zero_downtime_upgrade`.

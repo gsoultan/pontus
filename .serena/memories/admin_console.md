@@ -132,8 +132,9 @@ Found or sharpened since:
 9. ~~**The agent token crosses the network in cleartext by default**~~ —
    **fixed 2026-09-10**, see `mem:security`. Both ends now refuse a
    non-loopback agent without TLS.
-10. **`internal/app`, `server/management/service` and `server/internal/consensus`
-    have no test files at all.** Untested Raft is the worst of those.
+10. **`internal/app` and `server/management/service` have no test files at all.**
+    ~~`server/internal/consensus`~~ — tested 2026-09-11, and the tests found four
+    defects plus the fact that it is not wired to anything (`mem:consensus`).
 
 Sharding was considered and rejected as a direction: it fights the cache and the
 LSN-consistency logic, and the cache is the better differentiator.
