@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gsoultan/pontus/agent/services"
 	"github.com/gsoultan/pontus/api/proto/endpoints"
@@ -19,15 +18,39 @@ type management struct {
 	allowedPaths []string
 	validators   map[string]services.Validator
 	repoManager  services.RepositoryManager
+
+	// dataDir is the cluster this agent manages.
+	//
+	// An agent runs on one database host and, in every deployment that is not a
+	// laboratory, manages one cluster. Being told which is strictly better than
+	// scanning for it: a scan finds *a* cluster, which on a host running two is
+	// the wrong one — and a rebuild erases whatever it is pointed at. Empty
+	// falls back to the scan, so an ordinary single-cluster host needs no flag.
+	dataDir string
+
+	// dbUser is the role the client tools connect as. Empty takes
+	// DefaultSuperuser.
+	dbUser string
 }
 
 // NewManagement creates a new management instance.
-func NewManagement(allowedPaths []string, validators map[string]services.Validator, repoManager services.RepositoryManager) *management {
+func NewManagement(allowedPaths []string, validators map[string]services.Validator, repoManager services.RepositoryManager, dataDir, dbUser string) *management {
 	return &management{
 		allowedPaths: allowedPaths,
 		validators:   validators,
 		repoManager:  repoManager,
+		dataDir:      dataDir,
+		dbUser:       dbUser,
 	}
+}
+
+// clusterDir is the data directory to act on: what the caller named, else what
+// this agent was configured with, else whatever a scan can find.
+func (m *management) clusterDir(requested string) string {
+	if requested != "" {
+		return requested
+	}
+	return m.dataDir
 }
 
 func (m *management) UpdateConfig(ctx context.Context, req *endpoints.UpdateConfigRequest) (*endpoints.UpdateConfigResponse, error) {
@@ -169,50 +192,6 @@ func (m *management) RestartService(ctx context.Context, req *endpoints.RestartS
 	return &endpoints.RestartServiceResponse{Success: true}, nil
 }
 
-func (m *management) ScheduleMaintenance(ctx context.Context, req *endpoints.ScheduleMaintenanceRequest) (*endpoints.ScheduleMaintenanceResponse, error) {
-	return &endpoints.ScheduleMaintenanceResponse{Success: true, TaskId: "task-123"}, nil
-}
-
-func (m *management) SetupReplication(ctx context.Context, req *endpoints.SetupReplicationRequest) (<-chan *endpoints.ReplicationProgress, error) {
-	out := make(chan *endpoints.ReplicationProgress)
-	dataDir := req.DataDirectory
-	if dataDir == "" {
-		dataDir = system.DetectPostgresDataDir()
-	}
-
-	go func() {
-		defer close(out)
-		out <- &endpoints.ReplicationProgress{Stage: "Starting", Percentage: 10, Message: fmt.Sprintf("Preparing replica at %s", dataDir)}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.ReplicationProgress{Stage: "Syncing", Percentage: 50, Message: "Syncing base backup"}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.ReplicationProgress{Stage: "Done", Percentage: 100, Message: "Replication configured"}
-	}()
-	return out, nil
-}
-
-func (m *management) PromoteNode(ctx context.Context, req *endpoints.PromoteNodeRequest) (*endpoints.PromoteNodeResponse, error) {
-	return &endpoints.PromoteNodeResponse{Success: true}, nil
-}
-
-func (m *management) InitializeDatabase(ctx context.Context, req *endpoints.InitializeDatabaseRequest) (<-chan *endpoints.InitializeProgress, error) {
-	out := make(chan *endpoints.InitializeProgress)
-	dataDir := req.DataDirectory
-	if dataDir == "" {
-		dataDir = system.DetectPostgresDataDir()
-	}
-
-	go func() {
-		defer close(out)
-		out <- &endpoints.InitializeProgress{Stage: "Init", Percentage: 10, Message: fmt.Sprintf("Initializing data directory at %s", dataDir)}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.InitializeProgress{Stage: "Configuring", Percentage: 50, Message: "Setting up config files"}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.InitializeProgress{Stage: "Done", Percentage: 100, Message: "Database initialized"}
-	}()
-	return out, nil
-}
-
 func (m *management) InstallDatabase(ctx context.Context, req *endpoints.InstallDatabaseRequest) (<-chan *endpoints.InstallProgress, error) {
 	out := make(chan *endpoints.InstallProgress)
 	go func() {
@@ -273,36 +252,6 @@ func (m *management) InstallDatabase(ctx context.Context, req *endpoints.Install
 	return out, nil
 }
 
-func (m *management) BackupDatabase(ctx context.Context, req *endpoints.BackupDatabaseRequest) (<-chan *endpoints.BackupProgress, error) {
-	out := make(chan *endpoints.BackupProgress)
-	go func() {
-		defer close(out)
-		out <- &endpoints.BackupProgress{Stage: "Starting", Percentage: 10, Message: fmt.Sprintf("Starting backup for database %s", req.Database)}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.BackupProgress{Stage: "Dumping", Percentage: 50, Message: "Dumping data to temporary file"}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.BackupProgress{Stage: "Compressing", Percentage: 80, Message: "Compressing backup file"}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.BackupProgress{Stage: "Done", Percentage: 100, Message: fmt.Sprintf("Backup saved to %s", req.BackupPath)}
-	}()
-	return out, nil
-}
-
-func (m *management) RestoreDatabase(ctx context.Context, req *endpoints.RestoreDatabaseRequest) (<-chan *endpoints.RestoreProgress, error) {
-	out := make(chan *endpoints.RestoreProgress)
-	go func() {
-		defer close(out)
-		out <- &endpoints.RestoreProgress{Stage: "Starting", Percentage: 10, Message: fmt.Sprintf("Starting restore from %s", req.BackupPath)}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.RestoreProgress{Stage: "Preparing", Percentage: 30, Message: "Checking target database"}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.RestoreProgress{Stage: "Restoring", Percentage: 70, Message: "Streaming data to database"}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.RestoreProgress{Stage: "Done", Percentage: 100, Message: fmt.Sprintf("Restore to %s completed", req.TargetDatabase)}
-	}()
-	return out, nil
-}
-
 func (m *management) ShutdownDatabase(ctx context.Context, req *endpoints.ShutdownDatabaseRequest) (*endpoints.ShutdownDatabaseResponse, error) {
 	dataDir := req.DataDirectory
 	if dataDir == "" {
@@ -333,31 +282,4 @@ func (m *management) ShutdownDatabase(ctx context.Context, req *endpoints.Shutdo
 	}
 
 	return &endpoints.ShutdownDatabaseResponse{Success: true}, nil
-}
-
-func (m *management) RemoveDatabase(ctx context.Context, req *endpoints.RemoveDatabaseRequest) (*endpoints.RemoveDatabaseResponse, error) {
-	dataDir := req.DataDirectory
-	if dataDir == "" {
-		dataDir = system.DetectPostgresDataDir()
-	}
-	// Implementation would stop the database and optionally delete data
-	fmt.Printf("Removing database at %s (delete data: %v)\n", dataDir, req.DeleteData)
-	return &endpoints.RemoveDatabaseResponse{Success: true}, nil
-}
-
-func (m *management) VacuumDatabase(ctx context.Context, req *endpoints.VacuumDatabaseRequest) (<-chan *endpoints.VacuumProgress, error) {
-	out := make(chan *endpoints.VacuumProgress)
-	go func() {
-		defer close(out)
-		out <- &endpoints.VacuumProgress{Stage: "Starting", Percentage: 10, Message: fmt.Sprintf("Starting vacuum for database %s", req.Database)}
-		time.Sleep(100 * time.Millisecond)
-		out <- &endpoints.VacuumProgress{Stage: "Vacuuming", Percentage: 50, Message: "Reclaiming storage"}
-		time.Sleep(100 * time.Millisecond)
-		if req.Analyze {
-			out <- &endpoints.VacuumProgress{Stage: "Analyzing", Percentage: 80, Message: "Updating statistics"}
-			time.Sleep(100 * time.Millisecond)
-		}
-		out <- &endpoints.VacuumProgress{Stage: "Done", Percentage: 100, Message: "Vacuum completed"}
-	}()
-	return out, nil
 }

@@ -54,6 +54,43 @@ type Failover struct {
 	// reattachments, so a node that keeps flapping cannot be re-added on every
 	// check. Zero takes the default.
 	AutoReattachInterval time.Duration `json:"auto_reattach_interval,omitzero" yaml:"auto_reattach_interval"`
+
+	// AutoRejoin rebuilds a node that is reachable but no longer replicating,
+	// as a replica of the current primary.
+	//
+	// This is the other half of AutoReattach. AutoReattach stops routing reads
+	// to a node whose replication has stopped; nothing then fixes it, so the
+	// cluster runs permanently short until an operator notices. A former
+	// primary that comes back after a failover is exactly this shape: it is up,
+	// it answers, and it will never stream again because it is on an abandoned
+	// timeline.
+	//
+	// Off by default, and deliberately so: rebuilding a node can mean a
+	// pg_basebackup that discards its data directory. That is not something to
+	// start underneath an operator who has not asked for it, which is the same
+	// reason `enabled` is off.
+	//
+	// The write role is never moved. A rebuilt node returns as a replica.
+	AutoRejoin bool `json:"auto_rejoin,omitzero" yaml:"auto_rejoin"`
+
+	// AutoRejoinInterval is the minimum gap between two attempts on one node,
+	// so a node that cannot be rebuilt is not rebuilt continuously. Zero takes
+	// the default.
+	AutoRejoinInterval time.Duration `json:"auto_rejoin_interval,omitzero" yaml:"auto_rejoin_interval"`
+
+	// AutoRejoinTimeout bounds a single attempt. Generous by default because a
+	// rebuild can mean a base backup of the whole cluster. Zero takes the
+	// default.
+	AutoRejoinTimeout time.Duration `json:"auto_rejoin_timeout,omitzero" yaml:"auto_rejoin_timeout"`
+
+	// AutoRejoinMaxAttempts is how many times one node is rebuilt before it is
+	// left to an operator.
+	//
+	// A bound rather than forever: a node that fails three rebuilds is not
+	// going to succeed on the fourth, and retrying past that turns a broken
+	// replica into a permanent base backup against a healthy primary. Zero
+	// takes the default.
+	AutoRejoinMaxAttempts int `json:"auto_rejoin_max_attempts,omitzero" yaml:"auto_rejoin_max_attempts"`
 }
 
 // Defaults for the failover block. Every one of these is a documented tunable
@@ -63,6 +100,18 @@ const (
 	DefaultFollowPrimaryTimeout = 30 * time.Minute
 	DefaultMaxReplicaLag        = 10 * time.Second
 	DefaultAutoReattachInterval = time.Minute
+
+	// DefaultAutoRejoinInterval is long because a rebuild is expensive and a
+	// node that just failed one is unlikely to pass a retry seconds later.
+	DefaultAutoRejoinInterval = 5 * time.Minute
+
+	// DefaultAutoRejoinTimeout has to cover a pg_basebackup of the whole
+	// cluster, which is the slow path this feature exists to run.
+	DefaultAutoRejoinTimeout = 30 * time.Minute
+
+	// DefaultAutoRejoinMaxAttempts stops before a broken node becomes a
+	// permanent load on a healthy primary.
+	DefaultAutoRejoinMaxAttempts = 3
 )
 
 // withDefaults returns a copy with every zero-valued tunable filled in.
@@ -85,6 +134,15 @@ func (f *Failover) withDefaults() Failover {
 	}
 	if out.AutoReattach == nil {
 		out.AutoReattach = new(true)
+	}
+	if out.AutoRejoinInterval <= 0 {
+		out.AutoRejoinInterval = DefaultAutoRejoinInterval
+	}
+	if out.AutoRejoinTimeout <= 0 {
+		out.AutoRejoinTimeout = DefaultAutoRejoinTimeout
+	}
+	if out.AutoRejoinMaxAttempts <= 0 {
+		out.AutoRejoinMaxAttempts = DefaultAutoRejoinMaxAttempts
 	}
 	return out
 }

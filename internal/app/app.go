@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"github.com/gsoultan/pontus/api/proto/service/serviceconnect"
 	"github.com/gsoultan/pontus/pkg/auth"
 	"github.com/gsoultan/pontus/pkg/config"
+	"github.com/gsoultan/pontus/pkg/listen"
 	"github.com/gsoultan/pontus/pkg/observability"
 	obsStore "github.com/gsoultan/pontus/pkg/observability/store"
 	"github.com/gsoultan/pontus/pkg/system"
@@ -57,6 +57,21 @@ func NewApp(cfg *config.Options) *App {
 // Run starts the Pontus application and blocks until the context is canceled.
 func (a *App) Run(ctx context.Context) error {
 	var err error
+
+	// Refused at startup with the reason rather than served in a state the
+	// operator did not intend. A console enabled with nobody listed reads like
+	// "everyone" and is the misconfiguration worth failing the boot over.
+	if err := a.cfg.AdminConsole.Validate(); err != nil {
+		return fmt.Errorf("admin_console is misconfigured: %w", err)
+	}
+
+	// A routing table that cannot be served is refused at startup rather than
+	// half-applied. A duplicate name would resolve to whichever entry the loop
+	// reached first, which is not something an operator can reason about.
+	if err := a.cfg.Databases.Validate(); err != nil {
+		return fmt.Errorf("databases is misconfigured: %w", err)
+	}
+
 	a.backendTLS, _ = proxy.CreateTLSConfig(a.cfg.BackendTLS)
 
 	// Initialize Management DB (SQLite)
@@ -165,7 +180,7 @@ func (a *App) Run(ctx context.Context) error {
 	endpoints := management.MakeEndpoints(svc)
 
 	// Start Management gRPC Server
-	mgmtLn, err := net.Listen("tcp", a.cfg.MgmtAddr)
+	mgmtLn, err := listen.Config{ReusePort: a.cfg.ReusePort}.TCP(ctx, a.cfg.MgmtAddr)
 	if err != nil {
 		return err
 	}
@@ -320,12 +335,14 @@ func (a *App) bootstrapFromConfig() {
 		// migrated into the store — silently, because the proxy still started.
 		pcfg.Proxies[0].Backends = append(pcfg.Proxies[0].Backends, new(domain.BackendConfig{
 			Address:      b.Addr,
+			PeerAddress:  b.PeerAddr,
 			Role:         b.Role,
 			Weight:       int32(b.Weight),
 			Zone:         b.Zone,
 			AgentAddress: b.AgentAddr,
 			AgentToken:   b.AgentToken,
 			AdminDsn:     b.AdminDSN,
+			AgentConfig:  new(domain.AgentDatabaseConfig{DataDirectory: b.DataDir}),
 		}))
 	}
 

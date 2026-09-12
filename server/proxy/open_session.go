@@ -3,9 +3,11 @@ package proxy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 
+	"github.com/gsoultan/pontus/pkg/config"
 	observability2 "github.com/gsoultan/pontus/pkg/observability"
 	balancer2 "github.com/gsoultan/pontus/server/internal/balancer"
 	pool2 "github.com/gsoultan/pontus/server/internal/pool"
@@ -75,6 +77,26 @@ func (g *Gateway) openSession(
 			if err := g.authenticateClient(ctx, client, req, state); err != nil {
 				return nil, nil, clientOut, err
 			}
+		}
+
+		// The administration console is a database with no backend behind it.
+		// Checked after authentication and before acquisition, because a
+		// console session must prove who it is like any other, and must not
+		// take a connection from a pool it will never use.
+		if admin := g.current().admin; admin.handles(req.Database) {
+			return nil, nil, clientOut, admin.serve(client, req.User)
+		}
+
+		// Resolve the client-visible database name to the one Pontus will
+		// actually open, before anything downstream sees it.
+		//
+		// Done exactly once, here: the pool is keyed by database, the backend
+		// startup names it, and the connection records it for the identity
+		// check on reuse. If those three could disagree about which database a
+		// session is on, a connection would be filed under one name and opened
+		// against another — which is the shape of finding A11.
+		if err := resolveDatabase(g.current().routes, req, state); err != nil {
+			return nil, nil, clientOut, err
 		}
 	}
 
@@ -185,6 +207,35 @@ func (g *Gateway) openSession(
 	}
 
 	return backend, server, clientOut, nil
+}
+
+// resolveDatabase applies the `databases:` routing table to a startup request.
+//
+// Both the parsed field and the raw packet are updated. The raw packet is what
+// passthrough forwards to the backend, so leaving it alone would mean the pool
+// was keyed by the alias while the connection opened the name the client sent.
+func resolveDatabase(routes config.Databases, req *protocol.StartupRequest, state *protocol.SessionState) error {
+	if len(routes) == 0 {
+		return nil
+	}
+
+	route := routes.Resolve(req.Database)
+	if route.Database == req.Database {
+		return nil
+	}
+
+	rewritten, err := protocol.RewriteStartupDatabase(req.Raw, route.Database)
+	if err != nil {
+		return fmt.Errorf("routing database %q to %q: %w", req.Database, route.Database, err)
+	}
+
+	slog.Debug("Routed a client database name",
+		"requested", req.Database, "resolved", route.Database, "user", req.User)
+
+	req.Raw = rewritten
+	req.Database = route.Database
+	state.Database = route.Database
+	return nil
 }
 
 // errCancelHandled reports that the connection carried a cancel request, which

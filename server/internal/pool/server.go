@@ -39,11 +39,34 @@ type Server struct {
 
 	// coreConfig is how each identity's pool is built.
 	coreConfig pooling.Config
-	driver     *connDriver
+
+	// conns is every connection currently open to this backend, so the
+	// administration console can enumerate them. Maintained by the driver.
+	conns *connRegistry
+
+	// databaseLimits caps individual databases below the global max_conns —
+	// pgbouncer's per-database pool_size. Nil means every identity takes the
+	// global ceiling.
+	databaseLimits databaseLimitStore
+	driver         *connDriver
 
 	// admin is Pontus's own authenticated channel, used for the questions the
 	// control plane asks a database. Nil when no admin_dsn is configured.
 	admin *AdminSession
+
+	// peerAddr is how other database nodes reach this one, when that differs
+	// from the address the proxy uses. Empty means they are the same.
+	peerAddr string
+
+	// dataDir is this node's configured PostgreSQL data directory, or empty to
+	// let a rebuild discover it.
+	dataDir string
+
+	// adminDSN is kept because rebuilding this node as a replica needs
+	// credentials that can open a replication connection to its primary, and
+	// this is the only credential Pontus holds for a backend. Never logged —
+	// AdminDSNCredentials returns the parts a caller needs, not the string.
+	adminDSN string
 	// checkedOut counts connections currently held by a caller. The engine's
 	// Stat samples its total and its shard counters independently, so an active
 	// count derived from them can read high while the background warm-up is in
@@ -130,6 +153,7 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 	// Pontus's own channel to this backend. Optional: without it the health
 	// probe and role detection fall back to running on a pooled connection,
 	// which only works when a client has already authenticated one.
+	p.adminDSN = adminDSN
 	admin, err := NewAdminSession(adminDSN, dialTimeout)
 	if err != nil {
 		slog.Warn("Admin session unavailable; health checks and role detection "+
@@ -150,11 +174,13 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 	// multiply by the number of identities, so a min_idle of five across forty
 	// users is two hundred idle connections against a database that probably
 	// allows a hundred. The set's own ceiling is what bounds the total.
+	p.conns = newConnRegistry()
 	p.driver = &connDriver{
 		address:     address,
 		dialTimeout: dialTimeout,
 		tlsConfig:   tlsConfig,
 		handler:     handler,
+		registry:    p.conns,
 	}
 	p.coreConfig = pooling.Config{
 		MaxConns: maxConns,
@@ -169,8 +195,20 @@ func NewServer(address string, zone string, agentAddr string, agentToken string,
 	}.WithDefaults()
 
 	p.pools = newPoolSet(address, backendConnCeiling(maxConns), maxIdentityPools, identityPoolTTL,
-		func() (*pooling.Core[*Conn], error) {
-			return pooling.New[*Conn](p.driver, p.coreConfig)
+		func(id identity) (*pooling.Core[*Conn], error) {
+			p.mu.Lock()
+			cfg := p.coreConfig
+			p.mu.Unlock()
+
+			// A per-database rule caps this identity below whatever the
+			// backend is currently running at. MaxConnsLimit moves with it, so
+			// the adaptive controller cannot raise this pool back above the
+			// ceiling the operator set for its database.
+			if limit := p.limitFor(id.database); limit > 0 {
+				cfg.MaxConns = ceilingFor(cfg.MaxConns, limit)
+				cfg.MaxConnsLimit = ceilingFor(cfg.MaxConnsLimit, limit)
+			}
+			return pooling.New[*Conn](p.driver, cfg)
 		})
 
 	p.roleCheckChan = make(chan struct{}, 1)
@@ -248,6 +286,7 @@ func (p *Server) AcquireFor(ctx context.Context, user, database string) (net.Con
 	// Store the one copy of the handle; Release goes back through it.
 	conn.handle = handle
 	conn.IncUseCount()
+	conn.busy.Store(true)
 	p.checkedOut.Add(1)
 	return conn, nil
 }
@@ -289,6 +328,7 @@ func (p *Server) Release(conn net.Conn) error {
 		return conn.Close()
 	}
 	p.checkedOut.Add(-1)
+	c.busy.Store(false)
 
 	if p.IsDraining() {
 		// Do not put it back; a draining backend should shed connections.
@@ -349,9 +389,14 @@ func (p *Server) SetMaxConns(n int32) error {
 	p.coreConfig.MaxConns = n
 	p.mu.Unlock()
 
+	// Per identity, because a per-database ceiling caps this pool below the
+	// backend-wide target. Applying n to every pool would let a resize hand a
+	// bounded database more connections than its rule allows — the controller's
+	// job is to lower capacity under pressure, not to overrule the operator.
 	var firstErr error
-	p.pools.each(func(core *pooling.Core[*Conn]) {
-		if err := core.SetMaxConns(n); err != nil && firstErr == nil {
+	p.pools.eachIdentity(func(id identity, core *pooling.Core[*Conn]) {
+		target := ceilingFor(n, p.limitFor(id.database))
+		if err := core.SetMaxConns(target); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	})

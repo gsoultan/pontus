@@ -7,7 +7,7 @@ import (
 )
 
 func TestService_UpdateConfig(t *testing.T) {
-	svc := NewService()
+	svc := NewService("", "")
 	ctx := t.Context()
 
 	tests := []struct {
@@ -47,7 +47,7 @@ func TestService_UpdateConfig(t *testing.T) {
 }
 
 func TestService_GetSystemInfo(t *testing.T) {
-	svc := NewService()
+	svc := NewService("", "")
 	ctx := t.Context()
 
 	resp, err := svc.GetSystemInfo(ctx)

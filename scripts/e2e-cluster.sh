@@ -6,6 +6,9 @@
 #   ./scripts/e2e-cluster.sh down     # remove both
 #   ./scripts/e2e-cluster.sh status   # roles, receiver, lag
 #
+# RUNTIME=docker|podman|container picks a container runtime explicitly; without
+# it the first working one wins.
+#
 # A dedicated pair, deliberately: the tests need to stop the primary and promote
 # the replica, and doing that to whatever database happens to be on 5432 would
 # take a dev box down with it. Nothing here touches an existing container.
@@ -43,6 +46,8 @@ PG_DB="${PG_DB:-postgres}"
 # port published. Unset by default: the ordinary cluster has no agent and does
 # not need one, and adding it unasked would change what every other test runs
 # against.
+#
+#   RUNTIME=container ./scripts/e2e-cluster.sh up   # pick a runtime explicitly
 #
 #   AGENT_BINARY=/path/to/linux-pontus-agent \
 #   AGENT_TOKEN=secret PRIMARY_AGENT_PORT=19191 REPLICA_AGENT_PORT=19193 \
@@ -87,8 +92,12 @@ install_agent() {
   "$CR" exec "$name" chmod 0755 /usr/local/bin/pontus-agent >/dev/null 2>&1 || true
 
   # Detached, and told to bind every interface so the published port reaches it.
+  # -insecure because the agent binds every interface inside the container and
+  # Pontus now refuses to serve, or to dial, an unencrypted agent that is not on
+  # loopback. A throwaway container on a published loopback port is exactly the
+  # case the flag exists for; a deployment configures agent_tls instead.
   "$CR" exec -d "$name" /usr/local/bin/pontus-agent \
-    -addr ":9091" -token "$AGENT_TOKEN" >/dev/null 2>&1 \
+    -addr ":9091" -token "$AGENT_TOKEN" -insecure >/dev/null 2>&1 \
     || die "could not start the agent in $name"
 
   ok "agent listening on :$port for $name"
@@ -96,7 +105,21 @@ install_agent() {
 
 CR=""; CR_KIND=""
 
+# RUNTIME picks one explicitly. Without it the first working runtime wins, which
+# is fine until a machine has two and the containers end up somewhere other than
+# where you are looking for them.
 detect_runtime() {
+  case "${RUNTIME:-}" in
+    docker)    have docker    && docker info            >/dev/null 2>&1 && { CR="docker";    CR_KIND="docker"; return; }
+               die "RUNTIME=docker, but docker is not available" ;;
+    podman)    have podman    && podman info            >/dev/null 2>&1 && { CR="podman";    CR_KIND="docker"; return; }
+               die "RUNTIME=podman, but podman is not available" ;;
+    container) have container && container system status >/dev/null 2>&1 && { CR="container"; CR_KIND="apple";  return; }
+               die "RUNTIME=container, but Apple container is not available" ;;
+    "")        ;;
+    *)         die "RUNTIME must be docker, podman or container (got ${RUNTIME})" ;;
+  esac
+
   if have docker && docker info >/dev/null 2>&1; then
     CR="docker"; CR_KIND="docker"
   elif have podman && podman info >/dev/null 2>&1; then
@@ -131,10 +154,21 @@ cr_running() {
 # machine that has not cached the image.
 #
 # It never reproduced locally because the containers already existed there.
+# Asked over TCP, which is the whole point.
+#
+# A socket query answers `select 1` perfectly happily against the temporary
+# server, so waiting on one returns during init and the next command lands in
+# the gap while PostgreSQL restarts for real. The temporary server is started
+# with listen_addresses empty — it exists only to run the init scripts — so TCP
+# is answered by the real server and by nothing else.
+#
+# This failed roughly one CI run in three and looked like a different problem
+# each time, because whichever command came next reported it.
 wait_ready() {
   local name="$1" label="$2" i=0
   while [ "$i" -lt 90 ]; do
-    if "$CR" exec "$name" psql -U "$PG_USER" -d "$PG_DB" -tAc 'select 1' >/dev/null 2>&1; then
+    if "$CR" exec -e PGPASSWORD="$PG_PASSWORD" "$name" \
+        psql -h 127.0.0.1 -p 5432 -U "$PG_USER" -d "$PG_DB" -tAc 'select 1' >/dev/null 2>&1; then
       ok "$label ready"
       return 0
     fi

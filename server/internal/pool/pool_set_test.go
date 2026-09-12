@@ -16,7 +16,7 @@ func stubSet(t *testing.T, maxTotal int32, maxPools int, ttl time.Duration) *poo
 
 	created := 0
 	return newPoolSet("test:5432", maxTotal, maxPools, ttl,
-		func() (*pooling.Core[*Conn], error) {
+		func(identity) (*pooling.Core[*Conn], error) {
 			created++
 			return pooling.New[*Conn](&connDriver{address: "test:5432"}, pooling.Config{
 				MaxConns: 1,

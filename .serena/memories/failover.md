@@ -70,6 +70,39 @@ The query lives in `pool/replication_status.go` and is exercised against a real 
 an `e2e`-tagged test in the same package — a broken health-check query fails the node
 outright, which is worse than the missing lag it was added to fix.
 
+## Automatic rejoin (added 2026-09-06)
+
+`failover.auto_rejoin` closes the half of recovery that `auto_reattach` leaves open.
+`auto_reattach` stops routing reads to a node whose replication has stopped; nothing
+then fixed it, so the cluster ran permanently short. Demotion existed but was a
+*single* attempt — the split-brain branch calls `DemoteToReplica` once and logs an
+error if it fails, and on a diverged timeline that is the call most likely to fail.
+
+`reconcileRejoins` (`orchestration/rejoin.go`) runs on the monitor tick, after
+split-brain resolution, and rebuilds every node that is **reachable, healthy, not
+draining and not replicating** as a replica of the current primary.
+
+| Key | Default | Effect |
+| :--- | :--- | :--- |
+| `auto_rejoin` | **false** | a rebuild can mean a pg_basebackup that discards a data directory |
+| `auto_rejoin_interval` | 5m | minimum gap between attempts on one node |
+| `auto_rejoin_timeout` | 30m | one attempt; has to cover a base backup |
+| `auto_rejoin_max_attempts` | 3 | then the node is left to an operator |
+
+Invariants:
+
+- **Reachability is load-bearing.** An unreachable node may only be rebooting, and
+  the rebuild runs through its agent anyway. Never rebuild what you cannot reach.
+- A primary always reports itself as replicating, so `needsRejoin` never selects
+  one; two primaries is split-brain, resolved on an earlier branch that `return`s.
+- Each rebuild is its own goroutine with an in-flight guard: a base backup must not
+  block the loop that also detects failover, and two ticks must not start two
+  rebuilds of one node.
+- Success **and** independent recovery both clear the attempt history, so a node
+  an operator fixed by hand starts its next outage with a full budget.
+- Metrics: `pontus_auto_rejoin_pending` (reachable, serving nothing) and
+  `pontus_auto_rejoin_total{result=ok|error|exhausted}`.
+
 ## Failback does not exist, and the code used to imply it did
 
 The split-brain branch was commented "Automatic Failback / Self-Healing". It is not
@@ -77,8 +110,13 @@ failback. A recovered old primary is **demoted to a replica** and the write role
 the failover put it. Nothing ever moves the write role back to a preferred node.
 
 That is the safer default — auto-failback means a second unplanned outage, and Patroni and
-friends do not do it either — but it is a real gap against the stated product intent, and it
-should be a deliberate operator action rather than an emergent one.
+friends do not do it either — and it remains a deliberate operator action.
+
+**This is still true of the write role specifically, and is not what `auto_rejoin`
+does.** `auto_rejoin` returns a node to *service* as a replica; nothing returns it to
+*writes*. If the write role should follow a preferred node, that is an unbuilt feature
+and a separate decision — it trades a second planned outage for locality, and the
+user asked for "automatic fallback" on 2026-09-06 meaning the rejoin half.
 
 Two things had to be fixed before that branch worked at all:
 
@@ -91,6 +129,21 @@ Two things had to be fixed before that branch worked at all:
   the replica promoted to replace it. The failover was silently undone and writes went back
   to the node that just failed, after a replica had already taken writes on a diverged
   timeline. The manager now prefers `lastPromoted`. `[repro]`
+
+## The agent primitive these depend on
+
+`DemoteToReplica` — the call behind split-brain self-healing, `follow_primary`
+and `auto_rejoin` — reaches the agent's `SetupReplication`. That was a stub that
+reported 100% having done nothing; it is **implemented since 2026-09-06**, and
+automatic fallback is proven end to end by `e2e/local_failover_test.go`.
+
+Two settings a rebuild needs and nothing infers reliably: `data_dir` (a rebuild
+erases a data directory, so a scan finding the wrong cluster is unacceptable)
+and `peer_addr` (the rebuild runs on the node being rebuilt, so its view of the
+primary is what matters). The agent must also run as its own service — where
+PostgreSQL is PID 1 it refuses, because stopping the database would kill it
+mid-rebuild. See `mem:agent_stubs` for the rest, including which methods are
+still stubs.
 
 ## Still open
 

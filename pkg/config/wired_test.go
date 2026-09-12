@@ -18,6 +18,18 @@ var allowedUnwired = map[string]string{
 	"AuthKey": "alias for JWTSecret, resolved in resolveSecrets before anything reads it",
 }
 
+// The same, for a field of a nested struct, keyed "Struct.Field".
+//
+// A field belongs here only when the decision it drives is deliberately kept
+// inside this package. That is a stronger position than exporting the field for
+// a caller to interpret — an authorisation rule read in two places is an
+// authorisation rule that can disagree with itself — but it does mean the
+// source scan cannot see the consumer, so the reason has to be written down.
+var allowedUnwiredNested = map[string]string{
+	"AdminConsole.Users": "read by AdminConsole.Permits and Validate; the console " +
+		"asks Permits rather than matching the list itself, so the rule has one home",
+}
+
 // Every configuration field must be read by something.
 //
 // This exists because the same defect kept shipping: a field parsed, defaulted,
@@ -71,6 +83,10 @@ func TestNestedConfigFieldsAreConsumed(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var unwired []string
 			for _, field := range exportedFields(typ) {
+				if reason, ok := allowedUnwiredNested[name+"."+field]; ok {
+					t.Logf("skipping %s.%s: %s", name, field, reason)
+					continue
+				}
 				if !referenced(sources, field) {
 					unwired = append(unwired, field)
 				}

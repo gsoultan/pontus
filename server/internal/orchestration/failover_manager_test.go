@@ -23,10 +23,16 @@ type mockBackend struct {
 	// Guarded, because the real *pool.Server is: verifyPromotion reads the role
 	// from its own goroutine while a test writes it, and a double that is not
 	// safe reports a race the production type does not have.
-	mu         sync.Mutex
-	role       pool.Role
-	healthy    bool
-	reevaluted int
+	mu      sync.Mutex
+	role    pool.Role
+	healthy bool
+
+	// notStreaming is inverted so the zero value is an ordinary replica with a
+	// working WAL receiver. A double that defaulted to "not replicating" would
+	// make every existing test look like a cluster in need of a rebuild.
+	notStreaming bool
+	draining     bool
+	reevaluted   int
 }
 
 func (m *mockBackend) Address() string { return m.address }
@@ -55,6 +61,24 @@ func (m *mockBackend) SetHealthy(h bool) {
 	m.healthy = h
 }
 
+func (m *mockBackend) IsReplicating() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return !m.notStreaming
+}
+
+func (m *mockBackend) setStreaming(streaming bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.notStreaming = !streaming
+}
+
+func (m *mockBackend) IsDraining() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.draining
+}
+
 func (m *mockBackend) ReevaluateRole() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -74,8 +98,11 @@ type mockProvisioner struct {
 	// repointed maps a replica address to the primary it was told to follow.
 	repointed     map[string]string
 	failDemoteFor string
-	lag           time.Duration
-	mu            sync.Mutex
+	// onDemote lets a test make the world change the way a real rebuild would,
+	// so the confirmation step has something true to observe.
+	onDemote func(addr string)
+	lag      time.Duration
+	mu       sync.Mutex
 }
 
 func (m *mockProvisioner) PromoteToPrimary(ctx context.Context, addr string) error {
@@ -96,6 +123,10 @@ func (m *mockProvisioner) DemoteToReplica(ctx context.Context, addr, primary str
 		m.repointed = map[string]string{}
 	}
 	m.repointed[addr] = primary
+	hook := m.onDemote
+	if hook != nil {
+		defer hook(addr)
+	}
 	return nil
 }
 

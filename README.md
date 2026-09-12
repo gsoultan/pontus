@@ -7,7 +7,7 @@ Pontus is a high-performance, cloud-native database connection pooler and load b
 - **Transaction Mode Pooling**: Minimizes server connections by releasing them when idle.
 - **Load Balancing**: Round Robin, Least Connections, and Consistent Hashing (Sticky).
 - **Failover & Health Checks**: Passive and active health monitoring with Raft-driven consensus.
-- **Security**: WAF 2.0 with regex patterns, global Rate Limiting, and Exfiltration Guard.
+- **Security**: client authentication (scram-sha-256 / md5), TLS on both sides, and per-tenant rate limiting.
 - **Intelligent Caching**: Semantic result-set cache with automatic table-level invalidation.
 - **AI-Driven Insights**: Proactive query plan analysis (EXPLAIN) and optimization suggestions.
 - **Advanced Observability**: Real-time Top Queries dashboard and OpenTelemetry tracing.
@@ -15,7 +15,11 @@ Pontus is a high-performance, cloud-native database connection pooler and load b
 - **Web Dashboard**: Modern, built-in dashboard for monitoring (embedded in binary).
 - **Adaptive Pooling**: BBR-style congestion control for DB connections with resource-aware throttling.
 - **Performance Advisor**: Real-time suggestions for system tuning based on CPU, memory, and concurrency.
-- **Low Footprint**: Zero-allocation buffer management and optimized connection handling (100k+ clients).
+- **Low Footprint**: the query path allocates nothing to tokenize or route a
+  statement. Measured, not asserted — `go test ./server/internal/... -bench .
+  -benchmem` reports 0 allocs/op for `Tokenize`, `CalculateCost` and
+  `FilterNodes`. There is no published throughput figure yet; when there is one
+  it will come with the command that produced it.
 
 ---
 
@@ -152,12 +156,6 @@ backends:
     weight: 10
     zone: "us-east-1b"
 
-# Security (WAF)
-firewall:
-  enabled: true
-  blocked_words: ["DROP", "TRUNCATE"]
-  patterns: ["(?i)UNION\\s+SELECT"] # Custom regex patterns
-
 # Rate Limiting
 rate_limit:
   enabled: true
@@ -174,7 +172,274 @@ cache:
 tls:
   cert_file: "server.crt"
   key_file: "server.key"
+
+# Per-database routing and limits (pgbouncer's [databases])
+#
+# Optional. Without it every database resolves to itself under the global
+# max_conns, which means the ceiling a busy tenant needs is the ceiling every
+# other tenant also gets.
+databases:
+  - name: app                 # what the client connects to
+    database: app_prod        # the real name on the backend (optional)
+    max_conns: 20             # per-identity ceiling for this database (optional)
+  - name: "*"                 # fallback: limits only, never a rewrite
+    max_conns: 5
+
+# Failover and recovery
+failover:
+  enabled: false              # automatic promotion; split-brain resolution runs regardless
+  failure_threshold: 3        # consecutive checks with no healthy primary before promoting
+  follow_primary: true        # re-point surviving replicas after a promotion
+  max_replica_lag: 10s        # reads stop going to a replica past this
+  auto_reattach: true         # pull a non-streaming replica out of the read pool
+  auto_rejoin: false          # and rebuild it as a replica of the current primary
+  auto_rejoin_interval: 5m
+  auto_rejoin_timeout: 30m    # a rebuild can mean a base backup of the whole cluster
+  auto_rejoin_max_attempts: 3
+
+# pgbouncer-compatible administration console
+#
+# A virtual database on the proxy port that answers SHOW commands about Pontus
+# itself, so the exporters, dashboards and runbooks a deployment already has
+# keep working after Pontus replaces pgbouncer.
+admin_console:
+  enabled: false              # off by default; it reports pool and backend inventory
+  database: pgbouncer         # the database name a client connects to
+  users:                      # roles allowed in — no default, and no wildcard
+    - admin
 ```
+
+### Automatic recovery after a failover
+
+`auto_reattach` and `auto_rejoin` are two halves of the same problem.
+
+A former primary that comes back after a failover is **up, answers queries, and
+will never stream again** — it is on an abandoned timeline. `auto_reattach`
+(on by default) stops routing reads to it, so it cannot serve stale rows. But
+nothing then *fixes* it, and the cluster runs permanently short until an
+operator notices.
+
+`auto_rejoin` closes that: a node that is reachable but no longer replicating is
+rebuilt as a replica of the current primary, retried on an interval and given a
+bounded number of attempts before it is left to a person.
+
+```yaml
+failover:
+  enabled: true
+  auto_rejoin: true
+```
+
+- **Off by default.** A rebuild can mean a `pg_basebackup` that discards the
+  node's data directory, which is not something to start underneath an operator
+  who has not asked for it — the same reason `enabled` is off.
+- **Only reachable nodes are rebuilt.** A node Pontus cannot reach might simply
+  be rebooting; rebuilding it is impossible anyway, since the rebuild runs
+  through its agent.
+- **The write role is never moved.** A rebuilt node returns as a replica.
+  Returning the write role to a preferred node causes a *second* unplanned
+  outage, so it stays a deliberate operator action — Patroni and pgpool-II make
+  the same call.
+- Watch `pontus_auto_rejoin_pending` (nodes reachable but serving nothing) and
+  `pontus_auto_rejoin_total{result="exhausted"}` (Pontus has given up and the
+  node needs a person).
+
+### Zero-downtime upgrades
+
+Without help, replacing the binary is an outage: the old process holds the
+listening port until it exits, so the new one cannot bind, and the gap between
+them is on the only port that matters.
+
+`reuse_port: true` lets both bind the same address, so the new process is
+serving before the old one stops.
+
+```yaml
+reuse_port: true    # off by default — unix only
+```
+
+```bash
+# 1. Start the new binary against the same config and data directory.
+#    It binds alongside the running one and begins serving immediately.
+pontus -config /etc/pontus/config.yaml &
+
+# 2. Confirm it is healthy, then stop the old process. It finishes the
+#    statements already in flight before exiting (shutdown_timeout).
+kill -TERM "$OLD_PID"
+```
+
+Two things make this safe:
+
+- **Queries.** Both processes serve while they overlap. On Linux the kernel
+  distributes new connections between them; on macOS and the BSDs the most
+  recent binder takes them. Either way nothing is refused, which is the property
+  the e2e suite measures.
+- **Orchestration is not shared.** Failover, follow-primary and rejoin are a
+  singleton: two managers on a five-second tick, each seeing no healthy primary,
+  could both promote. The new process takes an advisory lock in the data
+  directory and stands down if another holds it — logging *Not running
+  orchestration* — then takes over when the old one exits. Queries are served
+  either way. The lock is per data directory, so two Pontus instances managing
+  different clusters on one host both orchestrate normally.
+
+> `reuse_port` costs you the "address already in use" error. A second Pontus
+> started by mistake — a stale unit file, a duplicated deploy — no longer fails;
+> it silently takes a share of the traffic. That is a worse thing to debug than
+> a refused start, which is why this is off by default.
+
+#### Agent transport security
+
+**Pontus refuses an unencrypted agent that is not on this host**, on both ends.
+
+The agent token is a bearer credential for an interface that rebuilds nodes,
+takes backups and deletes data directories, as root. Without TLS it is on the
+wire on every call. This used to be a warning; a warning in a log nobody reads
+is not a control.
+
+| Situation | Result |
+| :--- | :--- |
+| `agent_tls` configured, agent started with `-tls-cert`/`-tls-key` | works |
+| Agent on loopback (`127.0.0.1`, `localhost`, `::1`) | works — the token never leaves the machine |
+| Agent on another host, no TLS | **refused**, on both ends |
+
+To accept the risk deliberately — a trusted private network, say — set
+`agent_allow_cleartext: true` in the config and start the agent with
+`-insecure`. Both are needed: the proxy refuses to dial and the agent refuses to
+serve, independently.
+
+> **Upgrading:** a multi-host deployment that has never configured `agent_tls`
+> will now fail to reach its agents. That is the point — the credential has been
+> crossing the network in cleartext — but it is a behaviour change, and the
+> error names both ways forward.
+
+#### Agent configuration
+
+The agent manages one cluster on its host. Tell it which, and which role its
+tools connect as:
+
+```bash
+pontus-agent -token "$PONTUS_AGENT_TOKEN" \
+  -data-dir /var/lib/postgresql/17/main \
+  -db-user postgres
+```
+
+Both have defaults — a scan of the usual locations, and `postgres` — and both
+are worth stating. A scan finds *a* cluster, which on a host running two is the
+wrong one, and a rebuild erases whatever it is pointed at.
+
+The agent connects over the cluster's own unix socket with no password. That is
+not a shortcut: it runs on the database host as root, so it can become the
+cluster's owner, and that account authenticates locally by peer or trust.
+Shipping it a password would add a secret to the wire and buy nothing.
+
+**The agent must outlive the database.** A rebuild stops PostgreSQL, so where
+the database is PID 1 — a database-in-a-container deployment — stopping it
+takes the agent down mid-rebuild. Pontus refuses that up front rather than
+starting what it cannot finish. Run the agent as its own service, which is the
+ordinary VM or systemd shape.
+
+Two settings matter for a rebuild and are worth stating explicitly:
+
+```yaml
+backends:
+  - addr: "10.0.0.5:5432"
+    # Where this node's cluster lives. A rebuild erases a data directory, so
+    # this is the last place a guess belongs — without it Pontus asks the
+    # server, and the agent falls back to scanning the usual locations, which
+    # finds the wrong cluster on a host running two.
+    data_dir: /var/lib/postgresql/17/main
+    # How *other database nodes* reach this one, when that differs from how the
+    # proxy does. The rebuild runs pg_basebackup on the node being rebuilt, so
+    # it is that node's view that matters. Empty means "same as addr", which is
+    # correct on a flat network. Patroni calls this connect_address.
+    peer_addr: "10.0.0.5:5432"
+```
+
+### Per-database routing
+
+`databases:` is Pontus's `[databases]`. Each entry may rename a database, bound
+it, or both:
+
+| Field | Meaning |
+| :--- | :--- |
+| `name` | the name the client puts in its startup packet |
+| `database` | the real name to open on the backend; empty means `name` |
+| `max_conns` | per-identity ceiling for this database; zero takes the global `max_conns` |
+
+```yaml
+databases:
+  - name: app
+    database: app_prod   # a cutover moves this without touching the application
+    max_conns: 20
+  - name: reporting
+    max_conns: 2         # bound one tenant without bounding everyone
+```
+
+- **An unlisted database resolves to itself**, under the global `max_conns`.
+  This is not an allowlist — making it one would mean enumerating every database
+  in a deployment before a limit could be set on one of them.
+- **`max_conns` is per identity**, matching pgbouncer's per-database `pool_size`.
+  A connection carries the credentials it authenticated with, so `(database, user)`
+  is the unit a pool is keyed by and therefore the unit a ceiling applies to.
+- **The rule is a cap, not a target.** The adaptive controller may lower capacity
+  for the whole backend under pressure; the effective ceiling is the lower of the
+  two, so the controller can still reclaim connections.
+- **`"*"` carries limits and never rewrites.** Pointing every unlisted name at
+  one real database would send one tenant's queries to another tenant's data, so
+  a wildcard with `database:` set is refused at startup.
+- Aliasing works in both `passthrough` and `pontus` auth modes: the client's
+  startup packet is rewritten so the pool key, the backend connection and the
+  identity recorded for reuse all name the same database.
+
+Pools appear in `SHOW POOLS` under the **real** database name, because that is
+what the connections were opened against.
+
+### The administration console
+
+With `admin_console.enabled: true`, connect to the `pgbouncer` database on the
+**proxy** port and run pgbouncer's commands:
+
+```bash
+psql -h pontus-host -p 5432 -U admin -d pgbouncer -c "SHOW POOLS"
+```
+
+| Command | Reports |
+| :--- | :--- |
+| `SHOW POOLS` | occupancy per `(database, user)` — Pontus's pools are keyed that way |
+| `SHOW STATS` | per-database query, transaction, byte and time totals, and their rates |
+| `SHOW SERVERS` | open backend connections, and what each one is doing |
+| `SHOW DATABASES` | one row per configured backend, with its role and ceiling |
+| `SHOW CLIENTS` | live client sessions |
+| `SHOW LISTS` | the size of each internal collection |
+| `SHOW CONFIG` | the settings governing the data path |
+| `SHOW VERSION` | the running build |
+| `SHOW HELP` | the list above |
+
+Both the simple and the extended query protocols are supported, so `psql` and a
+driver such as pgx or the JDBC driver both work without special configuration.
+
+Two constraints are deliberate:
+
+- **The console requires `auth.mode: pontus`.** In passthrough mode a *backend*
+  verifies the client's password, and the console has no backend to ask — so it
+  refuses rather than admitting a client nothing authenticated.
+- **`users` has no default and no wildcard.** An enabled console with nobody
+  listed is refused at startup, because that configuration reads like
+  "everyone".
+
+`SHOW SERVERS` is the counterpart to `SHOW CLIENTS`: that answers who is
+connected to Pontus, this answers what Pontus is holding open against the
+database. When a pool is full, the second is usually the question you have.
+States are `active` (a client holds it), `idle`, `login` (its startup exchange
+has not finished) and `close_needed` (its socket has failed).
+
+pgbouncer's `ptr`, `link` and `remote_pid` columns are omitted rather than
+faked — they identify a connection inside pgbouncer's own structures, and
+inventing values would invent a correspondence that does not exist. `use_count`
+and `backend` are additions, for the same reason `SHOW POOLS` carries a backend
+column: a Pontus deployment has several.
+
+`SHOW STATS` counts per database, and that map is bounded: the database name
+comes from a startup packet, so past 256 of them everything accumulates into an
+`(other)` bucket. The totals stay right; the attribution stops.
 
 ---
 

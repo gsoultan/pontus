@@ -196,7 +196,17 @@ type BackendConfig struct {
 	// its own for health probes, role detection, replication lag or slot
 	// management. Least privilege: CONNECT and pg_monitor, plus REPLICATION only
 	// if slot management is wanted.
-	AdminDsn      string               `protobuf:"bytes,9,opt,name=admin_dsn,json=adminDsn,proto3" json:"admin_dsn,omitempty"`
+	AdminDsn string `protobuf:"bytes,9,opt,name=admin_dsn,json=adminDsn,proto3" json:"admin_dsn,omitempty"`
+	// peer_address is how *other database nodes* reach this one, when that
+	// differs from the address the proxy uses.
+	//
+	// Rebuilding a node runs pg_basebackup on that node against its new primary,
+	// and it is the node's view of the address that matters there, not the
+	// proxy's. They are the same on a flat network and different behind NAT or
+	// in containers, where a proxy reaching 127.0.0.1:55843 tells a peer to
+	// connect to itself. Patroni calls this connect_address. Empty means use
+	// address.
+	PeerAddress   string               `protobuf:"bytes,10,opt,name=peer_address,json=peerAddress,proto3" json:"peer_address,omitempty"`
 	AgentConfig   *AgentDatabaseConfig `protobuf:"bytes,7,opt,name=agent_config,json=agentConfig,proto3" json:"agent_config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -284,6 +294,13 @@ func (x *BackendConfig) GetAgentToken() string {
 func (x *BackendConfig) GetAdminDsn() string {
 	if x != nil {
 		return x.AdminDsn
+	}
+	return ""
+}
+
+func (x *BackendConfig) GetPeerAddress() string {
+	if x != nil {
+		return x.PeerAddress
 	}
 	return ""
 }
@@ -397,7 +414,7 @@ const file_api_proto_domain_project_proto_rawDesc = "" +
 	"\aaddress\x18\x03 \x01(\tR\aaddress\x12;\n" +
 	"\bbackends\x18\x04 \x03(\v2\x1f.api.proto.domain.BackendConfigR\bbackends\x12\x1a\n" +
 	"\bbalancer\x18\x05 \x01(\tR\bbalancer\x12\x1b\n" +
-	"\tmax_conns\x18\x06 \x01(\x05R\bmaxConns\"\xc0\x02\n" +
+	"\tmax_conns\x18\x06 \x01(\x05R\bmaxConns\"\xe3\x02\n" +
 	"\rBackendConfig\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x12\n" +
 	"\x04zone\x18\x04 \x01(\tR\x04zone\x12\x12\n" +
@@ -407,7 +424,9 @@ const file_api_proto_domain_project_proto_rawDesc = "" +
 	"\ragent_address\x18\x06 \x01(\tR\fagentAddress\x12\x1f\n" +
 	"\vagent_token\x18\b \x01(\tR\n" +
 	"agentToken\x12\x1b\n" +
-	"\tadmin_dsn\x18\t \x01(\tR\badminDsn\x12H\n" +
+	"\tadmin_dsn\x18\t \x01(\tR\badminDsn\x12!\n" +
+	"\fpeer_address\x18\n" +
+	" \x01(\tR\vpeerAddress\x12H\n" +
 	"\fagent_config\x18\a \x01(\v2%.api.proto.domain.AgentDatabaseConfigR\vagentConfig\"\xfd\x01\n" +
 	"\x13AgentDatabaseConfig\x12%\n" +
 	"\x0edata_directory\x18\x01 \x01(\tR\rdataDirectory\x12\x18\n" +

@@ -39,6 +39,28 @@ references this task needs. Do not re-derive from source what is already written
   cache invalidation, the load-balancer cost function and client-facing TLS all look implemented
   and are not wired to anything. Items marked `[repro]` were demonstrated, not inferred.
 
+## Orchestration
+- **Read before trusting any agent-driven feature:** most of the agent's
+  orchestration is stubbed and reports success — `SetupReplication`,
+  `PromoteNode`, backup, restore, vacuum and install all do nothing. What was
+  fixed, what was not, and how to run the two-backend cluster: `mem:agent_stubs`.
+
+## Consensus
+- Raft is **correct and tested but not wired** — `NewNode` has no caller, and the
+  four defects the first tests found: `mem:consensus`.
+
+## Operations
+- Serving through a binary upgrade (`reuse_port`), and why the port may be shared
+  while the orchestrator may not: `mem:zero_downtime_upgrade`.
+
+## Compatibility surface
+- Per-database routing and limits (`databases:`), why the alias rewrites the raw
+  startup packet, and why a per-database ceiling is a cap rather than a target:
+  `mem:database_routing`.
+- The pgbouncer-compatible admin console — what it answers, the two refusals that
+  are deliberate, why both query protocols are supported, and the ranked list of
+  gaps still open against pgbouncer/pgcat: `mem:admin_console`.
+
 ## Authoritative files in-repo
 - `CLAUDE.md` — quick reference + the Always-Optimize Loop.
 - `AGENTS.md` — the profile roster with per-surface Owns · Vetoes · Proof, and the

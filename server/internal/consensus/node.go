@@ -1,7 +1,10 @@
 package consensus
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +21,13 @@ type CommandType string
 const (
 	CmdSyncBackends CommandType = "sync_backends"
 	CmdUpdateConfig CommandType = "update_config"
+
+	// CmdSetPrimary records which node holds the write role.
+	//
+	// This is what the failover manager asks consensus for. Agreeing on it is
+	// the whole reason to run Raft here: without it, two control planes that
+	// each see no healthy primary promote two different replicas.
+	CmdSetPrimary CommandType = "set_primary"
 )
 
 type Command struct {
@@ -28,12 +38,23 @@ type Command struct {
 type clusterState struct {
 	Backends []*domain.BackendConfig `json:"backends,omitzero"`
 	Config   []byte                  `json:"config,omitzero"` // Encoded proxy.Config
+
+	// Primary is the address of the node holding the write role.
+	Primary string `json:"primary,omitzero"`
 }
 
 // Node represents a node in the consensus cluster.
 type Node struct {
 	raft *raft.Raft
 	fsm  *fsm
+
+	// transport is kept so Stop can close the listener. Without it a node
+	// leaves a TCP port bound and three goroutines running for the life of the
+	// process — which a test creating nodes notices first, and a restart
+	// notices second.
+	transport *raft.NetworkTransport
+
+	id string
 }
 
 // NewNode creates and starts a new Raft node.
@@ -85,36 +106,115 @@ func NewNode(nodeID, addr, dataDir string, bootstrap bool) (*Node, error) {
 				},
 			},
 		}
-		r.BootstrapCluster(configuration)
+		// Checked. A discarded error here returns a node that can never elect a
+		// leader, so every later call reports "not leader" and nothing says
+		// why — the failure is at startup and the symptom is at failover.
+		if err := r.BootstrapCluster(configuration).Error(); err != nil &&
+			!errors.Is(err, raft.ErrCantBootstrap) {
+			_ = transport.Close()
+			return nil, fmt.Errorf("failed to bootstrap cluster: %w", err)
+		}
 	}
 
-	return &Node{raft: r, fsm: fsmInstance}, nil
+	return &Node{raft: r, fsm: fsmInstance, transport: transport, id: nodeID}, nil
 }
 
-// GetConfig returns the current global configuration from the FSM.
-func (n *Node) GetConfig() []byte {
+// Start satisfies the orchestration.Consensus interface. Raft is already
+// running by the time NewNode returns, so there is nothing further to do.
+func (n *Node) Start(context.Context) error { return nil }
+
+// Stop shuts the node down and releases its listener.
+func (n *Node) Stop() error {
+	if n == nil {
+		return nil
+	}
+
+	var shutdownErr error
+	if n.raft != nil {
+		shutdownErr = n.raft.Shutdown().Error()
+	}
+	if n.transport != nil {
+		return errors.Join(shutdownErr, n.transport.Close())
+	}
+	return shutdownErr
+}
+
+// LeaderID is the ID of the node currently holding leadership, or empty when
+// there is none.
+func (n *Node) LeaderID() string {
+	_, id := n.raft.LeaderWithID()
+	return string(id)
+}
+
+// GetPrimary returns the address the cluster agrees holds the write role.
+func (n *Node) GetPrimary() (string, error) {
 	n.fsm.mu.RLock()
 	defer n.fsm.mu.RUnlock()
-	return n.fsm.state.Config
+	return n.fsm.state.Primary, nil
 }
 
-// ProposeConfig proposes a new configuration to the cluster.
-func (n *Node) ProposeConfig(config []byte) error {
-	if n.raft.State() != raft.Leader {
-		return fmt.Errorf("not leader")
+// SetPrimary records a new holder of the write role.
+func (n *Node) SetPrimary(address string) error {
+	return n.propose(Command{Op: CmdSetPrimary, Data: []byte(address)})
+}
+
+// SyncBackends replicates the backend inventory.
+func (n *Node) SyncBackends(backends []*domain.BackendConfig) error {
+	data, err := json.Marshal(backends)
+	if err != nil {
+		return err
+	}
+	return n.propose(Command{Op: CmdSyncBackends, Data: data})
+}
+
+// propose replicates one command and waits for it to be applied.
+//
+// Both errors are checked. Apply's own error says whether the entry was
+// committed; the FSM's response says whether applying it worked. Reporting only
+// the first means a command the FSM rejected — malformed data, an unknown op —
+// is reported as a success, and the caller believes the cluster agreed to
+// something it did not.
+func (n *Node) propose(cmd Command) error {
+	if !n.IsLeader() {
+		return ErrNotLeader
 	}
 
-	cmd := Command{
-		Op:   CmdUpdateConfig,
-		Data: config,
-	}
 	b, err := json.Marshal(cmd)
 	if err != nil {
 		return err
 	}
 
-	f := n.raft.Apply(b, 10*time.Second)
-	return f.Error()
+	future := n.raft.Apply(b, applyTimeout)
+	if err := future.Error(); err != nil {
+		return err
+	}
+	if applyErr, ok := future.Response().(error); ok && applyErr != nil {
+		return fmt.Errorf("applying %s: %w", cmd.Op, applyErr)
+	}
+	return nil
+}
+
+// ErrNotLeader reports a write attempted on a node that cannot order it.
+var ErrNotLeader = errors.New("not leader")
+
+// applyTimeout bounds how long a proposal waits to be committed.
+const applyTimeout = 10 * time.Second
+
+// GetConfig returns the current global configuration from the FSM.
+//
+// A copy. Returning the FSM's own slice hands a caller a reference to
+// replicated state, and anything that writes through it edits the cluster's
+// agreed configuration without going through the log — which is exactly the
+// "Raft state written outside the FSM" that the whole design forbids.
+func (n *Node) GetConfig() []byte {
+	n.fsm.mu.RLock()
+	defer n.fsm.mu.RUnlock()
+	return bytes.Clone(n.fsm.state.Config)
+}
+
+// ProposeConfig proposes a new configuration to the cluster.
+func (n *Node) ProposeConfig(config []byte) error {
+	return n.propose(Command{Op: CmdUpdateConfig, Data: config})
 }
 
 // IsLeader returns true if the current node is the leader.
@@ -130,8 +230,8 @@ func (n *Node) LeaderAddr() string {
 
 // Join adds a new node to the cluster.
 func (n *Node) Join(nodeID, addr string) error {
-	if n.raft.State() != raft.Leader {
-		return fmt.Errorf("not leader")
+	if !n.IsLeader() {
+		return ErrNotLeader
 	}
 
 	f := n.raft.AddVoter(raft.ServerID(nodeID), raft.ServerAddress(addr), 0, 0)
@@ -164,6 +264,14 @@ func (f *fsm) Apply(l *raft.Log) any {
 		f.state.Backends = backends
 	case CmdUpdateConfig:
 		f.state.Config = cmd.Data
+	case CmdSetPrimary:
+		f.state.Primary = string(cmd.Data)
+	default:
+		// Reported rather than ignored. An entry this node cannot interpret is
+		// one a peer on a different version wrote, and silently skipping it
+		// means the two disagree about the state while both believe they are
+		// in sync.
+		return fmt.Errorf("unknown consensus command %q", cmd.Op)
 	}
 	return nil
 }
@@ -174,11 +282,25 @@ func (f *fsm) Snapshot() (raft.FSMSnapshot, error) {
 	return &snapshot{state: f.state}, nil
 }
 
+// Restore replaces this node's state with a snapshot's.
+//
+// Decoded into a fresh value first. Decoding straight into f.state *merges*:
+// a field the snapshot omits — and clusterState omits its zero fields — keeps
+// whatever this node happened to have, so restoring a snapshot taken before a
+// backend existed leaves that backend in place. A restore that does not replace
+// is not a restore.
 func (f *fsm) Restore(r io.ReadCloser) error {
 	defer r.Close()
+
+	var restored clusterState
+	if err := json.NewDecoder(r).Decode(&restored); err != nil {
+		return err
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return json.NewDecoder(r).Decode(&f.state)
+	f.state = restored
+	return nil
 }
 
 type snapshot struct {

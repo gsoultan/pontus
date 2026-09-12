@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,8 @@ import (
 	"github.com/gsoultan/pontus/api/proto/domain"
 	"github.com/gsoultan/pontus/internal/system"
 	"github.com/gsoultan/pontus/pkg/config"
+	"github.com/gsoultan/pontus/pkg/listen"
+	pontussystem "github.com/gsoultan/pontus/pkg/system"
 	balancer2 "github.com/gsoultan/pontus/server/internal/balancer"
 	"github.com/gsoultan/pontus/server/internal/health"
 	orchestration2 "github.com/gsoultan/pontus/server/internal/orchestration"
@@ -38,6 +41,58 @@ type Registry struct {
 	// the gateway was built from five fields and every one of those features
 	// was silently off, whatever config.yaml said.
 	defaults *config.Options
+
+	// orchestrationLock is this process's claim on acting for the cluster. Held
+	// for the life of the registry and released on shutdown, so a process
+	// waiting through an upgrade can take over.
+	orchestrationLock *listen.OrchestrationLock
+}
+
+// claimOrchestration decides whether this process acts on the cluster.
+//
+// Orchestration is a singleton per host, and a zero-downtime upgrade briefly
+// runs two Pontus processes. Sharing the listening port is safe for queries;
+// it is not safe for failover, where two managers on a five-second tick can
+// both promote and produce the split brain this layer exists to prevent.
+//
+// Non-blocking, and a failure to acquire is not a failure to start: a process
+// that does not hold the lock still serves queries. It simply does not act on
+// the cluster until the holder exits and the kernel drops the lock.
+func claimOrchestration(defaults *config.Options) *listen.OrchestrationLock {
+	dataDir := ""
+	if defaults != nil {
+		dataDir = defaults.DataDir
+	}
+
+	path, err := pontussystem.GetDatabasePath("orchestration.lock", dataDir)
+
+	// A relative path is not a lock.
+	//
+	// GetDatabasePath falls back to a bare filename when it cannot create the
+	// directory it wanted, and two processes started from different working
+	// directories would then lock two different files and both believe they
+	// hold it — the exact failure this is meant to prevent, made invisible.
+	// It also drops a file wherever the process happened to start.
+	if err != nil || !filepath.IsAbs(path) {
+		slog.Warn("No usable path for the orchestration lock; acting as the only "+
+			"process on this host. Set data_dir to coordinate an overlapping upgrade",
+			"path", path, "error", err)
+		orchestration2.SetOwnership(nil)
+		return nil
+	}
+
+	lock, err := listen.AcquireOrchestration(path)
+	if err != nil {
+		orchestration2.SetOwnership(func() bool { return false })
+		slog.Warn("Not running orchestration: another Pontus on this host holds it. "+
+			"Queries are served either way; this process takes over when the holder exits",
+			"lock", path, "error", err)
+		return nil
+	}
+
+	orchestration2.SetOwnership(func() bool { return true })
+	slog.Info("Holding orchestration for this host", "lock", path)
+	return lock
 }
 
 func NewRegistry(ctx context.Context, store store.Project, userStore store.User, dialTimeout time.Duration, backendTLS *tls.Config, defaults *config.Options) *Registry {
@@ -53,6 +108,8 @@ func NewRegistry(ctx context.Context, store store.Project, userStore store.User,
 		backendTLS:  backendTLS,
 		monitor:     m,
 		defaults:    defaults,
+
+		orchestrationLock: claimOrchestration(defaults),
 	}
 
 	// Load and start projects
@@ -135,6 +192,26 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 			slog.Error("Failed to create backend server", "address", backendAddr, "error", err)
 			continue
 		}
+		// How peers reach this node, when that differs from how the proxy does.
+		p.SetPeerAddress(bcfg.PeerAddress)
+
+		// Where this node's cluster lives, when it is not where a scan would
+		// look. Rebuilding erases a data directory, so a configured answer
+		// takes precedence over any discovery.
+		if bcfg.AgentConfig != nil {
+			p.SetDataDirectory(bcfg.AgentConfig.DataDirectory)
+		}
+
+		// Per-database ceilings — pgbouncer's per-database pool_size. Installed
+		// before Start so the first pool a session creates already carries the
+		// limit its database was given.
+		if r.defaults != nil && len(r.defaults.Databases) > 0 {
+			databases := r.defaults.Databases
+			p.SetDatabaseLimits(func(database string) int32 {
+				return databases.Limit(database)
+			})
+		}
+
 		p.Start(ctx)
 		backends = append(backends, p)
 	}
@@ -154,6 +231,7 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 		provisioner = orchestration2.NewPostgresProvisioner(func() []pool2.Backend { return backends }, handler)
 	}
 	applyAgentTLS(r.defaults)
+	orchestration2.SetAllowCleartextAgents(r.defaults != nil && r.defaults.AgentAllowCleartext)
 	failoverMgr := orchestration2.NewFailoverManager(provisioner, nil,
 		func() []pool2.Backend { return backends }, failoverOptions(r.defaults))
 	go failoverMgr.Start(ctx)
@@ -190,7 +268,12 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 	// asked for it and a credential source actually resolved.
 	gateway.SetCredentialStore(buildCredentialStore(r.defaults, backends))
 
-	ln, err := net.Listen("tcp", prcfg.Address)
+	// What the administration console reports on. Supplied after construction
+	// because the backends are built here, not by the gateway.
+	gateway.SetBackends(func() []pool2.Backend { return backends })
+
+	ln, err := listen.Config{ReusePort: r.defaults != nil && r.defaults.ReusePort}.
+		TCP(ctx, prcfg.Address)
 	if err != nil {
 		cancel()
 		for _, b := range backends {
@@ -355,6 +438,11 @@ func failoverOptions(cfg *config.Options) orchestration2.Options {
 		FollowPrimaryTimeout: f.FollowPrimaryTimeout,
 		AutoReattach:         *f.AutoReattach,
 		AutoReattachInterval: f.AutoReattachInterval,
+
+		AutoRejoin:            f.AutoRejoin,
+		AutoRejoinInterval:    f.AutoRejoinInterval,
+		AutoRejoinTimeout:     f.AutoRejoinTimeout,
+		AutoRejoinMaxAttempts: f.AutoRejoinMaxAttempts,
 	}
 }
 
@@ -388,6 +476,12 @@ func healthTiming(cfg *config.Options) (interval, timeout time.Duration) {
 // one, because what an operator configures is how long the *shutdown* may take,
 // not how long each of an unknown number of proxies may take.
 func (r *Registry) StopAll(ctx context.Context) {
+	// Released first, so a process waiting through an upgrade can take
+	// orchestration over while this one drains rather than after it exits.
+	if err := r.orchestrationLock.Release(); err != nil {
+		slog.Warn("Could not release the orchestration lock", "error", err)
+	}
+
 	type target struct {
 		project string
 		proxy   string

@@ -92,6 +92,27 @@ var (
 		Name: "pontus_follow_primary_total",
 		Help: "Attempts to re-point a surviving replica at a newly promoted primary",
 	}, []string{"result"})
+
+	// RejoinResults counts attempts to rebuild a node that is reachable but no
+	// longer replicating, which is what a former primary looks like after it
+	// comes back on an abandoned timeline.
+	//
+	// "exhausted" is its own result rather than another error: it is the point
+	// at which Pontus stops trying and the node needs a person, and an operator
+	// who alerts on it learns that from the metric instead of from a read that
+	// is quietly hours stale.
+	RejoinResults = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "pontus_auto_rejoin_total",
+		Help: "Attempts to rebuild a non-streaming node as a replica of the current primary",
+	}, []string{"result"})
+
+	// RejoinPending reports nodes that are reachable, not replicating, and
+	// therefore serving nothing — the cluster is running at reduced capacity
+	// for as long as this is above zero.
+	RejoinPending = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "pontus_auto_rejoin_pending",
+		Help: "Nodes that are reachable but not replicating and are awaiting a rebuild",
+	})
 )
 
 // backendRoles and failoverStates are the full label sets. Every member is

@@ -75,6 +75,19 @@ or `go test` that touches package `web`.
 
 ```bash
 # 1. Generate — protobuf (Go + TS) and the dashboard bundle
+#
+# The plugin versions matter. CI installs exact ones and fails if `buf generate`
+# produces any diff, so generating with whatever happens to be on your PATH
+# rewrites the generator header in every .pb.go and reddens the build on nine
+# files you did not touch. Install the pinned set first — into a temporary GOBIN,
+# so a newer toolchain elsewhere is left alone:
+export GOBIN=$(mktemp -d)
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.19.2
+# protoc-gen-es comes from web/package.json, so bun install must have run.
+export PATH="$GOBIN:$PWD/web/node_modules/.bin:$PATH"
+
 buf generate
 bun install --cwd web && bun run --cwd web build      # creates web/dist (gitignored)
 # equivalently: go generate ./cmd/pontus
@@ -158,11 +171,29 @@ agent_tls:                    # separate from backend_tls on purpose — differe
   ca_file: ...                # different name, usually a different CA
   cert_file: ...
   key_file: ...
+
+agent_allow_cleartext: false  # reach a remote agent without encryption. Off, and
+                              # refused rather than warned about — see below.
+
+reuse_port: false             # let a second Pontus bind the same addresses, so a
+                              # binary upgrade does not drop connections. Unix only.
+                              # Costs the "address already in use" guard.
 ```
 
-The agent refuses to start without `-token` / `PONTUS_AGENT_TOKEN` (`-insecure` is a
-warned, localhost-only opt-out) and serves TLS with `-tls-cert` / `-tls-key`. Without TLS
-the mandatory token crosses the network in cleartext, which the proxy warns about once.
+The agent refuses to start without `-token` / `PONTUS_AGENT_TOKEN` and serves TLS with
+`-tls-cert` / `-tls-key`.
+
+**Since 2026-09-10 an unencrypted agent that is not on loopback is refused rather than
+warned about**, on both ends: the agent will not serve and the proxy will not dial. The
+token authorises rebuilding a node and deleting a data directory as root, so it is a
+bearer credential that must not cross a network in cleartext. Loopback is exempt because
+nothing crosses one. `-insecure` on the agent and `agent_allow_cleartext: true` on the
+proxy are the deliberate opt-outs, and both are needed — the two ends decide
+independently.
+
+This was finding B12, open since August. It was defensible while every operation the
+token guarded was a stub; it stopped being defensible when they started doing what they
+claim.
 
 Two things here are deliberately unlike pgpool-II, and both are documented at their
 definitions rather than only here:

@@ -25,11 +25,30 @@ type Options struct {
 	// BackendTLS: the agent and the database are different peers with different
 	// names and usually different CAs, and sharing one config is what made this
 	// look configured when it was not.
-	AgentTLS  *TLS       `json:"agent_tls,omitzero" yaml:"agent_tls"`
-	RateLimit *RateLimit `json:"rate_limit,omitzero" yaml:"rate_limit"`
-	Cache     *Cache     `json:"cache,omitzero" yaml:"cache"`
-	Failover  *Failover  `json:"failover,omitzero" yaml:"failover"`
-	Auth      *Auth      `json:"auth,omitzero" yaml:"auth"`
+	AgentTLS *TLS `json:"agent_tls,omitzero" yaml:"agent_tls"`
+
+	// ReusePort lets another Pontus bind the same listening addresses, so a new
+	// process can be serving before the old one stops.
+	//
+	// Off by default. "Address already in use" is a useful error: with this on,
+	// a second Pontus started by mistake does not fail, it silently takes a
+	// share of the traffic. Turn it on when you want zero-downtime upgrades and
+	// accept that the guard goes with it. Unix only.
+	ReusePort bool `json:"reuse_port,omitzero" yaml:"reuse_port"`
+
+	// AgentAllowCleartext permits reaching an agent on another host without
+	// encryption.
+	//
+	// The agent token authorises rebuilding nodes, taking backups and deleting
+	// data directories, as root. Without agent_tls it is a bearer credential on
+	// the wire, so Pontus refuses a remote agent by default and this is the
+	// explicit way to accept that. An agent on loopback needs neither, because
+	// the token never leaves the machine.
+	AgentAllowCleartext bool       `json:"agent_allow_cleartext,omitzero" yaml:"agent_allow_cleartext"`
+	RateLimit           *RateLimit `json:"rate_limit,omitzero" yaml:"rate_limit"`
+	Cache               *Cache     `json:"cache,omitzero" yaml:"cache"`
+	Failover            *Failover  `json:"failover,omitzero" yaml:"failover"`
+	Auth                *Auth      `json:"auth,omitzero" yaml:"auth"`
 	// QueryTimeout bounds how long a single statement may occupy a pooled
 	// backend connection. Unset means the 30s default; a **negative** value
 	// disables the bound entirely, for deployments that run legitimately long
@@ -79,9 +98,14 @@ type Options struct {
 	// the dominant log volume on a busy proxy and drowns the events worth
 	// reading. Zero takes the default.
 	SlowQueryThreshold time.Duration `json:"slow_query_threshold,omitzero" yaml:"slow_query_threshold"`
-	PoolingMode        string        `json:"pooling_mode,omitzero" yaml:"pooling_mode"` // "transaction" or "statement"
-	ShadowBackends     []Backend     `json:"shadow_backends,omitzero" yaml:"shadow_backends"`
-	AdminToken         string        `json:"admin_token,omitzero" yaml:"admin_token"`
+	// PoolingMode is when a backend connection goes back to the pool:
+	// "transaction" (the default), "session" or "statement". This comment said
+	// transaction-or-statement while session had been implemented and tested
+	// for months, which is the kind of thing that gets a working feature
+	// reported as missing.
+	PoolingMode    string    `json:"pooling_mode,omitzero" yaml:"pooling_mode"`
+	ShadowBackends []Backend `json:"shadow_backends,omitzero" yaml:"shadow_backends"`
+	AdminToken     string    `json:"admin_token,omitzero" yaml:"admin_token"`
 	// JWTSecret keys the management session tokens. The name is kept for
 	// config compatibility; tokens are PASETO v4.local, not JWT. Prefer the
 	// auth_key alias below. There is no default — startup fails without one.
@@ -92,6 +116,15 @@ type Options struct {
 	// the dashboard is served by this binary. "*" is rejected at startup.
 	AllowedOrigins []string `json:"allowed_origins,omitzero" yaml:"allowed_origins"`
 	DataDir        string   `json:"data_dir,omitzero" yaml:"data_dir"`
+
+	// AdminConsole serves pgbouncer's SHOW commands on the proxy port, so the
+	// exporters and runbooks a deployment already has keep working. Nil is off.
+	AdminConsole *AdminConsole `json:"admin_console,omitzero" yaml:"admin_console"`
+
+	// Databases routes and bounds individual client-visible database names —
+	// pgbouncer's `[databases]`. Empty means every database resolves to itself
+	// under the global max_conns.
+	Databases Databases `json:"databases,omitzero" yaml:"databases"`
 }
 
 // resolveSecrets applies the auth_key alias and the environment overrides.
@@ -212,5 +245,17 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.DataDir != "" {
 		c.DataDir = other.DataDir
+	}
+	if other.ReusePort {
+		c.ReusePort = true
+	}
+	if other.AgentAllowCleartext {
+		c.AgentAllowCleartext = true
+	}
+	if other.AdminConsole != nil {
+		c.AdminConsole = other.AdminConsole
+	}
+	if len(other.Databases) > 0 {
+		c.Databases = other.Databases
 	}
 }

@@ -3,6 +3,30 @@
 Pontus sits between untrusted SQL clients and production databases, and its dashboard
 renders traffic captured from those clients. Two trust boundaries, both hostile.
 
+## Agent transport: cleartext to a remote agent is refused (2026-09-10)
+
+Finding B12 closed. The agent token authorises rebuilding a node and deleting a
+data directory **as root**, so it is a bearer credential that must not cross a
+network in cleartext. Both ends fail closed and decide **independently**:
+
+- the agent refuses to serve without TLS on a non-loopback bind
+  (`bindsLoopbackOnly` in `cmd/agent`);
+- the proxy refuses to dial an agent that is neither loopback nor TLS
+  (`checkTransport` in `server/internal/orchestration/agent_tls.go`).
+
+Loopback is exempt because nothing crosses a network. **A host that does not
+resolve is not loopback** — the question is whether the token stays on this
+machine, and an unanswerable question is answered no.
+
+Opt-outs are deliberate and separate: `-insecure` on the agent,
+`agent_allow_cleartext: true` on the proxy. Both are needed.
+
+Why it changed when it did: this was a warning for months and that was
+defensible while every operation the token guarded was a stub. It stopped being
+defensible the moment those operations became real (`mem:agent_stubs`). When a
+capability grows teeth, re-read the control that guards it.
+
+
 ## Boundary 1 — the wire (`proxy_addr`)
 
 Everything arriving here is attacker-controlled: the SQL text, the startup parameters, the

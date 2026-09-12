@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gsoultan/pontus/api/proto/endpoints"
@@ -241,6 +243,22 @@ func (p *postgresProvisioner) dataDirectoryFor(ctx context.Context, b pool.Backe
 	return "/var/lib/postgresql/data"
 }
 
+// dataDirectoryOf is where a rebuild should act, in order of trust: what the
+// operator configured, then what the server reports about itself.
+//
+// The agent's own scan is deliberately the last resort and lives on the far
+// side of this call: it looks in the usual locations and finds *a* cluster,
+// which on a host running two is the wrong one and is erased just as willingly
+// as the right one.
+func dataDirectoryOf(ctx context.Context, b pool.Backend) string {
+	if configured, ok := b.(interface{ DataDirectory() string }); ok {
+		if dir := configured.DataDirectory(); dir != "" {
+			return dir
+		}
+	}
+	return askServerForDataDir(ctx, b)
+}
+
 // askServerForDataDir reads data_directory over Pontus's own admin channel.
 func askServerForDataDir(ctx context.Context, b pool.Backend) string {
 	if b == nil {
@@ -303,13 +321,51 @@ func (p *postgresProvisioner) DemoteToReplica(ctx context.Context, backendAddr s
 	}
 	defer agent.Close()
 
-	primaryHost := p.getHost(primaryAddr)
+	// Where the *rebuilt node* must look for its primary, which is not
+	// necessarily where the proxy looks.
+	//
+	// pg_basebackup runs on the node being rebuilt, so an address that is only
+	// meaningful to the proxy sends it somewhere else entirely — in a container
+	// it told the node to connect to itself. Falls back to the proxy's address,
+	// which is correct on a flat network and is the common case.
+	//
+	// Both lookups key off the address the *proxy* knows, so the peer address
+	// is resolved into a local variable rather than over the parameter: reusing
+	// the parameter meant the credential lookup below searched for a backend
+	// under its peer address and found none, and the rebuild went out with no
+	// password at all.
+	primaryPeer := peerAddressFor(p.backends(), primaryAddr)
 
-	// Reconfigure as replica pointing to the new primary
+	// The port has to come from the address, not from a constant.
+	//
+	// This said `PrimaryPort: 5432` regardless of where the primary actually
+	// listened, so on any cluster not using the default port the replica was
+	// pointed at a port nothing served. Every caller of this is a recovery
+	// path — split-brain healing, follow_primary, auto_rejoin — so the failure
+	// only ever showed up during an incident.
+	primaryHost, primaryPort := splitHostPort(primaryPeer, defaultPostgresPort)
+
+	// Credentials the rebuild needs to reach the primary.
+	//
+	// pg_basebackup opens a replication connection, so it needs an account, and
+	// the request carried none — the agent was handed a host and expected to
+	// guess. The primary's own admin_dsn is the credential Pontus holds for it,
+	// and it is the one that already works against that node.
+	user, password := replicationCredentials(p.backends(), primaryAddr)
+
+	// Tell the agent which cluster to rebuild instead of letting it guess.
+	//
+	// The agent falls back to scanning the usual locations, which finds the
+	// wrong directory on a host running two clusters and nothing at all on a
+	// non-standard layout. The server knows the answer and Pontus can already
+	// ask it — the promotion path does. Rebuilding is the one that erases a
+	// directory, so it is the last place a guess belongs.
 	req := &endpoints.SetupReplicationRequest{
-		PrimaryHost: primaryHost,
-		PrimaryPort: 5432, // Default
-		// We might need more info here, but for now this is the idea
+		PrimaryHost:         primaryHost,
+		PrimaryPort:         int32(primaryPort),
+		ReplicationUser:     user,
+		ReplicationPassword: password,
+		DataDirectory:       dataDirectoryOf(ctx, target),
 	}
 
 	out, err := agent.SetupReplication(ctx, req)
@@ -317,13 +373,102 @@ func (p *postgresProvisioner) DemoteToReplica(ctx context.Context, backendAddr s
 		return fmt.Errorf("failed to setup replication: %w", err)
 	}
 
+	// Completion must be stated, not assumed.
+	//
+	// This used to `return nil` after draining the stream however it ended, so
+	// an agent that reported an error, or that closed having done nothing at
+	// all, was indistinguishable from one that rebuilt the node. Split-brain
+	// resolution logged "Self-Healing" every few seconds against a node it
+	// never touched, and nothing above it could tell.
+	var completed bool
+	var last string
 	for msg := range out {
+		if msg.Message != "" {
+			last = msg.Message
+		}
+		if isFailureStage(msg.Stage) {
+			return fmt.Errorf("agent at %s could not rebuild %s as a replica of %s: %s",
+				agentAddr, backendAddr, primaryPeer, orNoOutput(last))
+		}
 		if msg.Percentage == 100 {
-			return nil
+			completed = true
 		}
 	}
-
+	if !completed {
+		// Deliberately not orNoOutput: that names a pg_ctl promote cause and
+		// would send an operator hunting a data directory over an unrelated
+		// failure.
+		if last == "" {
+			last = "the agent reported no reason"
+		}
+		return fmt.Errorf("agent at %s ended the replication setup for %s without completing it: %s",
+			agentAddr, backendAddr, last)
+	}
 	return nil
+}
+
+// peerAddressFor returns the address other database nodes should use to reach a
+// backend, falling back to the one the proxy uses.
+func peerAddressFor(backends []pool.Backend, addr string) string {
+	for _, b := range backends {
+		if b.Address() != addr {
+			continue
+		}
+		if server, ok := b.(interface{ PeerAddress() string }); ok {
+			if peer := server.PeerAddress(); peer != "" {
+				return peer
+			}
+		}
+	}
+	return addr
+}
+
+// replicationCredentials finds the admin credentials configured for a backend.
+//
+// Empty when the primary has no admin_dsn, which leaves the agent to fall back
+// on whatever the database host's own pg_hba allows — a trust or peer line is a
+// perfectly ordinary way to run this, and refusing outright would break it.
+func replicationCredentials(backends []pool.Backend, addr string) (user, password string) {
+	for _, b := range backends {
+		if b.Address() != addr {
+			continue
+		}
+		if server, ok := b.(interface{ AdminCredentials() (string, string) }); ok {
+			return server.AdminCredentials()
+		}
+	}
+	return "", ""
+}
+
+// defaultPostgresPort is used only when an address carries no port at all.
+const defaultPostgresPort = 5432
+
+// splitHostPort separates an address, falling back to a default port for a bare
+// host rather than failing a recovery on a formatting detail.
+func splitHostPort(addr string, fallback int) (host string, port int) {
+	h, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr, fallback
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil {
+		return h, fallback
+	}
+	return h, n
+}
+
+// isFailureStage reports whether the agent named this stage as a failure.
+//
+// The progress message has no error field, so a stage name is the only channel
+// an agent has for saying it did not work. Matched loosely on purpose: the
+// alternative to recognising "failed" is treating it as progress.
+func isFailureStage(stage string) bool {
+	switch strings.ToLower(strings.TrimSpace(stage)) {
+	case "error", "failed", "failure":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *postgresProvisioner) getHost(addr string) string {

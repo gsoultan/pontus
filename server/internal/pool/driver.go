@@ -18,6 +18,11 @@ type connDriver struct {
 	dialTimeout time.Duration
 	tlsConfig   *tls.Config
 	handler     protocol.Handler
+
+	// registry records what is open, for the administration console. Kept here
+	// because Connect and Close are the only two places a connection begins or
+	// ends, so a set maintained from them cannot drift from reality.
+	registry *connRegistry
 }
 
 // Connect establishes one new backend connection.
@@ -29,22 +34,33 @@ func (d *connDriver) Connect(ctx context.Context) (*Conn, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewConn(conn), nil
+		return d.track(NewConn(conn)), nil
 	}
 
 	conn, err := dialer.DialContext(ctx, "tcp", d.address)
 	if err != nil {
 		return nil, err
 	}
-	return NewConn(conn), nil
+	return d.track(NewConn(conn)), nil
 }
 
 // Close terminates a connection. It must tolerate one that is already broken.
 func (d *connDriver) Close(_ context.Context, conn *Conn) error {
-	if conn == nil || conn.Conn == nil {
+	if conn == nil {
+		return nil
+	}
+	d.registry.remove(conn)
+	if conn.Conn == nil {
 		return nil
 	}
 	return conn.Conn.Close()
+}
+
+// track records a new connection and returns it, so Connect reads as one
+// expression on both of its paths.
+func (d *connDriver) track(c *Conn) *Conn {
+	d.registry.add(c)
+	return c
 }
 
 // Dead reports whether the socket has already failed. No I/O: Conn records

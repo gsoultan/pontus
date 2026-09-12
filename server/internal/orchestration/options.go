@@ -29,6 +29,21 @@ type Options struct {
 
 	// AutoReattachInterval is the minimum gap between two reattachments.
 	AutoReattachInterval time.Duration
+
+	// AutoRejoin rebuilds a node that is reachable but no longer replicating,
+	// as a replica of the current primary. Replicas only — never the write
+	// role. Off by default because a rebuild can discard a data directory.
+	AutoRejoin bool
+
+	// AutoRejoinInterval is the minimum gap between two attempts on one node.
+	AutoRejoinInterval time.Duration
+
+	// AutoRejoinTimeout bounds a single attempt.
+	AutoRejoinTimeout time.Duration
+
+	// AutoRejoinMaxAttempts is how many rebuilds one node gets before it is
+	// left to an operator.
+	AutoRejoinMaxAttempts int
 }
 
 // sane fills in anything a caller left at zero, so the manager never has to
@@ -42,6 +57,15 @@ func (o Options) sane() Options {
 	}
 	if o.AutoReattachInterval <= 0 {
 		o.AutoReattachInterval = time.Minute
+	}
+	if o.AutoRejoinInterval <= 0 {
+		o.AutoRejoinInterval = 5 * time.Minute
+	}
+	if o.AutoRejoinTimeout <= 0 {
+		o.AutoRejoinTimeout = 30 * time.Minute
+	}
+	if o.AutoRejoinMaxAttempts <= 0 {
+		o.AutoRejoinMaxAttempts = 3
 	}
 	return o
 }

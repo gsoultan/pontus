@@ -56,3 +56,95 @@ a problem with the script or your setup.
   on writes and the blocked-word match is `strings.Contains`. Enable them deliberately.
   See `mem:findings` A1 and C16.
 - macOS has no `setsid` and no `timeout`; don't reach for them in scripts here.
+
+## Picking a container runtime
+
+`scripts/e2e-cluster.sh` supports docker, podman **and Apple `container`** (it has
+`cr_exists`/`cr_running` variants for the last). Without `RUNTIME` the first
+working one wins, which on a machine with two puts the cluster somewhere other
+than where you are looking:
+
+```bash
+RUNTIME=container ./scripts/e2e-cluster.sh up
+```
+
+The full e2e suite passes on Apple container as well as podman.
+
+## Running the e2e suite
+
+Behind the `e2e` build tag and it needs a real PostgreSQL. `requireBackend`
+**skips** rather than fails without one, so a green run proves nothing until you
+check it actually ran.
+
+The variable is `PONTUS_E2E_BACKEND` (not `..._ADDR`; the default is
+`127.0.0.1:5433`). A backend on the default port that Pontus cannot log into
+produces confusing failures deep in SCRAM rather than a skip.
+
+```bash
+podman run -d --name pontus-e2e-pg -e POSTGRES_PASSWORD=pontus_e2e \
+  -p 55432:5432 docker.io/library/postgres:16
+
+PONTUS_E2E_BACKEND=127.0.0.1:55432 PONTUS_E2E_USER=postgres \
+PONTUS_E2E_PASSWORD=pontus_e2e PONTUS_E2E_DB=postgres \
+  go test -tags e2e ./e2e/ -run <Name> -v -timeout 15m
+```
+
+Each test builds the binary and starts a whole stack, so a single test is ~5 s
+and the suite is minutes. `auth.mode: pontus` additionally needs a backend
+`admin_dsn` or an `auth_file` — without either, `buildCredentialStore` logs the
+reason and **silently stays in passthrough**, which reads as a feature not
+working rather than as a misconfiguration. The harness template already sets
+`admin_dsn`.
+
+
+## Regenerating protobuf without reddening CI
+
+CI installs **exact** protoc plugin versions and fails on any `buf generate`
+diff. Generating with whatever is on your PATH rewrites the generator header in
+every `.pb.go` and fails the build on nine files you did not touch — the error
+reads "buf generate produced changes that were not committed" and names them
+all, which looks like a much bigger problem than it is.
+
+Install the pinned set into a temporary GOBIN so a newer toolchain elsewhere is
+left alone (the recipe is also in `AGENTS.md`):
+
+```bash
+export GOBIN=$(mktemp -d)
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.19.2
+export PATH="$GOBIN:$PWD/web/node_modules/.bin:$PATH"   # protoc-gen-es lives in web/
+buf generate
+```
+
+The pinned versions are in `.github/workflows/ci.yml`; check there rather than
+trusting the list above.
+
+## Reproducing the lint gate
+
+CI runs golangci-lint with `only-new-issues: true`, so the tree's few hundred
+pre-existing findings do not count and yours do. Reproduce it exactly with:
+
+```bash
+golangci-lint run --new-from-merge-base=main ./...
+```
+
+Plain `golangci-lint run` reports everything and tells you nothing about whether
+CI will pass.
+
+## The e2e cluster step flake — fixed 2026-09-10
+
+`./scripts/e2e-cluster.sh up` failed about one CI run in three with `psql: ...
+.s.PGSQL.5432 failed: No such file or directory`, and looked like a different
+problem each time because whichever command came next reported it.
+
+Root cause worth remembering for any container-Postgres harness: **the postgres
+image runs a temporary server while it executes the init scripts**, then shuts it
+down and starts the real one. A readiness check over the **unix socket** is
+answered by that temporary server, so it returns during init and the next command
+lands in the gap between the two.
+
+The temporary server is started with `listen_addresses` empty, so **TCP is
+answered by the real server and by nothing else**. `wait_ready` now asks over TCP.
+Do not "simplify" it back to a socket query, and do not paper over it with a
+sleep.
