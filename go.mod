@@ -10,6 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gsoultan/gpool v0.5.0
 	github.com/hashicorp/raft v1.7.3
+	github.com/hashicorp/raft-boltdb/v2 v2.3.1
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/kardianos/service v1.2.4
 	github.com/lib/pq v1.12.3
@@ -21,6 +22,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0
 	golang.org/x/crypto v0.50.0
 	golang.org/x/net v0.53.0
+	golang.org/x/sys v0.43.0
 	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11
@@ -33,6 +35,7 @@ require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/boltdb/bolt v1.3.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -67,6 +70,7 @@ require (
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	go.etcd.io/bbolt v1.3.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
@@ -74,7 +78,6 @@ require (
 	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260120221211-b8f7ae30c516 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect

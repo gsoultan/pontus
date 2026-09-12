@@ -9,11 +9,13 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/gsoultan/pontus/api/proto/domain"
 	"github.com/hashicorp/raft"
+	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
 )
 
 type CommandType string
@@ -54,6 +56,10 @@ type Node struct {
 	// notices second.
 	transport *raft.NetworkTransport
 
+	// store is the durable log and stable store, closed by Stop so a restart in
+	// the same process can reopen the file.
+	store *raftboltdb.BoltStore
+
 	id string
 }
 
@@ -83,10 +89,22 @@ func NewNode(nodeID, addr, dataDir string, bootstrap bool) (*Node, error) {
 		return nil, fmt.Errorf("failed to create snapshot store: %w", err)
 	}
 
-	// For production, we would use a real log store like BoltDB or Badger.
-	// For this task, we'll use in-memory stores to keep it lightweight.
-	logStore := raft.NewInmemStore()
-	stableStore := raft.NewInmemStore()
+	// On disk, because Raft's safety depends on it.
+	//
+	// These held raft.NewInmemStore, described as keeping things lightweight.
+	// They do not: the log holds the entries this node has acknowledged, and
+	// the stable store holds `currentTerm` and `votedFor` — the two values that
+	// stop a node voting twice in one term. A node that forgets them and comes
+	// back can elect a second leader in a term that already has one, which is
+	// exactly the split brain a control plane runs consensus to avoid. It also
+	// lost every committed entry on restart, which a test now pins.
+	//
+	// bbolt is pure Go, so CGO_ENABLED=0 is unaffected.
+	store, err := raftboltdb.NewBoltStore(filepath.Join(dataDir, "raft.db"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to open the raft store: %w", err)
+	}
+	logStore, stableStore := store, store
 
 	// Create FSM
 	fsmInstance := &fsm{}
@@ -109,14 +127,18 @@ func NewNode(nodeID, addr, dataDir string, bootstrap bool) (*Node, error) {
 		// Checked. A discarded error here returns a node that can never elect a
 		// leader, so every later call reports "not leader" and nothing says
 		// why — the failure is at startup and the symptom is at failover.
+		// ErrCantBootstrap means this node already has state, which is the
+		// ordinary case on a restart: a service unit passes the same flags
+		// every time, and a node with a log must rejoin rather than start over.
 		if err := r.BootstrapCluster(configuration).Error(); err != nil &&
 			!errors.Is(err, raft.ErrCantBootstrap) {
 			_ = transport.Close()
+			_ = store.Close()
 			return nil, fmt.Errorf("failed to bootstrap cluster: %w", err)
 		}
 	}
 
-	return &Node{raft: r, fsm: fsmInstance, transport: transport, id: nodeID}, nil
+	return &Node{raft: r, fsm: fsmInstance, transport: transport, store: store, id: nodeID}, nil
 }
 
 // Start satisfies the orchestration.Consensus interface. Raft is already
@@ -129,14 +151,20 @@ func (n *Node) Stop() error {
 		return nil
 	}
 
-	var shutdownErr error
+	var errs []error
 	if n.raft != nil {
-		shutdownErr = n.raft.Shutdown().Error()
+		errs = append(errs, n.raft.Shutdown().Error())
 	}
 	if n.transport != nil {
-		return errors.Join(shutdownErr, n.transport.Close())
+		errs = append(errs, n.transport.Close())
 	}
-	return shutdownErr
+	// Last: bolt takes a file lock, so a restart in the same process cannot
+	// reopen the store until this one lets go of it.
+	if n.store != nil {
+		errs = append(errs, n.store.Close())
+		n.store = nil
+	}
+	return errors.Join(errs...)
 }
 
 // LeaderID is the ID of the node currently holding leadership, or empty when
@@ -146,7 +174,49 @@ func (n *Node) LeaderID() string {
 	return string(id)
 }
 
+// WaitForApplied blocks until this node's FSM reflects everything committed
+// before the call.
+//
+// Reads here are local: GetPrimary and GetConfig answer from applied state,
+// which is the ordinary Raft trade — cheap reads, possibly a little stale. On a
+// node that has just started that trade is different in kind, because the log
+// is replayed into the FSM asynchronously and leadership can arrive first. The
+// answer is then not stale but *empty*, and to the failover manager an empty
+// primary is not "ask again", it is "there is no primary" — which is a reason
+// to promote one.
+//
+// So a caller that acts on a read, rather than merely displays it, should wait
+// once after startup. A Barrier is the leader's way of asking; a follower has
+// no way to append, so it watches its applied index reach the committed one.
+func (n *Node) WaitForApplied(ctx context.Context) error {
+	if n == nil || n.raft == nil {
+		return nil
+	}
+
+	if n.IsLeader() {
+		return n.raft.Barrier(applyTimeout).Error()
+	}
+
+	// Polled, because hashicorp/raft offers no signal for this on a follower.
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		if n.raft.AppliedIndex() >= n.raft.LastIndex() {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
 // GetPrimary returns the address the cluster agrees holds the write role.
+//
+// A local read of applied state. See WaitForApplied before acting on it at
+// startup.
 func (n *Node) GetPrimary() (string, error) {
 	n.fsm.mu.RLock()
 	defer n.fsm.mu.RUnlock()
