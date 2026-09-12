@@ -20,6 +20,42 @@ halves drifting apart again.
 Turning cluster-wide agreement on for an existing deployment changes who may
 promote, so it was left off deliberately.
 
+## The defect that mattered most (2026-09-13)
+
+**The log and stable store were `raft.NewInmemStore`**, with a comment calling
+that lightweight. It is not lightweight, it is unsound. The log holds entries the
+node has acknowledged; the stable store holds `currentTerm` and `votedFor`, the
+two values that stop a node voting twice in one term. A node that forgets them
+and returns can elect a second leader in a term that already has one — the split
+brain consensus exists to prevent.
+
+Measured: a node committed a primary and a config, restarted, and came back with
+**both empty**, having bootstrapped itself into a fresh cluster. Now
+`raft-boltdb/v2` (bbolt, pure Go — CGO_ENABLED=0 unaffected). `Stop` closes the
+store **last**, because bolt holds a file lock a restart needs.
+
+### Reads are empty, not stale, just after startup
+
+Intrinsic rather than a bug, and it bit the restart test about one run in three.
+A restarted node replays its log into the FSM **asynchronously** and leadership
+can arrive first, so a read taken straight after becoming leader returns nothing.
+To the failover manager an empty primary is not "ask again", it is "there is no
+primary" — a reason to promote one.
+
+`WaitForApplied(ctx)` is the wait a caller that *acts* on a read must do: a
+`Barrier` on the leader, and on a follower the applied index reaching the
+committed one. A caller that merely displays a value can skip it.
+
+## Testing it: use more than one node
+
+The first tests were single-node, which exercises the FSM and the API and **none
+of the consensus** — one node elects itself unopposed and commits locally.
+`cluster_test.go` runs three on loopback, in-process: same transport, election
+and replication code as three hosts, without containers or minutes. It covers
+election, replication to followers, a follower refusing writes, surviving the
+loss of the leader with committed state intact, and a minority refusing to
+commit.
+
 ## Four defects the first tests found
 
 Each has a test that fails against the previous code.
