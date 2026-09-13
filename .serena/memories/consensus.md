@@ -1,6 +1,24 @@
 # Consensus (`server/internal/consensus`)
 
-**Correct and tested since 2026-09-11, and still not wired to anything.**
+**Wired and on-by-configuration since 2026-09-13.** `consensus:` in the config
+turns it on; off by default, because one Pontus needs agreement with nobody.
+
+With it on, only the Raft leader acts on the cluster — `FailoverManager.monitor`
+returns early on a follower, so promotion, follow-primary and rejoin all stop.
+That is the point, and it is why enabling it is a deliberate choice.
+
+**The cross-host half of a pair.** The orchestration lock (`mem:zero_downtime_upgrade`)
+stops two Pontus processes *on one host* from both acting, which an overlapping
+binary upgrade creates. Consensus stops two *hosts*. Both apply; neither replaces
+the other.
+
+## There were two implementations
+
+`orchestration/raft.go` held a second, independent Raft — reachable by neither
+caller, satisfying the `Consensus` interface, and carrying **every** defect the
+first one had: in-memory stores, a discarded `BootstrapCluster` error, an apply
+checked on `Error()` alone, a `Stop` that left the transport open. Deleted
+2026-09-13. Two implementations of consensus is how they drift.
 
 ## The state of it
 
@@ -45,6 +63,21 @@ primary" — a reason to promote one.
 `WaitForApplied(ctx)` is the wait a caller that *acts* on a read must do: a
 `Barrier` on the leader, and on a follower the applied index reaching the
 committed one. A caller that merely displays a value can skip it.
+
+## Config rules that are refused at startup
+
+Every one of these shows up later as "no leader", and a cluster that never elects
+one looks exactly like a cluster still waiting to — so the difference is checked
+where it is visible, in config.
+
+- **Exactly one node bootstraps**, and only the first time. Several form several
+  clusters of one, each with its own leader. A node with existing state ignores
+  the flag (`ErrCantBootstrap`), so leaving it in a unit file is safe.
+- **`node_id` unique and stable.** Raft records votes against it; duplicates are
+  refused because two nodes sharing one can elect two leaders in a term.
+- **The data directory must be durable** — see the store defect below.
+- Peers are added by the bootstrapping node *after* it wins an election, so that
+  runs in a goroutine. Adding an existing voter is a no-op.
 
 ## Testing it: use more than one node
 
