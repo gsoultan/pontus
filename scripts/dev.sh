@@ -674,7 +674,7 @@ start_vite() {
 
 banner() {
   local admin_token
-  admin_token="$(grep '^admin_token:' "$CONFIG" | cut -d'"' -f2)"
+  admin_token="$(cfg_scalar admin_token)"
 
   printf '\n%s' "$B"
   cat <<EOF
@@ -685,7 +685,7 @@ $N
   ${B}Dashboard${N}              http://localhost:$MGMT_PORT
   ${B}ConnectRPC${N}             http://localhost:$MGMT_PORT/api.proto.service.ManagementService/
   ${B}Metrics${N}                http://localhost:$MGMT_PORT/metrics
-  ${B}Login${N}                  admin / admin123   ${DIM}(auto-created on first run)${N}
+  ${B}Login${N}                  admin / ${DIM}the password printed once in the log above${N}
   ${B}admin_token${N}            $admin_token
 
   ${Y}sslmode=disable is required.${N} There is no SSLRequest handling on the wire, so a
