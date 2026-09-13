@@ -286,6 +286,17 @@ cr_running() {
   esac
 }
 
+# The host port $1 already publishes for 5432, or empty. A port mapping is fixed when the
+# container is created, so this is the only way to know whether starting it would land
+# where this run expects. Apple's `container` has no `port` subcommand; inspect is JSON.
+cr_host_port() {
+  case "$CR_KIND" in
+    docker) "$CR" port "$1" 5432 2>/dev/null | sed -n 's/.*:\([0-9]\{1,\}\)$/\1/p' | head -1 ;;
+    apple)  "$CR" inspect "$1" 2>/dev/null |
+              sed -n 's/.*"hostPort" *: *\([0-9]\{1,\}\).*/\1/p' | head -1 ;;
+  esac
+}
+
 doctor() {
   preflight
   step "Ports"
@@ -434,11 +445,32 @@ build_binaries() {
 
 # ---------------------------------------------------------------- postgres
 
+create_db_container() {
+  info "running $PG_IMAGE as $PG_CONTAINER on port $PG_PORT"
+  # scram-sha-256 deliberately: it is PostgreSQL's default since 14 and the harder
+  # path, so the dev loop exercises the real handshake rather than a trust shortcut.
+  "$CR" run -d --name "$PG_CONTAINER" \
+    -e POSTGRES_USER="$PG_USER" \
+    -e POSTGRES_PASSWORD="$PG_PASSWORD" \
+    -e POSTGRES_DB="$PG_DB" \
+    -e POSTGRES_HOST_AUTH_METHOD=scram-sha-256 \
+    -e POSTGRES_INITDB_ARGS="--auth-host=scram-sha-256" \
+    -p "$PG_PORT:5432" \
+    "$PG_IMAGE" >/dev/null
+}
+
 start_db() {
   step "Postgres backend"
 
   if port_open "$PG_HOST" "$PG_PORT"; then
-    ok "reachable at $PG_HOST:$PG_PORT (already running — not managed by this script)"
+    if cr_running "$PG_CONTAINER"; then
+      ok "reachable at $PG_HOST:$PG_PORT ($PG_CONTAINER)"
+    else
+      # Deliberately still used — plenty of people run their own Postgres — but it is not
+      # automatically *ours*, and "already running" reads like it is.
+      warn "$PG_HOST:$PG_PORT is answering but it is not $PG_CONTAINER — using it anyway"
+      info "${DIM}another project may own it; set PG_PORT to a free port to get your own${N}"
+    fi
     return 0
   fi
 
@@ -456,21 +488,20 @@ EOF
     die "no database available"
   fi
 
-  if cr_exists "$PG_CONTAINER"; then
+  local mapped=""
+  cr_exists "$PG_CONTAINER" && mapped="$(cr_host_port "$PG_CONTAINER")"
+
+  if cr_exists "$PG_CONTAINER" && [ -n "$mapped" ] && [ "$mapped" != "$PG_PORT" ]; then
+    # Starting it would publish :$mapped, and the wait below would sit on :$PG_PORT for
+    # a minute before failing with a timeout that names neither port.
+    info "$PG_CONTAINER publishes :$mapped but this run wants :$PG_PORT — recreating it"
+    "$CR" rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+    create_db_container
+  elif cr_exists "$PG_CONTAINER"; then
     info "starting existing container $PG_CONTAINER"
     "$CR" start "$PG_CONTAINER" >/dev/null
   else
-    info "running $PG_IMAGE as $PG_CONTAINER on port $PG_PORT"
-    # scram-sha-256 deliberately: it is PostgreSQL's default since 14 and the harder
-    # path, so the dev loop exercises the real handshake rather than a trust shortcut.
-    "$CR" run -d --name "$PG_CONTAINER" \
-      -e POSTGRES_USER="$PG_USER" \
-      -e POSTGRES_PASSWORD="$PG_PASSWORD" \
-      -e POSTGRES_DB="$PG_DB" \
-      -e POSTGRES_HOST_AUTH_METHOD=scram-sha-256 \
-      -e POSTGRES_INITDB_ARGS="--auth-host=scram-sha-256" \
-      -p "$PG_PORT:5432" \
-      "$PG_IMAGE" >/dev/null
+    create_db_container
   fi
   MANAGED_DB=1
 
@@ -520,20 +551,30 @@ cfg_agent_port() {
   sed -n 's/^ *agent_addr: *"[^:]*:\([0-9]\{1,\}\)".*/\1/p' "$CONFIG" 2>/dev/null | head -1
 }
 
+cfg_backend_port() {
+  sed -n 's/^ *- *addr: *"[^:]*:\([0-9]\{1,\}\)".*/\1/p' "$CONFIG" 2>/dev/null | head -1
+}
+
 reconcile_config() {
   [ -f "$CONFIG" ] || return 0
 
-  local cp mp ap tok reason
+  local cp mp ap bp tok reason
   cp="$(cfg_port proxy_addr)"
   mp="$(cfg_port mgmt_addr)"
   [ -n "$cp" ] || return 0
   ap="$(cfg_agent_port)"
+  bp="$(cfg_backend_port)"
   tok="$(cfg_scalar agent_token)"
 
   if [ "$cp" != "$PROXY_PORT" ] || [ "$mp" != "$MGMT_PORT" ]; then
     reason="it binds :$cp/:$mp but this run wants :$PROXY_PORT/:$MGMT_PORT"
   elif [ "$WITH_AGENT" -eq 1 ] && [ -n "$ap" ] && [ "$ap" != "$AGENT_PORT" ]; then
     reason="its backend dials the agent on :$ap but this run starts one on :$AGENT_PORT"
+  elif [ -n "$bp" ] && [ "$bp" != "$PG_PORT" ]; then
+    # The backend address is the one thing here that points off this machine's control
+    # plane at a real database. Pointing at the wrong one is silent: the stack comes up
+    # and proxies to somebody else's data.
+    reason="its backend is $PG_HOST:$bp but this run wants $PG_HOST:$PG_PORT"
   elif [ "$WITH_AGENT" -eq 1 ] && [ -z "$tok" ]; then
     reason="it has no agent_token, and the agent refuses to start without one"
   else
