@@ -175,6 +175,13 @@ agent_tls:                    # separate from backend_tls on purpose — differe
 agent_allow_cleartext: false  # reach a remote agent without encryption. Off, and
                               # refused rather than warned about — see below.
 
+consensus:                    # Raft between control planes. Off by default; with it
+  enabled: false              # on, only the leader acts on the cluster. Exactly one
+  node_id: pontus-1           # node bootstraps, node_id must be unique and stable,
+  bind_addr: "10.0.0.1:9095"  # and the data directory must be durable — the stable
+  bootstrap: false            # store holds the votes this node has cast.
+  peers: []
+
 reuse_port: false             # let a second Pontus bind the same addresses, so a
                               # binary upgrade does not drop connections. Unix only.
                               # Costs the "address already in use" guard.

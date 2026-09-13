@@ -121,6 +121,10 @@ type Options struct {
 	// exporters and runbooks a deployment already has keep working. Nil is off.
 	AdminConsole *AdminConsole `json:"admin_console,omitzero" yaml:"admin_console"`
 
+	// Consensus runs Raft between control planes, so only one decides a
+	// failover. Nil is off, which is right for a single Pontus.
+	Consensus *Consensus `json:"consensus,omitzero" yaml:"consensus"`
+
 	// Databases routes and bounds individual client-visible database names —
 	// pgbouncer's `[databases]`. Empty means every database resolves to itself
 	// under the global max_conns.
@@ -254,6 +258,9 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.AdminConsole != nil {
 		c.AdminConsole = other.AdminConsole
+	}
+	if other.Consensus != nil {
+		c.Consensus = other.Consensus
 	}
 	if len(other.Databases) > 0 {
 		c.Databases = other.Databases

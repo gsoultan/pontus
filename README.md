@@ -243,6 +243,43 @@ failover:
   `pontus_auto_rejoin_total{result="exhausted"}` (Pontus has given up and the
   node needs a person).
 
+### Consensus between control planes
+
+Off by default, and right to leave off for a single Pontus. With several, only
+the Raft leader acts on the cluster — a follower stops promoting, re-pointing
+and rebuilding entirely. That is the point: two control planes that each see no
+healthy primary would otherwise promote two different replicas.
+
+```yaml
+consensus:
+  enabled: true
+  node_id: pontus-1            # unique and stable — Raft records votes against it
+  bind_addr: "10.0.0.1:9095"   # peers dial this, so not a loopback address
+  bootstrap: true              # exactly one node, and only the first time
+  peers:                       # the bootstrapping node adds these
+    - node_id: pontus-2
+      addr: "10.0.0.2:9095"
+    - node_id: pontus-3
+      addr: "10.0.0.3:9095"
+```
+
+- **Exactly one node bootstraps.** Several form several clusters of one, each
+  with its own leader and none aware of the others — the split brain this
+  prevents, arranged at startup. A node with existing state ignores the flag, so
+  leaving it in a unit file is safe after the first start.
+- **`node_id` must be unique and stable.** Raft records votes against it; two
+  nodes sharing one can elect two leaders in a term. Duplicates are refused at
+  startup.
+- **The data directory must be durable.** The log holds entries this node has
+  acknowledged and the stable store holds the votes it has cast. On tmpfs, a
+  restart re-enters a term it has already voted in.
+- **Use an odd number.** Three tolerates one failure; two tolerates none, because
+  a majority of two is still two.
+
+This is the cross-host half of a pair. The orchestration lock stops two Pontus
+processes *on one host* from both acting — which an overlapping binary upgrade
+creates — and consensus stops two hosts. Both apply.
+
 ### Zero-downtime upgrades
 
 Without help, replacing the binary is an outage: the old process holds the

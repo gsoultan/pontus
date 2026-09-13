@@ -163,6 +163,24 @@ func (m *FailoverManager) monitor(ctx context.Context) {
 		var consensusPrimary string
 		if m.consensus != nil {
 			consensusPrimary, _ = m.consensus.GetPrimary()
+
+			// An empty answer here decides a promotion, so it has to mean
+			// "nobody holds the write role" rather than "this node has not
+			// finished replaying its log". Those look identical from the read,
+			// and only one of them is a reason to act.
+			//
+			// Waited for only when the answer is empty, which is rare: on the
+			// leader this appends a Barrier entry, and doing that on every tick
+			// would grow the log for nothing.
+			if consensusPrimary == "" {
+				waitCtx, cancel := context.WithTimeout(ctx, consensusReadTimeout)
+				if err := m.consensus.WaitForApplied(waitCtx); err != nil {
+					slog.Warn("Could not confirm the consensus state is current; "+
+						"treating the primary as unknown", "error", err)
+				}
+				cancel()
+				consensusPrimary, _ = m.consensus.GetPrimary()
+			}
 		}
 
 		var winner pool.Backend
@@ -227,6 +245,11 @@ func (m *FailoverManager) monitor(ctx context.Context) {
 	// stream again on its own.
 	m.reconcileRejoins(ctx, healthyPrimaries[0].Address(), backends)
 }
+
+// consensusReadTimeout bounds the wait for a node's state to catch up. Short,
+// because this runs inside a monitor tick and a slow answer must not hold up
+// detecting the next failure.
+const consensusReadTimeout = 3 * time.Second
 
 // setState stores the failover state under the lock.
 //

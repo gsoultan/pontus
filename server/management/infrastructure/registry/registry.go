@@ -46,6 +46,11 @@ type Registry struct {
 	// for the life of the registry and released on shutdown, so a process
 	// waiting through an upgrade can take over.
 	orchestrationLock *listen.OrchestrationLock
+
+	// consensus is Raft between control planes, or nil when it is off. One per
+	// process: agreement is about who decides a failover for this deployment,
+	// and every proxy in it shares that answer.
+	consensus orchestration2.Consensus
 }
 
 // claimOrchestration decides whether this process acts on the cluster.
@@ -110,6 +115,7 @@ func NewRegistry(ctx context.Context, store store.Project, userStore store.User,
 		defaults:    defaults,
 
 		orchestrationLock: claimOrchestration(defaults),
+		consensus:         startConsensus(ctx, defaults),
 	}
 
 	// Load and start projects
@@ -232,7 +238,7 @@ func (r *Registry) CreateProxyState(ctx context.Context, prcfg *domain.ProxyConf
 	}
 	applyAgentTLS(r.defaults)
 	orchestration2.SetAllowCleartextAgents(r.defaults != nil && r.defaults.AgentAllowCleartext)
-	failoverMgr := orchestration2.NewFailoverManager(provisioner, nil,
+	failoverMgr := orchestration2.NewFailoverManager(provisioner, r.consensus,
 		func() []pool2.Backend { return backends }, failoverOptions(r.defaults))
 	go failoverMgr.Start(ctx)
 
@@ -480,6 +486,11 @@ func (r *Registry) StopAll(ctx context.Context) {
 	// orchestration over while this one drains rather than after it exits.
 	if err := r.orchestrationLock.Release(); err != nil {
 		slog.Warn("Could not release the orchestration lock", "error", err)
+	}
+	if r.consensus != nil {
+		if err := r.consensus.Stop(); err != nil {
+			slog.Warn("Could not stop consensus", "error", err)
+		}
 	}
 
 	type target struct {

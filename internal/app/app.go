@@ -72,6 +72,13 @@ func (a *App) Run(ctx context.Context) error {
 		return fmt.Errorf("databases is misconfigured: %w", err)
 	}
 
+	// Refused at startup, because every one of these failures shows up later as
+	// "no leader" — and a cluster that never elects one looks exactly like a
+	// cluster still waiting to.
+	if err := a.cfg.Consensus.Validate(); err != nil {
+		return fmt.Errorf("consensus is misconfigured: %w", err)
+	}
+
 	a.backendTLS, _ = proxy.CreateTLSConfig(a.cfg.BackendTLS)
 
 	// Initialize Management DB (SQLite)
