@@ -11,6 +11,7 @@
 # Flags:  --no-db  --no-ui  --no-agent  --rebuild-ui  --reset  -h|--help
 # Env:    PROXY_PORT MGMT_PORT AGENT_PORT VITE_PORT
 #         PG_HOST PG_PORT PG_USER PG_PASSWORD PG_DB
+#         RUNTIME  docker | podman | container  (default: first one that works)
 #
 # Four things about this repo drive what happens below:
 #   1. web/ui.go does //go:embed all:dist, so web/dist must exist before ANY go build
@@ -247,6 +248,19 @@ preflight() {
 # run/exec/start/stop flags but has no `info`, and its `ls` has no Go-template --format,
 # so listing goes through --quiet (where the ID is the --name we gave it).
 detect_runtime() {
+  # RUNTIME names one explicitly, the same variable scripts/e2e-cluster.sh takes. Without
+  # it the first working runtime wins, which on a machine with two puts the dev database
+  # somewhere other than where you are looking.
+  if [ -n "${RUNTIME:-}" ]; then
+    have "$RUNTIME" || die "RUNTIME=$RUNTIME is not on PATH"
+    case "$RUNTIME" in
+      docker|podman) CR="$RUNTIME"; CR_KIND="docker" ;;
+      container)     CR="$RUNTIME"; CR_KIND="apple"  ;;
+      *) die "RUNTIME=$RUNTIME is not one of: docker, podman, container" ;;
+    esac
+    return 0
+  fi
+
   if have docker && docker info >/dev/null 2>&1; then
     CR="docker"; CR_KIND="docker"
   elif have podman && podman info >/dev/null 2>&1; then
