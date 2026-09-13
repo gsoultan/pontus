@@ -68,16 +68,39 @@ a problem with the script or your setup.
 
 ## Picking a container runtime
 
-`scripts/e2e-cluster.sh` supports docker, podman **and Apple `container`** (it has
-`cr_exists`/`cr_running` variants for the last). Without `RUNTIME` the first
-working one wins, which on a machine with two puts the cluster somewhere other
-than where you are looking:
+Both `scripts/e2e-cluster.sh` and (since 2026-09-13) `scripts/dev.sh` support docker,
+podman **and Apple `container`**, and both take `RUNTIME` to choose. Without it the first
+working one wins — docker, then podman, then `container` — which on a machine with two
+puts the database somewhere other than where you are looking:
 
 ```bash
 RUNTIME=container ./scripts/e2e-cluster.sh up
+RUNTIME=container PG_PORT=5436 ./scripts/dev.sh
 ```
 
+Apple's `container` takes the same run/exec/start/stop flags but has no `info` and no
+`port` subcommand, and its `ls` has no Go-template `--format` — hence the `cr_exists`,
+`cr_running` and `cr_host_port` dialect wrappers. `container rm -f` does work.
+
 The full e2e suite passes on Apple container as well as podman.
+
+## PG_PORT and the database you did not mean to use
+
+`start_db` treats **anything** listening on `PG_PORT` as the backend and uses it. That is
+deliberate — running your own Postgres is supported — but it means a container from an
+unrelated project publishing the same port is adopted just as readily, and the stack comes
+up looking healthy while proxying to that project's data. It now names whose it is rather
+than saying "already running"; believe the warning.
+
+Two more things used to ignore `PG_PORT`, both fixed 2026-09-13 and both silent when they
+were wrong: a container's port mapping is fixed at creation, so an existing `pontus-dev-pg`
+built for another port was started as-is and the readiness wait timed out on a port nothing
+served; and `reconcile_config` never compared the config's **backend** address, so a
+regenerated config kept dialling the old database.
+
+On this machine 5432–5435 are taken by other projects (`athena-dev-pg`, `argus-postgres`,
+`storm-orders`, `storm-pg`), so the Pontus dev database is an Apple container on **5436**.
+Check with `container list -a` before assuming a port is yours.
 
 ## Running the e2e suite
 
