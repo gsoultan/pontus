@@ -1,6 +1,6 @@
 # Running Pontus for Development
 
-`scripts/dev.sh` orchestrates the whole local stack. It exists because four things about
+`scripts/dev.sh` orchestrates the whole local stack. It exists because five things about
 this repo make a naive `go run ./cmd/pontus` fail, and none of them are guessable.
 
 ```bash
@@ -15,7 +15,7 @@ Flags: `--no-db --no-ui --no-agent --rebuild-ui --reset`.
 Env: `PROXY_PORT MGMT_PORT AGENT_PORT VITE_PORT PG_HOST PG_PORT PG_USER PG_PASSWORD PG_DB`.
 Everything it generates lives in `.dev/` (gitignored): config, SQLite data, logs, binaries.
 
-## The four traps it works around
+## The five traps it works around
 
 1. **`web/dist` must exist before the Go build, not after.** `web/ui.go` does
    `//go:embed all:dist` and `web/dist` is gitignored, so a clean checkout cannot compile
@@ -23,10 +23,19 @@ Everything it generates lives in `.dev/` (gitignored): config, SQLite data, logs
    placeholder `index.html` if the bundle fails so backend work is not blocked.
 2. **`agent_addr` is mandatory.** `pool.NewServer` returns an error without it, so every
    backend silently fails to construct unless `pontus-agent` is running. The script starts
-   it on `:9091` and points the generated config at it.
-3. **`go.sum` is gitignored and incomplete** — `go build ./...` fails until
+   it on `127.0.0.1:9091` and points the generated config at it.
+3. **The agent has two refusals stacked behind each other, and they read as one bug.**
+   It `log.Fatal`s without a token, and *then* refuses to serve a non-loopback address
+   without TLS. `-addr ":9091"` is a wildcard bind, so fixing only the token moves the
+   failure one gate down rather than fixing it. Both ends need the same value, so
+   `write_config` generates `agent_token` into the backend and `start_agent` reads it
+   back out via `PONTUS_AGENT_TOKEN` — never `-token`, which is visible in `ps`.
+   Do not "fix" a failing agent with `-insecure`: an agent that serves `ExecuteCommand`
+   and `RemoveDatabase` as root with no front door is the shape the refusal exists for,
+   and a dev stack that skips auth never exercises the path that ships.
+4. **`go.sum` is gitignored and incomplete** — `go build ./...` fails until
    `go mod download all` fills it in. The script does that when it detects the failure.
-4. **`sslmode=disable` is mandatory.** There is no `SSLRequest` handling on the wire, so a
+5. **`sslmode=disable` is mandatory.** There is no `SSLRequest` handling on the wire, so a
    client negotiating TLS (libpq's default `sslmode=prefer`) hangs instead of connecting.
 
 ## What actually happens when you connect
