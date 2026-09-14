@@ -40,11 +40,13 @@ username, the length prefixes.
   re-normalizes and re-classifies. A rewrite that skips re-classification is a bypass.
 - **Rate limiting** is global + per-tenant, priced by query cost from the token stream.
 - **Exfiltration guard** — `fwConfig.MaxResponseSizeMB` bounds a response in `proxyResponse`.
-- **TLS** — `server/proxy/tls.go` *can* build a client-facing config, but nothing wires one:
-  only `cfg.BackendTLS` is used, the proxy listener is a plain `net.Listen`, and there is no
-  Postgres `SSLRequest` handling at all. **Client traffic is plaintext today and a default
-  `sslmode=prefer` client hangs.** `InsecureSkipVerify` is config-exposed, so it must stay off
-  by default and be documented as a development-only knob. See `mem:findings` A3, A4.
+- **TLS — wired since 2026-08-17 (A3/A4).** Corrected 2026-09-14: this entry claimed for
+  weeks that client traffic was plaintext, and it had not been true since August.
+  `gateway.go:335` installs the config via `protocol.SetClientTLS`, and
+  `protocol/client_tls.go` answers the client's `SSLRequest` and upgrades **in place** —
+  it cannot be a `tls.NewListener` around the accept loop, because PostgreSQL negotiates
+  encryption inside its own protocol rather than before it. `InsecureSkipVerify` is
+  config-exposed, so it must stay off by default and be documented as development-only.
 
 Non-negotiables: a fast path may *cheapen* a check but never *skip* it; a length prefix from
 a client is bounded before it is trusted; anything that reuses a response across sessions
@@ -54,8 +56,11 @@ a client is bounded before it is trusted; anything that reuses a response across
 
 Serves the ConnectRPC API, `/metrics`, and the dashboard on one mux.
 
-- `middleware/auth.go` — `/Login` open; static `admin_token` accepted; otherwise HS256 JWT
-  with a role claim. Non-admins are limited to a read-only allowlist.
+- `middleware/auth.go` — `/Login` open; static `admin_token` accepted; otherwise a
+  **PASETO v4.local** token with a role claim (`pkg/auth/token.go`). Non-admins are limited
+  to a read-only allowlist. Corrected 2026-09-14: this said HS256 JWT. HS256 is gone —
+  there is no `alg` header to confuse, so the missing `jwt.WithValidMethods` is moot rather
+  than outstanding, and `NewIssuer` returns `ErrNoKey` instead of falling back to a literal.
 - **Every new RPC is admin-only unless it is deliberately added to the allowlist.**
 - Passwords are bcrypt (`pkg/auth`), default cost. Login compares hash, never plaintext.
 - The dashboard renders captured SQL and log lines — always escaped, never as HTML or

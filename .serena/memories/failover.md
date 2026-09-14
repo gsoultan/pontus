@@ -147,10 +147,18 @@ still stubs.
 
 ## Still open
 
-- No two-backend E2E topology, so promotion, replica routing and failover are only covered
-  by unit tests with mock backends. This is the highest-value gap in the suite. The harness
-  config (`e2e/harness_test.go`) declares one `role: primary` backend, and its `agent_addr`
-  points at a port with nothing listening.
+- **Corrected 2026-09-14: a two-backend E2E topology exists.** `scripts/e2e-cluster.sh`
+  builds a primary and a streaming standby, CI passes `PONTUS_E2E_BACKEND` and
+  `PONTUS_E2E_REPLICA`, and `e2e/local_cluster_test.go` goes further — two real clusters
+  with a real `pontus-agent` process beside each, which is the only shape where the agent
+  survives `pg_ctl stop` on its own database.
+
+  The gap that *is* real is narrower and worse: **none of the failover tests run in CI.**
+  `requireLocalPostgres` skips unless `initdb`/`pg_ctl`/`pg_basebackup`/`postgres` are on
+  `PATH`, and `.github/workflows/ci.yml` adds only Go and node bins;
+  `e2e/primary_loss_test.go` needs `PONTUS_E2E_DISRUPTIVE=1`, which CI does not set; and
+  `e2e/promotion_test.go` / `e2e/rejoin_test.go` still skip outright. So automatic
+  promotion is proven on a laptop and unproven on the code that ships.
 - The agent's own boundary *is* covered end to end now (`e2e/agent_test.go`): fail-closed
   startup, token rejection, allowlist enforcement. No database needed, ~9s.
 - Management state (projects, users, settings) is not replicated by Raft between control

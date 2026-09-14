@@ -698,8 +698,11 @@ Everything else is open. None of the open items are precedent to copy.
   however they were configured. `pkg/config`'s wiring test cannot catch this: it proves a
   field is *referenced* somewhere, not that it reaches the code that acts on it.
 
-- **C8. The query-timeout context starts before the client read** (`gateway.go`), so a session
-  idle longer than `query_timeout` gets an already-expired context for its next query.
+- **C8 [FIXED — verified 2026-09-14]. The query-timeout context starts after the client read.**
+  `gateway.go:954` calls `withQueryTimeout` below the read that returned the statement, with
+  the comment "The clock starts now: there is a statement to run". A session idle longer than
+  `query_timeout` gets a full budget for its next query. This entry claimed otherwise; it was
+  stale, not a live finding.
 
 - **C9. Hot-reload data race.** `reconfigure` writes `chain`, `fwConfig`, `shadowBackends`,
   `pauseCond` under `configMu`; `handleClient` reads `g.chain` and `g.fwConfig` with no lock.
