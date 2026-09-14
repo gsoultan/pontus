@@ -12,6 +12,40 @@ Out of scope for 1.0, deliberately: MySQL, Raft-replicated management state,
 
 ---
 
+## Status — 2026-09-14
+
+Track A complete. Track B wired and verified locally, pending its first CI run.
+Track C found more than it covered: six defects, each of which produced a Pontus
+that came up healthy and had quietly stopped doing something it reported doing.
+
+| # | Defect | Where |
+| :--- | :--- | :--- |
+| E1 | after every `reuse_port` upgrade the surviving process ran **no failover at all**, while logging that it would take over | `registry.go` |
+| E2 | `UpdateConfig` reported success over a commented-out `os.WriteFile` | `agent/infrastructure/management.go` |
+| E3 | the config-write allowlist was a raw string prefix; `..` walked out of it, on a root process | `agent/infrastructure` |
+| E4 | the pg_hba.conf validator passed a file of pure comments — a full database lockout | `agent/infrastructure/validator` |
+| E5 | the legacy JSON migration read the wrong directory and ran its two halves in an order that destroyed its own input | `internal/app` |
+| E6 | `SetClusterConfig` persisted values it could not parse, then reported success | `management/infrastructure/manager` |
+
+Each fix ships a test that fails against the unfixed code. E3 landed before E2
+deliberately: a traversal guard on a no-op write is theatre, and turning the
+write on first would have been the reverse.
+
+**Still open, and why:**
+
+- **E7 — MySQL is still a shell.** Now refused at startup without
+  `experimental_mysql: true`. Finish it or delete it; do not un-gate it.
+- **E8 — `pkg/repository` is dead code.** 342 lines, zero importers, duplicating
+  `server/management/store`. Deliberately *not* covered: testing dead code makes
+  it look maintained. Delete it or wire it.
+- **E9 — no versioned schema migration.** Idempotent today and pinned by a test;
+  the first migration that rewrites anything breaks a downgrade with no version
+  for an older binary to refuse on.
+- **Track E — no load numbers.** A 24h soak cannot be run in a working session.
+
+
+---
+
 ## Track A — Stop claiming what the code does not do (1–2 days)
 
 **A1. Gate MySQL behind an explicit opt-in.**
