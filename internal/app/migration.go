@@ -10,14 +10,29 @@ import (
 	"github.com/gsoultan/pontus/server/management/store"
 )
 
-// MigrateProjects handles conversion of old projects.json format to the new multi-proxy structure.
-func MigrateProjects(projectStore store.Project) {
+// MigrateProjects converts the old single-proxy projects.json shape into the
+// multi-proxy structure.
+//
+// path is the legacy file, resolved against the data directory. It used to be
+// the literal "projects.json", read relative to whatever directory the operator
+// happened to start Pontus from — so on a service-managed host, where the
+// working directory is / rather than the data directory, this returned at the
+// first ReadFile and the conversion never ran.
+//
+// It must also run *before* migrateFromJSON renames the file aside, which it
+// did not: the rename happened first and this then read a path that no longer
+// existed. The exact case the function exists for was the case it skipped.
+func MigrateProjects(projectStore store.Project, path string) {
 	projects := projectStore.List()
 	migrated := 0
 
-	// We need to reload the raw data because proto unmarshal might have dropped old fields
-	data, err := os.ReadFile("projects.json")
+	// The raw data is reloaded because proto unmarshalling drops the old
+	// top-level fields this conversion is built from.
+	data, err := os.ReadFile(path)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("Warning: cannot read %s for the multi-proxy migration: %v", path, err)
+		}
 		return
 	}
 
@@ -41,10 +56,16 @@ func MigrateProjects(projectStore store.Project) {
 				// Reconstruct proxy configuration from raw data
 				p.Proxies = []*domain.ProxyConfig{
 					new(domain.ProxyConfig{
-						Id:       uuid.New().String(),
-						Name:     "Default Proxy",
-						Address:  proxyAddr,
-						Balancer: p.Protocol, // Fallback if missing
+						Id:      uuid.New().String(),
+						Name:    "Default Proxy",
+						Address: proxyAddr,
+						// Left empty when the legacy file names no balancer:
+						// newBalancer reads "" as round-robin, its documented
+						// default. This used to be seeded with p.Protocol, so a
+						// file with no balancer produced a proxy whose strategy
+						// was "postgres" — unrecognised, silently round-robin,
+						// and stored in SQLite as a value no UI can explain.
+						Balancer: "",
 						MaxConns: 100,
 					}),
 				}
@@ -75,7 +96,10 @@ func MigrateProjects(projectStore store.Project) {
 					}
 				}
 
-				projectStore.Upsert(p)
+				if err := projectStore.Upsert(p); err != nil {
+					log.Printf("Warning: cannot save the migrated project %s: %v", p.Id, err)
+					continue
+				}
 				migrated++
 			}
 		}
