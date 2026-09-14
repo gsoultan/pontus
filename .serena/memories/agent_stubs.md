@@ -9,7 +9,8 @@ orchestrator, not a metrics sidecar", which is the *intent*, not the state.
 
 | Method | State |
 | :--- | :--- |
-| `UpdateConfig`, `ExecuteCommand`, `RestartService`, `ShutdownDatabase` | real |
+| `ExecuteCommand`, `RestartService`, `ShutdownDatabase` | real |
+| **`UpdateConfig`** | **was a stub until 2026-09-14** — this table said "real" for months. It validated the content, allowlisted the path, and then returned `Success: true` over a commented-out `os.WriteFile`. The surrounding code is what made the body look substantial to a grep, which is why the 09-06/09-07 sweep passed it over. Now writes atomically with the previous contents kept as `.pontus-prev`. Two defects found on the same path and fixed first: the allowlist was a raw `strings.HasPrefix` that `..` walked straight out of, and the pg_hba.conf validator accepted a file of pure comments. |
 | **`SetupReplication`** | **implemented 2026-09-06** (`agent/infrastructure/replication.go`) — see below |
 | **`PromoteNode`**, **`BackupDatabase`**, **`RestoreDatabase`**, **`VacuumDatabase`** | **implemented 2026-09-07** (`agent/infrastructure/maintenance.go`) |
 | **`InitializeDatabase`**, **`RemoveDatabase`** | **implemented 2026-09-07** (`agent/infrastructure/lifecycle.go`) |
