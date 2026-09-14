@@ -6,6 +6,64 @@ Everything else is open. None of the open items are precedent to copy.
 
 ## Still broken, highest severity first
 
+- **E1 [FIXED 2026-09-14]. A process that stood down never took orchestration over.**
+  `claimOrchestration` ran once, in `NewRegistry`'s struct literal. On failure it
+  installed a permanent `func() bool { return false }` and returned; nothing retried,
+  while both log lines said "this process takes over when the holder exits". After every
+  `reuse_port` upgrade — the only reason that option exists — the surviving process ran no
+  failover, no follow-primary and no rejoin. Permanently and silently. `awaitOrchestration`
+  now polls on the failover monitor's own 5s tick, bound to the registry context.
+  `[repro]` — `e2e/upgrade_test.go` stops the holder and requires "Took over orchestration".
+
+- **E2 [FIXED 2026-09-14]. `UpdateConfig` reported success without writing anything.**
+  `// Simulate writing the file` over a commented-out `os.WriteFile`, then
+  `Success: true`. `mem:agent_stubs` listed it as **real** — the surrounding validation and
+  allowlist code make the body look substantial to a grep, which is how it survived the
+  09-06/09-07 stub sweep. Now an atomic replace (temp + fsync + chmod/chown + rename +
+  dir fsync) keeping the previous contents as `.pontus-prev`.
+
+- **E3 [FIXED 2026-09-14]. The config-write allowlist was a raw string prefix.**
+  `strings.HasPrefix(req.FilePath, p)` on a root process: `/var/lib/postgresql/../../etc/cron.d/pwn`
+  passed, and so did the sibling `/var/lib/postgresql-backup/`. Cleaned and compared by
+  whole path segments now. Landed **before** E2, deliberately — a traversal guard on a
+  no-op write is theatre, and turning the write on first would have been the reverse.
+
+- **E4 [FIXED 2026-09-14]. The pg_hba.conf validator accepted a file that locks everyone out.**
+  The rule was `strings.Contains(content, "host") || strings.Contains(content, "local")` over
+  the whole file, so `# no host entries here` passed, as did prose and a truncated rule.
+  Demonstrated against the old code. Now parsed the way PostgreSQL parses it: comments
+  stripped, every surviving line a known connection type with the right field count.
+
+- **E5 [FIXED 2026-09-14]. The legacy JSON migration ran in the wrong directory, in the wrong order.**
+  Three defects on one path. `"projects.json"` was read relative to the *working* directory,
+  which under kardianos/service is `/`. `migrateFromJSON` renamed the file to `.bak` and
+  *then* `MigrateProjects` tried to read it, so the multi-proxy conversion never ran and a
+  legacy project landed in SQLite with no proxy at all. And `Balancer: p.Protocol` seeded the
+  balancer with `"postgres"`, which `newBalancer` silently reads as round-robin.
+
+- **E6 [FIXED 2026-09-14]. `SetClusterConfig` persisted values it could not parse.**
+  Every parameter was written to SQLite and parsed afterwards with the failure swallowed,
+  so `query_timeout: "banana"` was stored, never applied, reported as Success, and rendered
+  back by the dashboard as the current setting. Parse now precedes persist; the request is
+  all-or-nothing.
+
+- **E7 [OPEN]. `protocol: mysql` is now gated, but the handler is still a shell.**
+  `GetCurrentLSN`, `WaitLSN`, `ReplayPreparedStatements` and `DiscoverTopology` return
+  nil/empty. Refused at startup unless `experimental_mysql: true` (2026-09-14). Finish it
+  or delete it; do not un-gate it.
+
+- **E8 [OPEN]. `pkg/repository` is dead code.** 342 lines, zero importers, added in the
+  first substantial commit (2026-07-21) and never wired. It duplicates
+  `server/management/store` and `pkg/observability/store`. Do **not** write tests for it —
+  that makes dead code look maintained. Delete it or wire it.
+
+- **E9 [OPEN]. No versioned schema migration.** Schema setup is `CREATE TABLE IF NOT EXISTS`
+  per store plus one ad-hoc `ALTER TABLE users RENAME COLUMN` whose error is discarded.
+  Idempotent today and pinned by `TestSchemaSetupIsIdempotentOnAPopulatedDatabase`, but the
+  first migration that rewrites or drops anything breaks a downgrade with no schema version
+  for an older binary to refuse on. Until then the pre-upgrade copy of `management.db` is
+  the rollback plan — see `docs/operations.md`.
+
 - **D7 [FIXED 2026-09-04]. Seven React findings, reviewed one at a time rather than pinned
   away.**
 
