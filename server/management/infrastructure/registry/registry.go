@@ -145,9 +145,17 @@ func (r *Registry) GetProjectState(id string) (*state.Project, error) {
 func (r *Registry) CreateProjectState(ctx context.Context, pcfg *domain.Project) (*state.Project, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
+	// A project can arrive from the management store, which startup validation
+	// never saw, so the gate is here as well as in internal/app. The old
+	// `default:` served PostgreSQL for anything it did not recognise.
+	if err := config.ValidateProtocol(pcfg.Protocol, r.defaults != nil && r.defaults.ExperimentalMySQL); err != nil {
+		cancel()
+		return nil, fmt.Errorf("project %q: %w", pcfg.Name, err)
+	}
+
 	var handler protocol2.Handler
-	switch strings.ToLower(pcfg.Protocol) {
-	case "mysql":
+	switch strings.ToLower(strings.TrimSpace(pcfg.Protocol)) {
+	case config.ProtocolMySQL:
 		handler = protocol2.NewMySQLHandler()
 	default:
 		handler = protocol2.NewPostgresHandler()

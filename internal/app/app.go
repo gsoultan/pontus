@@ -79,6 +79,14 @@ func (a *App) Run(ctx context.Context) error {
 		return fmt.Errorf("consensus is misconfigured: %w", err)
 	}
 
+	// The field that decides how every byte on the wire is framed is not one to
+	// guess at: an unrecognised value used to fall through to PostgreSQL, and
+	// MySQL is served only on an explicit opt-in because its handler answers
+	// four consistency questions with a silent nil.
+	if err := config.ValidateProtocol(a.cfg.Protocol, a.cfg.ExperimentalMySQL); err != nil {
+		return fmt.Errorf("protocol is misconfigured: %w", err)
+	}
+
 	a.backendTLS, _ = proxy.CreateTLSConfig(a.cfg.BackendTLS)
 
 	// Initialize Management DB (SQLite)
