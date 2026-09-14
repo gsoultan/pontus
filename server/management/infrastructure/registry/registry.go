@@ -63,7 +63,12 @@ type Registry struct {
 // Non-blocking, and a failure to acquire is not a failure to start: a process
 // that does not hold the lock still serves queries. It simply does not act on
 // the cluster until the holder exits and the kernel drops the lock.
-func claimOrchestration(defaults *config.Options) *listen.OrchestrationLock {
+//
+// Returns the lock, and the path to retry on when the lock could not be taken.
+// An empty path means there is nothing to wait for — either this process holds
+// the lock, or no usable lock path exists and it is acting as the only one on
+// the host.
+func claimOrchestration(defaults *config.Options) (*listen.OrchestrationLock, string) {
 	dataDir := ""
 	if defaults != nil {
 		dataDir = defaults.DataDir
@@ -83,7 +88,7 @@ func claimOrchestration(defaults *config.Options) *listen.OrchestrationLock {
 			"process on this host. Set data_dir to coordinate an overlapping upgrade",
 			"path", path, "error", err)
 		orchestration2.SetOwnership(nil)
-		return nil
+		return nil, ""
 	}
 
 	lock, err := listen.AcquireOrchestration(path)
@@ -92,12 +97,12 @@ func claimOrchestration(defaults *config.Options) *listen.OrchestrationLock {
 		slog.Warn("Not running orchestration: another Pontus on this host holds it. "+
 			"Queries are served either way; this process takes over when the holder exits",
 			"lock", path, "error", err)
-		return nil
+		return nil, path
 	}
 
 	orchestration2.SetOwnership(func() bool { return true })
 	slog.Info("Holding orchestration for this host", "lock", path)
-	return lock
+	return lock, ""
 }
 
 func NewRegistry(ctx context.Context, store store.Project, userStore store.User, dialTimeout time.Duration, backendTLS *tls.Config, defaults *config.Options) *Registry {
@@ -114,8 +119,19 @@ func NewRegistry(ctx context.Context, store store.Project, userStore store.User,
 		monitor:     m,
 		defaults:    defaults,
 
-		orchestrationLock: claimOrchestration(defaults),
-		consensus:         startConsensus(ctx, defaults),
+		consensus: startConsensus(ctx, defaults),
+	}
+
+	lock, retryPath := claimOrchestration(defaults)
+	r.orchestrationLock = lock
+
+	// The claim used to be made once, in this struct literal, and never again.
+	// Both log lines promise "this process takes over when the holder exits";
+	// nothing did. After a reuse_port upgrade — the only reason that option
+	// exists — the surviving process ran no failover, no follow-primary and no
+	// rejoin, permanently and silently.
+	if retryPath != "" {
+		go r.awaitOrchestration(ctx, retryPath)
 	}
 
 	// Load and start projects
@@ -492,7 +508,10 @@ func healthTiming(cfg *config.Options) (interval, timeout time.Duration) {
 func (r *Registry) StopAll(ctx context.Context) {
 	// Released first, so a process waiting through an upgrade can take
 	// orchestration over while this one drains rather than after it exits.
-	if err := r.orchestrationLock.Release(); err != nil {
+	r.mu.RLock()
+	lock := r.orchestrationLock
+	r.mu.RUnlock()
+	if err := lock.Release(); err != nil {
 		slog.Warn("Could not release the orchestration lock", "error", err)
 	}
 	if r.consensus != nil {
