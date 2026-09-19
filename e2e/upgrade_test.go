@@ -120,6 +120,20 @@ func TestOnlyOneProcessHoldsOrchestration(t *testing.T) {
 	if strings.Contains(fresh.logs.String(), "Holding orchestration") {
 		t.Error("both processes claimed orchestration; two failover managers can both promote")
 	}
+
+	// The other half of the handover, and the half that was missing. The
+	// stand-down log line promises "this process takes over when the holder
+	// exits"; claimOrchestration ran once at construction and nothing retried,
+	// so after every reuse_port upgrade — the only reason that option exists —
+	// the surviving process ran no failover, no follow-primary and no rejoin.
+	old.stop()
+
+	if !waitFor(60*time.Second, func() bool {
+		return strings.Contains(fresh.logs.String(), "Took over orchestration")
+	}) {
+		t.Fatalf("the survivor never took orchestration over after the holder exited; "+
+			"this deployment has no failover manager:\n%s", tailLog(fresh.logs.String(), 2000))
+	}
 }
 
 // canQuery opens a session through the proxy and runs a statement.

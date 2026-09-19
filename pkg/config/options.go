@@ -44,11 +44,19 @@ type Options struct {
 	// the wire, so Pontus refuses a remote agent by default and this is the
 	// explicit way to accept that. An agent on loopback needs neither, because
 	// the token never leaves the machine.
-	AgentAllowCleartext bool       `json:"agent_allow_cleartext,omitzero" yaml:"agent_allow_cleartext"`
-	RateLimit           *RateLimit `json:"rate_limit,omitzero" yaml:"rate_limit"`
-	Cache               *Cache     `json:"cache,omitzero" yaml:"cache"`
-	Failover            *Failover  `json:"failover,omitzero" yaml:"failover"`
-	Auth                *Auth      `json:"auth,omitzero" yaml:"auth"`
+	AgentAllowCleartext bool `json:"agent_allow_cleartext,omitzero" yaml:"agent_allow_cleartext"`
+
+	// ExperimentalMySQL serves protocol: mysql despite the handler's gaps.
+	//
+	// See ValidateProtocol for what those gaps are. They are silent wrong
+	// answers rather than errors, so the opt-in exists to make sure a MySQL
+	// deployment is a decision somebody made rather than a value somebody typed.
+	ExperimentalMySQL bool `json:"experimental_mysql,omitzero" yaml:"experimental_mysql"`
+
+	RateLimit *RateLimit `json:"rate_limit,omitzero" yaml:"rate_limit"`
+	Cache     *Cache     `json:"cache,omitzero" yaml:"cache"`
+	Failover  *Failover  `json:"failover,omitzero" yaml:"failover"`
+	Auth      *Auth      `json:"auth,omitzero" yaml:"auth"`
 	// QueryTimeout bounds how long a single statement may occupy a pooled
 	// backend connection. Unset means the 30s default; a **negative** value
 	// disables the bound entirely, for deployments that run legitimately long
@@ -186,6 +194,9 @@ func (c *Options) Merge(other *Options) {
 	}
 	if other.Protocol != "" {
 		c.Protocol = other.Protocol
+	}
+	if other.ExperimentalMySQL {
+		c.ExperimentalMySQL = true
 	}
 	if other.DialTimeout > 0 {
 		c.DialTimeout = other.DialTimeout

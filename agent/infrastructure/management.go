@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 
 	"github.com/gsoultan/pontus/agent/services"
 	"github.com/gsoultan/pontus/api/proto/endpoints"
@@ -54,36 +54,38 @@ func (m *management) clusterDir(requested string) string {
 }
 
 func (m *management) UpdateConfig(ctx context.Context, req *endpoints.UpdateConfigRequest) (*endpoints.UpdateConfigResponse, error) {
-	// Path whitelisting
-	allowed := false
-	for _, p := range m.allowedPaths {
-		if strings.HasPrefix(req.FilePath, p) {
-			allowed = true
-			break
-		}
-	}
-
-	if !allowed {
+	path, err := resolveConfigPath(req.FilePath, m.allowedPaths)
+	if err != nil {
 		return &endpoints.UpdateConfigResponse{
 			Success:      false,
-			ErrorMessage: fmt.Sprintf("path %s is not allowed for updates", req.FilePath),
+			ErrorMessage: err.Error(),
 		}, nil
 	}
 
-	// Validation
+	// Validators are selected by file name, so a path that reaches the same
+	// file by a different route gets the same judgement.
 	for name, v := range m.validators {
-		if strings.Contains(req.FilePath, name) {
-			if err := v.Validate(ctx, req.FilePath, req.Content); err != nil {
-				return &endpoints.UpdateConfigResponse{
-					Success:      false,
-					ErrorMessage: fmt.Sprintf("validation failed: %v", err),
-				}, nil
-			}
+		if filepath.Base(path) != name {
+			continue
+		}
+		if err := v.Validate(ctx, path, req.Content); err != nil {
+			return &endpoints.UpdateConfigResponse{
+				Success:      false,
+				ErrorMessage: fmt.Sprintf("validation failed: %v", err),
+			}, nil
 		}
 	}
 
-	// Simulate writing the file
-	// err := os.WriteFile(req.FilePath, []byte(req.Content), 0644)
+	if err := writeConfigFile(path, req.Content); err != nil {
+		return &endpoints.UpdateConfigResponse{
+			Success:      false,
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	// Written, not applied. Reloading is RestartService's job, and folding it in
+	// here would mean one call both edits authentication policy and bounces the
+	// database — two decisions an operator makes separately.
 	return &endpoints.UpdateConfigResponse{Success: true}, nil
 }
 

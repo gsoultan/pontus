@@ -128,11 +128,59 @@ jobs:
       - name: Start PostgreSQL cluster
         run: ./scripts/e2e-cluster.sh up
 
+      # ubuntu-latest ships the PostgreSQL server package but keeps its binaries
+      # out of PATH, and e2e/local_cluster_test.go skips without initdb, pg_ctl,
+      # pg_basebackup and postgres. That skip is how automatic failover — the
+      # highest-consequence path in the tree — went unverified on every commit
+      # while CI stayed green. TestLocalAutomaticFallback needs real clusters
+      # rather than the container pair: it stops a database, and in a container
+      # PostgreSQL is PID 1, so stopping it takes the co-located agent down too.
+      - name: PostgreSQL server binaries on PATH
+        run: |
+          bindir=$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1)
+          if [ -z "$bindir" ]; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql
+            bindir=$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)
+          fi
+          echo "$bindir" >> "$GITHUB_PATH"
+          "$bindir/initdb" --version
+
+      # A second, disposable pair for the promotion and rejoin tests. Promotion
+      # is one way — a promoted replica is on a new timeline and cannot follow
+      # its old primary again — so those tests refuse to run against the shared
+      # cluster the rest of the suite depends on, and skip when this is absent.
+      - name: Start disposable cluster for promotion
+        run: |
+          AGENT="$RUNNER_TEMP/pontus-agent"
+          CGO_ENABLED=0 go build -o "$AGENT" ./cmd/agent
+          AGENT_BINARY="$AGENT" AGENT_TOKEN=e2e-agent-token \
+            PRIMARY_NAME=pontus-promo-primary REPLICA_NAME=pontus-promo-replica \
+            PRIMARY_PORT=55842 REPLICA_PORT=55843 \
+            PRIMARY_AGENT_PORT=19191 REPLICA_AGENT_PORT=19193 \
+            ./scripts/e2e-cluster.sh up
+
       - name: Go E2E
         env:
           PONTUS_E2E_BACKEND: 127.0.0.1:55832
           PONTUS_E2E_REPLICA: 127.0.0.1:55833
-        run: go test -tags e2e -timeout 20m ./e2e/...
+          # Stops the primary container and restores it in t.Cleanup. Without
+          # this, primary-loss behaviour never ran here.
+          PONTUS_E2E_DISRUPTIVE: "1"
+          PONTUS_E2E_PROMO_PRIMARY: 127.0.0.1:55842
+          PONTUS_E2E_PROMO_REPLICA: 127.0.0.1:55843
+          PONTUS_E2E_PROMO_TOKEN: e2e-agent-token
+          PONTUS_E2E_PROMO_PRIMARY_CONTAINER: pontus-promo-primary
+        # 40m rather than 20m: the local-cluster tests run initdb and
+        # pg_basebackup for real, and a CI runner is slower than the laptop the
+        # per-step deadlines inside them were written against.
+        run: go test -tags e2e -timeout 40m ./e2e/...
+
+      - name: Stop disposable cluster
+        if: always()
+        run: |
+          PRIMARY_NAME=pontus-promo-primary REPLICA_NAME=pontus-promo-replica \
+            ./scripts/e2e-cluster.sh down || true
 
       - name: Stop PostgreSQL cluster
         if: always()

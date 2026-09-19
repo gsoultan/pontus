@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -79,6 +80,14 @@ func (a *App) Run(ctx context.Context) error {
 		return fmt.Errorf("consensus is misconfigured: %w", err)
 	}
 
+	// The field that decides how every byte on the wire is framed is not one to
+	// guess at: an unrecognised value used to fall through to PostgreSQL, and
+	// MySQL is served only on an explicit opt-in because its handler answers
+	// four consistency questions with a silent nil.
+	if err := config.ValidateProtocol(a.cfg.Protocol, a.cfg.ExperimentalMySQL); err != nil {
+		return fmt.Errorf("protocol is misconfigured: %w", err)
+	}
+
 	a.backendTLS, _ = proxy.CreateTLSConfig(a.cfg.BackendTLS)
 
 	// Initialize Management DB (SQLite)
@@ -124,7 +133,6 @@ func (a *App) Run(ctx context.Context) error {
 	a.migratePasswords()
 
 	// Perform migration for outdated projects.json
-	MigrateProjects(a.projectStore)
 
 	// Migrate from config.yaml if store is empty
 	a.bootstrapFromConfig()
@@ -268,35 +276,84 @@ func (a *App) Shutdown() error {
 }
 
 // migrateFromJSON moves data from legacy JSON files to SQLite.
+//
+// Paths are resolved against the data directory. They used to be the bare
+// "projects.json", relative to the process working directory — which under
+// kardianos/service is / rather than the data directory, so on exactly the
+// service-managed hosts this exists for, the migration silently did nothing.
 func (a *App) migrateFromJSON() {
 	// If management.db already has data, skip migration
 	if len(a.projectStore.List()) > 0 || len(a.userStore.List()) > 0 {
 		return
 	}
 
+	projectsJSON := a.legacyPath("projects.json")
+
 	// Try to load from projects.json
-	if jsonPStore, err := store.NewJSONProjectStore("projects.json"); err == nil {
+	if jsonPStore, err := store.NewJSONProjectStore(projectsJSON); err == nil {
 		projects := jsonPStore.List()
 		if len(projects) > 0 {
-			log.Printf("Migrating %d projects from projects.json to SQLite", len(projects))
+			log.Printf("Migrating %d projects from %s to SQLite", len(projects), projectsJSON)
 			for _, p := range projects {
-				_ = a.projectStore.Upsert(p)
+				if err := a.projectStore.Upsert(p); err != nil {
+					log.Printf("Warning: cannot import project %s: %v", p.Id, err)
+				}
 			}
-			os.Rename("projects.json", "projects.json.bak")
+
+			// Before the rename, not after it. The multi-proxy conversion reads
+			// the same file to recover the top-level fields proto unmarshalling
+			// drops, and moving the file first left it reading a path that no
+			// longer existed — so a legacy project landed in SQLite with no
+			// proxy at all and served nothing.
+			MigrateProjects(a.projectStore, projectsJSON)
+
+			if err := os.Rename(projectsJSON, projectsJSON+".bak"); err != nil {
+				log.Printf("Warning: imported %s but could not move it aside, so it "+
+					"will be read again on the next start: %v", projectsJSON, err)
+			}
 		}
 	}
 
+	usersJSON := a.legacyPath("users.json")
+
 	// Try to load from users.json
-	if jsonUStore, err := store.NewJSONUserStore("users.json"); err == nil {
+	if jsonUStore, err := store.NewJSONUserStore(usersJSON); err == nil {
 		users := jsonUStore.List()
 		if len(users) > 0 {
-			log.Printf("Migrating %d users from users.json to SQLite", len(users))
+			log.Printf("Migrating %d users from %s to SQLite", len(users), usersJSON)
+
+			// An import that half-succeeds must not be moved aside as done: the
+			// operator would be left with a file named .bak and accounts that
+			// cannot log in.
+			imported := 0
 			for _, u := range users {
-				_ = a.userStore.Upsert(u.Username, u.Token, u.Role)
+				if err := a.userStore.Upsert(u.Username, u.Token, u.Role); err != nil {
+					log.Printf("Warning: cannot import user %s: %v", u.Username, err)
+					continue
+				}
+				imported++
 			}
-			os.Rename("users.json", "users.json.bak")
+			if imported < len(users) {
+				log.Printf("Warning: imported %d of %d users; leaving %s in place",
+					imported, len(users), usersJSON)
+				return
+			}
+
+			if err := os.Rename(usersJSON, usersJSON+".bak"); err != nil {
+				log.Printf("Warning: imported %s but could not move it aside, so it "+
+					"will be read again on the next start: %v", usersJSON, err)
+			}
 		}
 	}
+}
+
+// legacyPath resolves a pre-SQLite JSON file against the configured data
+// directory, which is where every other file this process owns already lives.
+func (a *App) legacyPath(name string) string {
+	if a.cfg == nil || a.cfg.DataDir == "" {
+		return filepath.Join(system.GetDefaultDataDir(), name)
+	}
+	return filepath.Join(a.cfg.DataDir, name)
 }
 
 // migratePasswords ensures all passwords in the store are hashed.

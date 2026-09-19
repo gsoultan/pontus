@@ -3,7 +3,10 @@
 Pontus is a high-performance, cloud-native database connection pooler and load balancer written in Go 1.27. It is designed to scale database workloads by managing connection pools efficiently, providing advanced observability, and ensuring high availability.
 
 ## Features
-- **Multi-Protocol Support**: PostgreSQL and MySQL/MariaDB with robust SQL parsing.
+- **PostgreSQL**: the supported protocol, with robust SQL parsing. MySQL/MariaDB is
+  **experimental** and refused unless `experimental_mysql: true` — its handler returns
+  nil for LSN consistency, prepared-statement replay and topology discovery, so those
+  features silently do nothing. See [MySQL](#mysql-experimental).
 - **Transaction Mode Pooling**: Minimizes server connections by releasing them when idle.
 - **Load Balancing**: Round Robin, Least Connections, and Consistent Hashing (Sticky).
 - **Failover & Health Checks**: Passive and active health monitoring with Raft-driven consensus.
@@ -133,7 +136,12 @@ Pontus uses a YAML configuration file. Below is a comprehensive example with the
 # Proxy settings
 proxy_addr: ":5432"           # Address to listen for database client connections
 mgmt_addr: ":9090"            # Address for management API and Web Dashboard
-protocol: "postgres"          # Protocol: "postgres" or "mysql"
+protocol: "postgres"          # "postgres", or "mysql" with experimental_mysql below.
+                              # An unrecognised value is a startup error, not a
+                              # silent fallback to postgres.
+experimental_mysql: false     # Serve protocol: mysql despite the handler returning
+                              # nil for LSN consistency, prepared-statement replay
+                              # and topology discovery. See "MySQL (experimental)".
 pooling_mode: "transaction"   # "transaction" or "statement"
 balancer: "least_conns"       # "round_robin", "least_conns", or "sticky"
 
@@ -486,7 +494,7 @@ The management API is built using **ConnectRPC**, which is compatible with gRPC.
 
 - **Web Dashboard**: Access via `http://localhost:9090` (by default).
 - **ConnectRPC/gRPC**: `http://localhost:9090/api.proto.ManagementService/`
-- **SQL Clients**: Connect to `:5432` using any standard MySQL or PostgreSQL client (e.g., `psql`, `mysql` CLI).
+- **SQL Clients**: Connect to `:5432` using any standard PostgreSQL client (e.g. `psql`, pgjdbc, asyncpg).
 
 ## Development
 
@@ -517,10 +525,24 @@ We provide example applications demonstrating how to connect to Pontus using Go'
    go run ./examples/postgres
    ```
 
-### MySQL Example
+### MySQL (experimental)
+
+`protocol: mysql` is refused at startup unless `experimental_mysql: true` is also set.
+The handler frames the wire correctly but answers four questions with a silent nil:
+
+| Method | Consequence |
+| :--- | :--- |
+| `GetCurrentLSN`, `WaitLSN` | read-your-writes consistency does nothing; a read after a write may hit a stale replica |
+| `ReplayPreparedStatements` | prepared statements are lost on a backend switch |
+| `DiscoverTopology` | replicas are never discovered |
+| `CollectMetrics` | the dashboard reports a backend it has measured nothing about |
+
+Do not run this against production data.
+
 1. Configure Pontus for MySQL in `config.yaml`:
    ```yaml
    protocol: "mysql"
+   experimental_mysql: true
    proxy_addr: ":3306"
    # ... update backends to point to MySQL servers
    ```

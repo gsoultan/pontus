@@ -5,6 +5,9 @@ import (
 	"strconv"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/gsoultan/pontus/api/proto/endpoints"
 	"github.com/gsoultan/pontus/pkg/config"
 	"github.com/gsoultan/pontus/server/management/infrastructure/registry"
@@ -25,29 +28,36 @@ func NewCluster(registry *registry.Registry, settingStore service.SettingProvide
 }
 
 func (m *Cluster) SetClusterConfig(ctx context.Context, req *endpoints.SetClusterConfigRequest) (*endpoints.SetClusterConfigResponse, error) {
-	// Persist settings
-	for k, v := range req.Parameters {
-		if err := m.settingStore.Set(ctx, k, v); err != nil {
-			return nil, err
-		}
-	}
-
-	// Apply partial updates to gateways
+	// Parsed before anything is persisted. The order used to be the other way
+	// round: every parameter was written to SQLite and *then* parsed, so
+	// query_timeout: "banana" was stored, silently not applied, and reported as
+	// Success — leaving a value in the settings store that no restart can make
+	// sense of and that the dashboard renders back as the current setting.
 	cfg := &config.Options{}
 	applied := false
 
 	if v, ok := req.Parameters["query_timeout"]; ok {
-		if d, err := time.ParseDuration(v); err == nil {
-			cfg.QueryTimeout = d
-			applied = true
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"query_timeout %q is not a duration: %v", v, err)
 		}
+		cfg.QueryTimeout = d
+		applied = true
 	}
 
 	if v, ok := req.Parameters["max_conns"]; ok {
-		if i, err := strconv.Atoi(v); err == nil {
-			cfg.MaxConns = int32(i)
-			applied = true
+		i, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"max_conns %q is not a number: %v", v, err)
 		}
+		if i <= 0 {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"max_conns must be positive, got %d", i)
+		}
+		cfg.MaxConns = int32(i)
+		applied = true
 	}
 
 	if v, ok := req.Parameters["balancer"]; ok {
@@ -58,6 +68,13 @@ func (m *Cluster) SetClusterConfig(ctx context.Context, req *endpoints.SetCluste
 	if v, ok := req.Parameters["pooling_mode"]; ok {
 		cfg.PoolingMode = v
 		applied = true
+	}
+
+	// Persist only once every parameter has been understood.
+	for k, v := range req.Parameters {
+		if err := m.settingStore.Set(ctx, k, v); err != nil {
+			return nil, err
+		}
 	}
 
 	if applied {
